@@ -51,7 +51,7 @@ def predict():
 
 @app.route("/track", methods=["POST"])
 def track():
-    data = request.get_json()
+    data = request.get_json(force=True)
 
     lead_df = pd.DataFrame([data])
     lead_encoded = pd.get_dummies(lead_df)
@@ -75,3 +75,6 @@ def track():
 
 if __name__ == "__main__":
     socketio.run(app, debug=True, port=5000)
+
+
+    

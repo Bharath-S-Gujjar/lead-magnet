@@ -11,21 +11,19 @@
   <script>
     const visitorId = "visitor_" + Math.floor(Math.random() * 10000);
     const startTime = Date.now();
-
     window.addEventListener("beforeunload", () => {
-      const timeSpent = Math.round((Date.now() - startTime) / 1000);
-      navigator.sendBeacon(
-        "http://127.0.0.1:5000/track",
-        JSON.stringify({
-          visitor_id: visitorId,
-          "Lead Origin": "Landing Page Submission",
-          "Lead Source": "Direct Traffic",
-          "Total Time Spent on Website": timeSpent,
-          "TotalVisits": 1,
-          "Page Views Per Visit": 1
-        })
-      );
-    });
+  const timeSpent = Math.round((Date.now() - startTime) / 1000);
+  const payload = JSON.stringify({
+    visitor_id: visitorId,
+    "Lead Origin": "Landing Page Submission",
+    "Lead Source": "Direct Traffic",
+    "Total Time Spent on Website": timeSpent,
+    "TotalVisits": 1,
+    "Page Views Per Visit": 1
+  });
+  const blob = new Blob([payload], { type: "text/plain" });
+  navigator.sendBeacon("http://127.0.0.1:5000/track", blob);
+});
   </script>
 </body>
 </html>
