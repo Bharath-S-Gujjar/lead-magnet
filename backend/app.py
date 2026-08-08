@@ -13,6 +13,7 @@ from action_recommendations import get_next_action
 from auth_middleware import admin_required
 from identity_service import generate_anonymous_id, resolve_anonymous_identity
 from lead_processing_service import process_session
+from behavior_event_service import BehaviorEventError, log_behavior_event
 
 load_dotenv()
 
@@ -286,36 +287,12 @@ def start_session():
 @app.route("/api/session/event", methods=["POST"])
 def log_event():
     data = request.get_json(force=True)
-    session_id = data.get("session_id")
-    event_type = data.get("event_type")
+    try:
+        event_id = log_behavior_event(data, sessions_collection, events_collection)
+    except BehaviorEventError as error:
+        return jsonify({"success": False, "message": error.message, "errors": []}), error.status_code
 
-    if not session_id or not event_type:
-        return jsonify({"success": False, "message": "session_id and event_type required", "errors": []}), 400
-
-    session = sessions_collection.find_one({"_id": ObjectId(session_id)})
-    if not session:
-        return jsonify({"success": False, "message": "Session not found", "errors": []}), 404
-
-    event_doc = {
-        "session_id": ObjectId(session_id),
-        "event_type": event_type,
-        "page": data.get("page"),
-        "timestamp": datetime.datetime.utcnow(),
-        "metadata": data.get("metadata", {})
-    }
-    events_collection.insert_one(event_doc)
-
-    update_fields = {"last_active_at": datetime.datetime.utcnow()}
-    inc_fields = {}
-    if event_type == "page_view":
-        inc_fields["page_views"] = 1
-
-    sessions_collection.update_one(
-        {"_id": ObjectId(session_id)},
-        {"$set": update_fields, **({"$inc": inc_fields} if inc_fields else {})}
-    )
-
-    return jsonify({"success": True, "message": "Event logged", "data": {}})
+    return jsonify({"success": True, "message": "Event logged", "data": {"event_id": event_id}})
 
 
 @app.route("/api/session/end", methods=["POST"])

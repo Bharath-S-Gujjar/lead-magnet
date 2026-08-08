@@ -284,7 +284,13 @@ Authentication Required
 
 Record one behavioural event.
 
+This endpoint is the V2 Rich Behavior Event Bus. It remains backward-compatible
+with legacy tracking payloads while accepting richer behavioral context for
+future intelligence modules.
+
 ### Request
+
+Legacy payloads remain valid:
 
 ```json
 {
@@ -297,24 +303,83 @@ Record one behavioural event.
 }
 ```
 
-### Supported Events (Current)
+Rich payloads may include `entity`, `context`, `event_category`,
+`event_action`, and `schema_version`:
+
+```json
+{
+  "session_id": "...",
+  "event_type": "product_view",
+  "event_category": "product",
+  "event_action": "view",
+  "page": "/products/64f...",
+  "entity": {
+    "type": "product",
+    "id": "64f...",
+    "name": "Running Shoe",
+    "category": "Shoes",
+    "brand": "Nike",
+    "price": 2999
+  },
+  "metadata": {
+    "source": "product_grid",
+    "position": 4
+  },
+  "context": {
+    "device_type": "mobile",
+    "utm_source": "instagram"
+  },
+  "schema_version": 2
+}
+```
+
+Stored event schema:
+
+```json
+{
+  "_id": "...",
+  "session_id": "...",
+  "visitor_id": "visitor_001",
+  "anonymous_id": "anon_xxxxx",
+  "user_id": "...",
+  "event_type": "product_view",
+  "event_category": "product",
+  "event_action": "view",
+  "page": "/products/64f...",
+  "timestamp": "Date",
+  "entity": {},
+  "metadata": {},
+  "context": {},
+  "schema_version": 2
+}
+```
+
+### Supported Events
 
 - page_view
 - click
 - scroll
 - form_open
-
-### Planned Events
-
+- form_submit
 - product_view
+- product_click
+- search
+- filter_apply
+- sort_apply
 - add_to_cart
 - remove_from_cart
 - wishlist_add
 - wishlist_remove
 - checkout_start
 - purchase
+- recommendation_view
 - recommendation_click
-- search
+- banner_view
+- banner_click
+- lead_capture
+
+Unsupported `event_type` values are rejected with HTTP 400 and message
+`Unsupported event_type`.
 
 ### Response
 
@@ -322,7 +387,9 @@ Record one behavioural event.
 {
   "success": true,
   "message": "Event logged",
-  "data": {}
+  "data": {
+    "event_id": "..."
+  }
 }
 ```
 
