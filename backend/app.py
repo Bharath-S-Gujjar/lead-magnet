@@ -19,17 +19,22 @@ import certifi
 
 load_dotenv()
 
-print("DEBUG MONGO_URI =", os.getenv("MONGO_URI"))
 app = Flask(__name__)
-CORS(app)
-socketio = SocketIO(app, cors_allowed_origins="*")
-# mongo_client = MongoClient(os.getenv("MONGO_URI"))
-mongo_client = MongoClient(
-    os.getenv("MONGO_URI"),
-    tls=True,
-    tlsCAFile=certifi.where(),
-    serverSelectionTimeoutMS=5000,
-)
+FRONTEND_URL = os.getenv("FRONTEND_URL")
+CORS(app, origins=FRONTEND_URL or "*")
+socketio = SocketIO(app, cors_allowed_origins=FRONTEND_URL or "*")
+
+MONGO_URI = os.getenv("MONGO_URI")
+if MONGO_URI.startswith("mongodb://localhost") or MONGO_URI.startswith("mongodb://127.0.0.1"):
+    mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+else:
+    mongo_client = MongoClient(
+        MONGO_URI,
+        tls=True,
+        tlsCAFile=certifi.where(),
+        serverSelectionTimeoutMS=5000,
+    )
+
 db = mongo_client["leadmagnet"]
 users_collection = db["users"]
 
@@ -49,6 +54,10 @@ segment_map = joblib.load("../model/segment_map.pkl")
 @app.route("/")
 def home():
     return jsonify({"status": "Lead Magnet API is running"})
+
+@app.route("/api/health")
+def health():
+    return jsonify({"success": True})
 
 @app.route("/predict", methods=["POST"])
 def predict():
@@ -117,7 +126,6 @@ def signup():
             "identity_resolution": resolution,
         },
     })
-
 
 @app.route("/api/auth/login", methods=["POST"])
 def login():
@@ -226,6 +234,7 @@ events_collection = db["events"]
 
 leads_collection = db["leads"]
 profiles_collection = db["user_profiles"]
+products_collection = db["products"]
 
 from bson import ObjectId
 
@@ -243,14 +252,22 @@ def serialize_mongo_value(value):
 
 @app.route("/api/products", methods=["GET"])
 def get_products():
-    category = request.args.get("category")
-    query = {"category": category} if category else {}
+    try:
+        items = list(products_collection.find({}))
 
-    items = list(products_collection.find(query))
-    for item in items:
-        item["_id"] = str(item["_id"])
+        for item in items:
+            item["_id"] = str(item["_id"])
 
-    return jsonify({"success": True, "message": "Products fetched", "data": items})
+        return jsonify({
+            "success": True,
+            "data": items
+        })
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": str(e)
+        }), 500
 
 
 @app.route("/api/products/<product_id>", methods=["GET"])
@@ -326,11 +343,7 @@ def end_session():
                 "errors": []
             }), 404
 
-        print("DEBUG 1: ending session", session_id)
-
         session = sessions_collection.find_one({"_id": session_object_id})
-
-        print("DEBUG 2: session fetched", session)
 
         if not session:
             return jsonify({
@@ -342,14 +355,10 @@ def end_session():
         now = datetime.datetime.utcnow()
         total_time_seconds = (now - session["started_at"]).total_seconds()
 
-        print("DEBUG 3: total time", total_time_seconds)
-
         sessions_collection.update_one(
             {"_id": session_object_id},
             {"$set": {"status": "ended", "total_time_seconds": total_time_seconds}}
         )
-
-        print("DEBUG 4: session updated")
 
         lead = process_session(
             session_object_id,
@@ -358,23 +367,13 @@ def end_session():
             leads_collection,
         )
 
-        print("DEBUG 5: lead processed", lead)
-
         session_doc = sessions_collection.find_one({"_id": session_object_id})
-
-        print("DEBUG 6: session doc reloaded")
 
         events = list(events_collection.find({"session_id": session_object_id}))
 
-        print("DEBUG 7: events loaded", len(events))
-
         profile_update = build_profile_update(session_doc, events)
 
-        print("DEBUG 8: profile built")
-
         apply_profile_update(profiles_collection, profile_update)
-
-        print("DEBUG 9: profile applied")
 
         return jsonify({
             "success": True,
@@ -389,7 +388,6 @@ def end_session():
         })
 
     except Exception as e:
-        print("DEBUG ERROR:", repr(e))
         return jsonify({
             "success": False,
             "message": str(e),
@@ -524,7 +522,8 @@ def analytics_top_events():
     })
 
 if __name__ == "__main__":
-    socketio.run(app, debug=True, port=5000)
+    debug_enabled = os.getenv("FLASK_DEBUG", "false").lower() == "true"
+    socketio.run(app, debug=debug_enabled, port=5000)
 
 
     
