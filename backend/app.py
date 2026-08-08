@@ -14,14 +14,22 @@ from auth_middleware import admin_required
 from identity_service import generate_anonymous_id, resolve_anonymous_identity
 from lead_processing_service import process_session
 from behavior_event_service import BehaviorEventError, log_behavior_event
+from customer_profile_service import build_profile_update, apply_profile_update
+import certifi
 
 load_dotenv()
 
-
+print("DEBUG MONGO_URI =", os.getenv("MONGO_URI"))
 app = Flask(__name__)
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*")
-mongo_client = MongoClient(os.getenv("MONGO_URI"))
+# mongo_client = MongoClient(os.getenv("MONGO_URI"))
+mongo_client = MongoClient(
+    os.getenv("MONGO_URI"),
+    tls=True,
+    tlsCAFile=certifi.where(),
+    serverSelectionTimeoutMS=5000,
+)
 db = mongo_client["leadmagnet"]
 users_collection = db["users"]
 
@@ -217,6 +225,7 @@ sessions_collection = db["sessions"]
 events_collection = db["events"]
 
 leads_collection = db["leads"]
+profiles_collection = db["user_profiles"]
 
 from bson import ObjectId
 
@@ -297,47 +306,95 @@ def log_event():
 
 @app.route("/api/session/end", methods=["POST"])
 def end_session():
-    data = request.get_json(force=True)
-    session_id = data.get("session_id")
-
-    if not session_id:
-        return jsonify({"success": False, "message": "session_id required", "errors": []}), 400
-
     try:
-        session_object_id = ObjectId(session_id)
-    except Exception:
-        return jsonify({"success": False, "message": "Session not found", "errors": []}), 404
+        data = request.get_json(force=True)
+        session_id = data.get("session_id")
 
-    session = sessions_collection.find_one({"_id": session_object_id})
-    if not session:
-        return jsonify({"success": False, "message": "Session not found", "errors": []}), 404
+        if not session_id:
+            return jsonify({
+                "success": False,
+                "message": "session_id required",
+                "errors": []
+            }), 400
 
-    now = datetime.datetime.utcnow()
-    total_time_seconds = (now - session["started_at"]).total_seconds()
+        try:
+            session_object_id = ObjectId(session_id)
+        except Exception:
+            return jsonify({
+                "success": False,
+                "message": "Session not found",
+                "errors": []
+            }), 404
 
-    sessions_collection.update_one(
-        {"_id": session_object_id},
-        {"$set": {"status": "ended", "total_time_seconds": total_time_seconds}}
-    )
+        print("DEBUG 1: ending session", session_id)
 
-    lead = process_session(
-        session_object_id,
-        sessions_collection,
-        events_collection,
-        leads_collection,
-    )
+        session = sessions_collection.find_one({"_id": session_object_id})
 
-    return jsonify({
-        "success": True,
-        "message": "Session ended and lead processed",
-        "data": {
-            "session_id": str(session_object_id),
-            "total_time_seconds": total_time_seconds,
-            "score": lead["score"],
-            "segment": lead["segment"],
-            "next_action": lead["next_action"],
-        },
-    })
+        print("DEBUG 2: session fetched", session)
+
+        if not session:
+            return jsonify({
+                "success": False,
+                "message": "Session not found",
+                "errors": []
+            }), 404
+
+        now = datetime.datetime.utcnow()
+        total_time_seconds = (now - session["started_at"]).total_seconds()
+
+        print("DEBUG 3: total time", total_time_seconds)
+
+        sessions_collection.update_one(
+            {"_id": session_object_id},
+            {"$set": {"status": "ended", "total_time_seconds": total_time_seconds}}
+        )
+
+        print("DEBUG 4: session updated")
+
+        lead = process_session(
+            session_object_id,
+            sessions_collection,
+            events_collection,
+            leads_collection,
+        )
+
+        print("DEBUG 5: lead processed", lead)
+
+        session_doc = sessions_collection.find_one({"_id": session_object_id})
+
+        print("DEBUG 6: session doc reloaded")
+
+        events = list(events_collection.find({"session_id": session_object_id}))
+
+        print("DEBUG 7: events loaded", len(events))
+
+        profile_update = build_profile_update(session_doc, events)
+
+        print("DEBUG 8: profile built")
+
+        apply_profile_update(profiles_collection, profile_update)
+
+        print("DEBUG 9: profile applied")
+
+        return jsonify({
+            "success": True,
+            "message": "Session ended and lead processed",
+            "data": {
+                "session_id": str(session_object_id),
+                "total_time_seconds": total_time_seconds,
+                "score": lead["score"],
+                "segment": lead["segment"],
+                "next_action": lead["next_action"],
+            },
+        })
+
+    except Exception as e:
+        print("DEBUG ERROR:", repr(e))
+        return jsonify({
+            "success": False,
+            "message": str(e),
+            "errors": []
+        }), 500
 
 
 # ---- Admin Dashboard (Module 6) ----
@@ -429,6 +486,41 @@ def get_admin_dashboard():
             "cold_leads": summary.get("cold_leads", 0),
             "average_score": float(summary.get("average_score") or 0),
         },
+    })
+
+@app.route("/api/analytics/summary", methods=["GET"])
+def analytics_summary():
+    total_sessions = sessions_collection.count_documents({})
+    ended_sessions = sessions_collection.count_documents({"status": "ended"})
+    total_events = events_collection.count_documents({})
+    total_leads = leads_collection.count_documents({})
+
+    return jsonify({
+        "success": True,
+        "data": {
+            "total_sessions": total_sessions,
+            "ended_sessions": ended_sessions,
+            "total_events": total_events,
+            "total_leads": total_leads
+        }
+    })
+
+
+@app.route("/api/analytics/top-events", methods=["GET"])
+def analytics_top_events():
+    pipeline = [
+        {"$group": {"_id": "$event_type", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}}
+    ]
+
+    results = list(events_collection.aggregate(pipeline))
+
+    return jsonify({
+        "success": True,
+        "data": [
+            {"event_type": item["_id"], "count": item["count"]}
+            for item in results
+        ]
     })
 
 if __name__ == "__main__":
