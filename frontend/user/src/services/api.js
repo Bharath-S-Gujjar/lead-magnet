@@ -164,11 +164,25 @@ export async function createOrder(order) {
 }
 
 export async function fetchCustomerOrders(email) {
-  if (!email) return [];
-  const response = await fetch(`${API_BASE_URL}/api/orders?customer_email=${encodeURIComponent(email)}`);
+  const session = getCustomerSession();
+  const targetEmail = email || session?.email;
+  if (!targetEmail) return [];
+  const response = await fetch(`${API_BASE_URL}/api/orders?customer_email=${encodeURIComponent(targetEmail)}`);
   const payload = await parseJsonResponse(response);
   if (!response.ok || !payload.success) {
     throw new Error(payload.message || 'Unable to load orders.');
   }
   return payload.data;
+}
+
+export async function fetchAdminNotifications() {
+  const session = getAdminSession();
+  const token = session?.token;
+  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+  const response = await fetch(`${API_BASE_URL}/api/admin/notifications`, { headers });
+  const payload = await parseJsonResponse(response);
+  if (!response.ok || !payload.success) {
+    return [];
+  }
+  return payload.data || [];
 }

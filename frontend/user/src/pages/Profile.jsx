@@ -6,27 +6,27 @@ import {
   LogOut, ChevronRight, Edit3, Check, X, Plus, Sparkles, AlertCircle
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { getCustomerSession } from '../services/api';
 
 export function Profile() {
-  const { customer, isCustomerAuthenticated, logout, updateProfile } = useAuth();
+  const { customer: authCustomer, isCustomerAuthenticated, logout, updateProfile } = useAuth();
+  const customer = authCustomer || getCustomerSession();
   const navigate = useNavigate();
 
   // Active modal state
   const [activeModal, setActiveModal] = useState(null); // 'edit_profile', 'addresses', 'language', 'notifications', 'cards', 'privacy', 'coupons', 'faqs', 'terms'
 
-  // Edit profile form state
   const [profileForm, setProfileForm] = useState({
-    fullName: customer?.fullName || customer?.username || '',
+    fullName: customer?.full_name || customer?.fullName || customer?.username || '',
     email: customer?.email || '',
     phone: customer?.phone || '+91 9876543210',
     gender: customer?.gender || 'Male',
   });
 
-  // Saved address state
   const rawAddresses = Array.isArray(customer?.addresses) && customer.addresses.length > 0 ? customer.addresses : [
     {
       id: 'addr-1',
-      name: customer?.fullName || customer?.username || 'Bharati Bhat',
+      name: customer?.full_name || customer?.fullName || customer?.username || 'Valued Shopper',
       phone: customer?.phone || '+91 98765 43210',
       type: 'Home',
       street: '123 Fashion Street, Cyber City',
@@ -40,7 +40,6 @@ export function Profile() {
   const [newAddr, setNewAddr] = useState({ name: '', phone: '', type: 'Home', street: '', city: '', state: '', pincode: '' });
   const [showAddAddr, setShowAddAddr] = useState(false);
 
-  // Preferences state
   const [language, setLanguage] = useState(customer?.language || 'English');
   const [notifications, setNotifications] = useState(() => {
     return (customer?.notifications && typeof customer.notifications === 'object') ? customer.notifications : {
@@ -51,7 +50,6 @@ export function Profile() {
     };
   });
 
-  // Alert message banner
   const [toastMessage, setToastMessage] = useState('');
 
   const showToast = (msg) => {
@@ -61,11 +59,11 @@ export function Profile() {
 
   const handleSaveProfile = (e) => {
     e.preventDefault();
-    const res = updateProfile(profileForm);
-    if (res.success) {
-      showToast('Profile details updated successfully!');
-      setActiveModal(null);
+    if (updateProfile) {
+      updateProfile(profileForm);
     }
+    showToast('Profile details updated successfully!');
+    setActiveModal(null);
   };
 
   const handleAddAddress = (e) => {
@@ -74,7 +72,7 @@ export function Profile() {
     const added = { id: `addr-${Date.now()}`, ...newAddr, isDefault: addresses.length === 0 };
     const updated = [...addresses, added];
     setAddresses(updated);
-    updateProfile({ addresses: updated });
+    if (updateProfile) updateProfile({ addresses: updated });
     setNewAddr({ name: '', phone: '', type: 'Home', street: '', city: '', state: '', pincode: '' });
     setShowAddAddr(false);
     showToast('New address saved successfully!');
@@ -83,23 +81,25 @@ export function Profile() {
   const handleToggleNotification = (key) => {
     const updated = { ...notifications, [key]: !notifications[key] };
     setNotifications(updated);
-    updateProfile({ notifications: updated });
+    if (updateProfile) updateProfile({ notifications: updated });
     showToast('Notification preference saved!');
   };
 
   const handleSelectLanguage = (lang) => {
     setLanguage(lang);
-    updateProfile({ language: lang });
+    if (updateProfile) updateProfile({ language: lang });
     showToast(`Language changed to ${lang}`);
     setActiveModal(null);
   };
 
   const handleLogout = () => {
-    logout();
+    if (logout) logout();
     navigate('/login');
   };
 
-  if (!isCustomerAuthenticated) {
+  const isAuth = Boolean(isCustomerAuthenticated || customer?.email || customer?.token);
+
+  if (!isAuth) {
     return (
       <div style={{ maxWidth: '600px', margin: '40px auto', padding: '0 20px', textAlign: 'center' }}>
         <div className="glass-card" style={{ padding: '40px 24px', borderRadius: 'var(--radius-lg)' }}>
@@ -127,8 +127,12 @@ export function Profile() {
     );
   }
 
-  const userName = customer?.fullName || customer?.username || 'Valued Customer';
+  const userName = customer?.full_name || customer?.fullName || customer?.username || 'Valued Customer';
   const userEmail = customer?.email || 'user@example.com';
+  const userUsername = customer?.username || (customer?.email ? customer.email.split('@')[0] : 'customer');
+  const userPhone = customer?.phone || 'Not provided';
+  const userGender = customer?.gender || 'Unknown';
+  const userAge = customer?.age ? `${customer.age} yrs` : 'Not specified';
   const points = customer?.points ?? 150;
 
   return (
@@ -163,10 +167,15 @@ export function Profile() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <h2 className="heading-lg" style={{ color: 'var(--text-primary)' }}>{userName}</h2>
                 <span className="badge badge-indigo" style={{ fontSize: '0.75rem' }}>
-                  <Sparkles size={12} /> VIP Member
+                  <Sparkles size={12} /> @{userUsername}
                 </span>
               </div>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '2px' }}>{userEmail}</p>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                {userEmail} • {userPhone}
+              </p>
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                Gender: {userGender} • Age: {userAge}
+              </p>
             </div>
           </div>
 
@@ -184,9 +193,34 @@ export function Profile() {
           </div>
         </div>
 
+        {/* User Profile View Card */}
+        <div style={{
+          marginTop: '20px', padding: '16px 20px', borderRadius: 'var(--radius-md)',
+          background: 'var(--panel-solid)', border: '1px solid var(--panel-border)'
+        }}>
+          <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <User size={16} style={{ color: 'var(--accent-indigo)' }} />
+            User Profile
+          </h4>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', fontSize: '0.84rem' }}>
+            <div>
+              <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Logged-in Email:</span>
+              <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{userEmail}</div>
+            </div>
+            <div>
+              <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Full Name:</span>
+              <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{userName}</div>
+            </div>
+            <div>
+              <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Username:</span>
+              <div style={{ fontWeight: 700, color: 'var(--accent-indigo)' }}>@{userUsername}</div>
+            </div>
+          </div>
+        </div>
+
         {/* Promo Banner inside card */}
         <div style={{
-          marginTop: '20px', padding: '12px 16px', borderRadius: 'var(--radius-md)',
+          marginTop: '16px', padding: '12px 16px', borderRadius: 'var(--radius-md)',
           background: 'linear-gradient(135deg, rgba(79, 70, 229, 0.12) 0%, rgba(59, 130, 246, 0.08) 100%)',
           border: '1px dashed rgba(79, 70, 229, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           flexWrap: 'wrap', gap: '10px'

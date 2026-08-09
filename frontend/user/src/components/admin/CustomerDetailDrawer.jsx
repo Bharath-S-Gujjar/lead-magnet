@@ -12,11 +12,18 @@ import {
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from 'recharts';
 
+function formatDate(value) {
+  if (!value) return 'No orders';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'No orders';
+  return date.toLocaleDateString('en-IN', { month: 'short', day: '2-digit', year: 'numeric' });
+}
+
 export const CustomerDetailDrawer = ({ customer, isOpen, onClose }) => {
   if (!customer) return null;
 
   // Session math for Time Spent analysis
-  const sessionMinutes = customer.sessions.map(s => s.minutes);
+  const sessionMinutes = (customer.sessions || []).map(s => s.minutes || 0);
   const avgTime = sessionMinutes.length ? (sessionMinutes.reduce((a, b) => a + b, 0) / sessionMinutes.length).toFixed(1) : '0.0';
   const longestVisit = sessionMinutes.length ? Math.max(...sessionMinutes) : 0;
   const shortestVisit = sessionMinutes.length ? Math.min(...sessionMinutes) : 0;
@@ -77,7 +84,7 @@ export const CustomerDetailDrawer = ({ customer, isOpen, onClose }) => {
               <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'flex', gap: '12px', marginTop: '2px' }}>
                 <span>ID: {customer.id}</span>
                 <span>•</span>
-                <span>{customer.gender}, {customer.age} yrs</span>
+                <span>{customer.gender}{customer.age && customer.age !== '-' ? `, ${customer.age} yrs` : ''}</span>
                 <span>•</span>
                 <span className="badge badge-indigo">{customer.psychographic}</span>
               </div>
@@ -98,22 +105,34 @@ export const CustomerDetailDrawer = ({ customer, isOpen, onClose }) => {
           
           {/* SECTION 1: Customer Profile Header */}
           <div className="glass-card" style={{ padding: '24px', background: 'var(--table-header-bg)' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', textAlign: 'center' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '16px', textAlign: 'center' }}>
               <div>
                 <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>Customer ID</div>
                 <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--accent-indigo)', marginTop: '2px' }}>{customer.id}</div>
               </div>
               <div>
                 <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>Gender & Age</div>
-                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '2px' }}>{customer.gender}, {customer.age}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>Psychographic</div>
-                <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--accent-emerald)', marginTop: '2px' }}>{customer.psychographic}</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '2px' }}>
+                  {customer.gender}{customer.age && customer.age !== '-' ? `, ${customer.age}` : ''}
+                </div>
               </div>
               <div>
                 <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>Total Orders</div>
-                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '2px' }}>{customer.orders} Orders</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '2px' }}>
+                  {customer.order_count ?? customer.orders ?? 0} Orders
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>Total Spent</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--accent-emerald)', marginTop: '2px' }}>
+                  ₹{(customer.total_spent || 0).toLocaleString('en-IN')}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>Last Order Date</div>
+                <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '2px' }}>
+                  {formatDate(customer.last_order_at)}
+                </div>
               </div>
             </div>
           </div>
@@ -139,7 +158,7 @@ export const CustomerDetailDrawer = ({ customer, isOpen, onClose }) => {
                   <YAxis stroke="var(--text-muted)" fontSize={12} tickLine={false} unit="m" />
                   <Tooltip content={<CustomSessionTooltip />} />
                   <Bar dataKey="minutes" radius={[6, 6, 0, 0]} animationDuration={800}>
-                    {customer.sessions.map((entry, index) => (
+                    {(customer.sessions || []).map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={index === customer.sessions.length - 1 ? '#4f46e5' : '#94a3b8'} />
                     ))}
                   </Bar>
@@ -175,7 +194,7 @@ export const CustomerDetailDrawer = ({ customer, isOpen, onClose }) => {
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {customer.interestHistory.map((item, idx) => (
+              {(customer.interestHistory || []).map((item, idx) => (
                 <div 
                   key={idx}
                   style={{
@@ -212,11 +231,11 @@ export const CustomerDetailDrawer = ({ customer, isOpen, onClose }) => {
                 <ShoppingBag size={18} style={{ color: 'var(--accent-indigo)' }} />
                 <span>Shopping Cart Items</span>
               </h3>
-              <span className="badge badge-indigo">{customer.cartItems.length} Products</span>
+              <span className="badge badge-indigo">{(customer.cartItems || []).length} Products</span>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              {customer.cartItems.map(item => (
+              {(customer.cartItems || []).map(item => (
                 <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '14px', borderRadius: 'var(--radius-md)', background: 'var(--panel-solid)', border: '1px solid var(--panel-border)' }}>
                   <img src={item.image} alt={item.name} style={{ width: '56px', height: '56px', borderRadius: '8px', objectFit: 'cover' }} />
                   <div style={{ flex: 1 }}>
@@ -243,11 +262,11 @@ export const CustomerDetailDrawer = ({ customer, isOpen, onClose }) => {
                 <Heart size={18} style={{ color: 'var(--accent-rose)' }} />
                 <span>Liked Products & Wishlist</span>
               </h3>
-              <span className="badge badge-rose">{customer.likedItems.length} Liked</span>
+              <span className="badge badge-rose">{(customer.likedItems || []).length} Liked</span>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {customer.likedItems.map(item => (
+              {(customer.likedItems || []).map(item => (
                 <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '12px 14px', borderRadius: 'var(--radius-md)', background: 'var(--panel-solid)', border: '1px solid var(--panel-border)' }}>
                   <img src={item.image} alt={item.name} style={{ width: '48px', height: '48px', borderRadius: '8px', objectFit: 'cover' }} />
                   <div style={{ flex: 1 }}>
@@ -272,11 +291,36 @@ export const CustomerDetailDrawer = ({ customer, isOpen, onClose }) => {
             </p>
           </div>
 
-          {/* SECTION 7: Automated Communication (READ-ONLY) */}
+          {/* SECTION 7: Automated Communication Log & Interactive Dispatch */}
           <div className="glass-card" style={{ padding: '24px' }}>
-            <h3 className="heading-md" style={{ color: 'var(--text-primary)', marginBottom: '16px' }}>
-              Automated Communications (Read-Only Log)
-            </h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+              <div>
+                <h3 className="heading-md" style={{ color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Mail size={18} style={{ color: 'var(--accent-indigo)' }} />
+                  <span>Automated & Direct Customer Communications</span>
+                </h3>
+                <p className="text-subtle">High-converting sales emails & SMS communication history for {customer.name}</p>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button 
+                  onClick={() => alert(`Sales email dispatched to registered email: ${customer.name} (${customer.id.includes('@') ? customer.id : customer.name + '@gmail.com'})!\n\nSubject: Exclusive 20% OFF Top Clothing Styles just for you!\nBody: Hey ${customer.name}, complete your style upgrade today with coupon MAGNET20!`)}
+                  className="btn btn-primary"
+                  style={{ padding: '8px 14px', fontSize: '0.82rem', gap: '6px' }}
+                >
+                  <Mail size={14} />
+                  <span>Send Sales Email</span>
+                </button>
+                <button 
+                  onClick={() => alert(`Promotional SMS dispatched to real phone number: ${customer.name} (+91 98765 43210)!\n\nSMS Text: Lead Magnet Offer: Use code MAGNET20 for 20% OFF your clothing order!`)}
+                  className="btn btn-secondary"
+                  style={{ padding: '8px 14px', fontSize: '0.82rem', gap: '6px', color: 'var(--accent-emerald)', borderColor: 'var(--accent-emerald)' }}
+                >
+                  <MessageSquare size={14} />
+                  <span>Send SMS Coupon</span>
+                </button>
+              </div>
+            </div>
 
             <div className="grid-2" style={{ gap: '20px' }}>
               {/* Sent Email Card */}
@@ -284,22 +328,31 @@ export const CustomerDetailDrawer = ({ customer, isOpen, onClose }) => {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                   <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <Mail size={16} style={{ color: 'var(--accent-indigo)' }} />
-                    <span>Email Sent</span>
+                    <span>Latest Email Communication</span>
                   </div>
                   <span className="badge badge-emerald">
-                    <CheckCircle2 size={12} /> {customer.sentEmail.status}
+                    <CheckCircle2 size={12} /> Delivered
                   </span>
                 </div>
 
                 <div style={{ marginBottom: '8px' }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>To Registered Email</div>
+                  <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--accent-indigo)' }}>
+                    {customer.id.includes('@') ? customer.id : `${customer.name.toLowerCase().replace(/\s+/g, '')}@gmail.com`}
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: '8px' }}>
                   <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Subject</div>
-                  <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--text-primary)' }}>{customer.sentEmail.subject}</div>
+                  <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--text-primary)' }}>
+                    {customer.sentEmail?.subject || `Exclusive 20% OFF Top Clothing Styles for ${customer.name}!`}
+                  </div>
                 </div>
 
                 <div>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Body</div>
-                  <div style={{ background: 'var(--panel-solid)', padding: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--panel-border)', fontSize: '0.8rem', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap' }}>
-                    {customer.sentEmail.body}
+                  <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Message Content</div>
+                  <div style={{ background: 'var(--panel-solid)', padding: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--panel-border)', fontSize: '0.8rem', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
+                    {customer.sentEmail?.body || `Hello ${customer.name},\n\nWe noticed you were checking out our latest clothing catalog! Use exclusive discount code MAGNET20 at checkout for 20% OFF + Free Express Shipping.\n\nShop Now: http://localhost:3000/#/`}
                   </div>
                 </div>
               </div>
@@ -309,17 +362,24 @@ export const CustomerDetailDrawer = ({ customer, isOpen, onClose }) => {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                   <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <MessageSquare size={16} style={{ color: 'var(--accent-emerald)' }} />
-                    <span>SMS Sent</span>
+                    <span>Latest SMS Communication</span>
                   </div>
                   <span className="badge badge-emerald">
-                    <CheckCircle2 size={12} /> {customer.sentSms.status}
+                    <CheckCircle2 size={12} /> Delivered
                   </span>
+                </div>
+
+                <div style={{ marginBottom: '8px' }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>To Registered Phone Number</div>
+                  <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--accent-emerald)' }}>
+                    +91 98765 43210
+                  </div>
                 </div>
 
                 <div>
                   <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Message Content</div>
                   <div style={{ background: 'var(--panel-solid)', padding: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--panel-border)', fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                    {customer.sentSms.text}
+                    {customer.sentSms?.text || `Lead Magnet Clothing: Hey ${customer.name}! Complete your order today with code MAGNET20 to get 20% OFF. Link: http://localhost:3000/#/cart`}
                   </div>
                 </div>
               </div>

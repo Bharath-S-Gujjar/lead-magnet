@@ -5,12 +5,16 @@ import { useCart } from '../context/CartContext';
 import { useWishlist } from '../context/WishlistContext';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
+import { getCustomerSession } from '../services/api';
 
 export const Navbar = ({ searchQuery, setSearchQuery, selectedGender, setSelectedGender }) => {
   const { totalItems } = useCart();
   const { totalWishlist } = useWishlist();
   const { theme, toggleTheme } = useTheme();
-  const { customer, admin, logout, adminLogout, isCustomerAuthenticated, isAdminAuthenticated } = useAuth();
+  const { customer: authCustomer, admin, logout, adminLogout, isCustomerAuthenticated, isAdminAuthenticated } = useAuth();
+  const storedCustomer = getCustomerSession();
+  const customer = authCustomer || storedCustomer;
+  const isLoggedIn = Boolean(isCustomerAuthenticated || customer?.email || customer?.token);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -171,41 +175,42 @@ export const Navbar = ({ searchQuery, setSearchQuery, selectedGender, setSelecte
 
         {/* Auth / Profile Area */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', paddingLeft: '8px', borderLeft: '1px solid var(--panel-border)' }}>
-          {isCustomerAuthenticated ? (
+          {isLoggedIn ? (
             <>
               <Link 
-                to="/profile" 
+                to="/account" 
                 style={{
-                  display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 10px',
-                  borderRadius: 'var(--radius-full)', background: 'var(--panel-solid)',
-                  border: '1px solid var(--panel-border)', transition: 'transform 0.15s ease'
+                  display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 14px',
+                  borderRadius: 'var(--radius-full)', background: 'rgba(79, 70, 229, 0.1)',
+                  border: '1px solid var(--accent-indigo)', transition: 'transform 0.15s ease'
                 }}
                 title="View Profile & Settings"
               >
                 <img 
-                  src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(customer.email || customer.fullName || 'customer')}`} 
+                  src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(customer?.email || 'customer')}`} 
                   alt="Customer Avatar" 
-                  style={{ width: '30px', height: '30px', borderRadius: '50%', background: '#e2e8f0', border: '2px solid var(--accent-indigo)' }}
+                  style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#e2e8f0', border: '2px solid var(--accent-indigo)' }}
                 />
                 <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  {customer.fullName ? customer.fullName.split(' ')[0] : 'Account'}
+                  {customer?.full_name ? customer.full_name.split(' ')[0] : customer?.username || 'Account'}
                 </span>
               </Link>
-              <button onClick={handleLogout} className="btn btn-ghost" style={{ padding: '6px', color: 'var(--accent-rose)' }} title="Logout">
-                <LogOut size={18} />
+              <button onClick={handleLogout} className="btn btn-ghost" style={{ padding: '6px 10px', color: 'var(--accent-rose)', fontSize: '0.82rem', gap: '4px' }} title="Logout">
+                <LogOut size={16} />
+                <span>Logout</span>
               </button>
             </>
           ) : (
             <>
-              <Link to="/profile" className="btn btn-ghost" style={{ padding: '7px 10px', fontSize: '0.82rem', gap: '6px' }} title="Account Settings">
+              <Link to="/login" className="btn btn-ghost" style={{ padding: '7px 12px', fontSize: '0.84rem', gap: '6px' }} title="Account Settings">
                 <User size={16} />
                 <span>Account</span>
               </Link>
-              <Link to="/login" className="btn btn-ghost" style={{ padding: '7px 12px', fontSize: '0.82rem', gap: '6px' }}>
+              <Link to="/login" className="btn btn-ghost" style={{ padding: '7px 14px', fontSize: '0.84rem', gap: '6px' }}>
                 <LogIn size={16} />
                 <span>Login</span>
               </Link>
-              <Link to="/signup" className="btn btn-primary" style={{ padding: '7px 14px', fontSize: '0.82rem', borderRadius: 'var(--radius-full)', gap: '6px' }}>
+              <Link to="/signup" className="btn btn-primary" style={{ padding: '7px 16px', fontSize: '0.84rem', borderRadius: 'var(--radius-full)', gap: '6px' }}>
                 <UserPlus size={16} />
                 <span>Register</span>
               </Link>

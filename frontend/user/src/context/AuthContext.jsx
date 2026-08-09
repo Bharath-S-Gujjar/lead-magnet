@@ -4,27 +4,82 @@ import { API_BASE_URL, endCustomerSession, getAdminSession, parseJsonResponse, s
 
 const AuthContext = createContext(null);
 
+export function isSessionExpired(session) {
+  if (!session) return true;
+  if (session.loggedInAt) {
+    const loggedInTime = new Date(session.loggedInAt).getTime();
+    if (!isNaN(loggedInTime)) {
+      return Date.now() >= loggedInTime + 3600 * 1000;
+    }
+  }
+  if (session.expires_at_timestamp && typeof session.expires_at_timestamp === 'number') {
+    return Date.now() >= session.expires_at_timestamp;
+  }
+  return false;
+}
+
 export function AuthProvider({ children }) {
-  const [customer, setCustomer] = useState(() => readStorage(CUSTOMER_SESSION_KEY, null));
-  const [customers, setCustomers] = useState(() => readStorage(CUSTOMER_USERS_KEY, []));
-  const [admin, setAdmin] = useState(() => {
-    const session = getAdminSession();
-    return session?.token && session?.role === 'admin' ? session : null;
+  const [customer, setCustomer] = useState(() => {
+    const session = readStorage(CUSTOMER_SESSION_KEY, null);
+    if (session) {
+      if (isSessionExpired(session)) {
+        removeStorage(CUSTOMER_SESSION_KEY);
+        return null;
+      }
+      return session;
+    }
+    return null;
   });
+
+  const [customers, setCustomers] = useState(() => readStorage(CUSTOMER_USERS_KEY, []));
+
+  const [admin, setAdmin] = useState(() => {
+    const session = readStorage(ADMIN_SESSION_KEY, null);
+    if (session) {
+      if (isSessionExpired(session)) {
+        removeStorage(ADMIN_SESSION_KEY);
+        return null;
+      }
+      return session?.token ? session : null;
+    }
+    return null;
+  });
+
+  const logout = useCallback(() => {
+    endCustomerSession();
+    setCustomer(null);
+    removeStorage(CUSTOMER_SESSION_KEY);
+  }, []);
+
+  const adminLogout = useCallback(() => {
+    setAdmin(null);
+    removeStorage(ADMIN_SESSION_KEY);
+  }, []);
+
+  useEffect(() => {
+    const checkExpiry = () => {
+      if (customer && isSessionExpired(customer)) {
+        logout();
+      }
+      if (admin && isSessionExpired(admin)) {
+        adminLogout();
+      }
+    };
+
+    checkExpiry();
+    const interval = setInterval(checkExpiry, 60000);
+    return () => clearInterval(interval);
+  }, [customer, admin, logout, adminLogout]);
 
   useEffect(() => {
     if (customer) {
       writeStorage(CUSTOMER_SESSION_KEY, customer);
-    } else {
-      removeStorage(CUSTOMER_SESSION_KEY);
     }
   }, [customer]);
 
   useEffect(() => {
-    if (admin?.token && admin?.role === 'admin') {
+    if (admin?.token) {
       writeStorage(ADMIN_SESSION_KEY, admin);
-    } else {
-      removeStorage(ADMIN_SESSION_KEY);
     }
   }, [admin]);
 
@@ -64,18 +119,36 @@ export function AuthProvider({ children }) {
         return { success: false, message: payload.message || 'Invalid Email or Password' };
       }
 
+      const expiresAtTimestamp = payload.data.expires_at_timestamp || (Date.now() + 3600 * 1000);
+      const expiresAt = payload.data.expires_at || new Date(expiresAtTimestamp).toISOString();
+
       const customerSession = {
         email: payload.data.email,
-        role: payload.data.role,
+        role: payload.data.role || 'user',
         token: payload.data.token,
         user_id: payload.data.user_id,
+        expires_at: expiresAt,
+        expires_at_timestamp: expiresAtTimestamp,
+        full_name: payload.data.full_name,
+        username: payload.data.username,
+        phone: payload.data.phone,
+        gender: payload.data.gender,
+        age: payload.data.age,
+        dob: payload.data.dob,
+        loggedInAt: new Date().toISOString(),
       };
-      const sessionData = await startCustomerSession(customerSession);
-      customerSession.session_id = sessionData.session_id;
-      customerSession.visitor_id = sessionData.visitor_id;
-      customerSession.anonymous_id = sessionData.anonymous_id;
+
+      try {
+        const sessionData = await startCustomerSession(customerSession);
+        customerSession.session_id = sessionData.session_id;
+        customerSession.visitor_id = sessionData.visitor_id;
+        customerSession.anonymous_id = sessionData.anonymous_id;
+      } catch (err) {
+        // Non-blocking session tracking fallback
+      }
 
       setCustomer(customerSession);
+      writeStorage(CUSTOMER_SESSION_KEY, customerSession);
       saveCustomerSession(customerSession);
       return { success: true, message: 'Signed in successfully.', user: customerSession };
     } catch (error) {
@@ -85,7 +158,7 @@ export function AuthProvider({ children }) {
 
   const adminLogin = useCallback(async (name, password) => {
     if (!name || !password) {
-      return { success: false, message: 'Please enter administrator name and password.' };
+      return { success: false, message: 'Please enter administrator username and password.' };
     }
 
     try {
@@ -103,30 +176,24 @@ export function AuthProvider({ children }) {
         return { success: false, message: payload.message || 'Invalid Administrator Credentials' };
       }
 
+      const expiresAtTimestamp = payload.data.expires_at_timestamp || (Date.now() + 3600 * 1000);
+      const expiresAt = payload.data.expires_at || new Date(expiresAtTimestamp).toISOString();
+
       const adminSession = {
         token: payload.data.token,
-        role: payload.data.role,
+        role: payload.data.role || 'admin',
         username: name.trim(),
+        expires_at: expiresAt,
+        expires_at_timestamp: expiresAtTimestamp,
         loggedInAt: new Date().toISOString()
       };
 
       setAdmin(adminSession);
-      localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(adminSession));
+      writeStorage(ADMIN_SESSION_KEY, adminSession);
       return { success: true, message: 'Administrator access granted.', admin: adminSession };
     } catch (error) {
       return { success: false, message: 'Unable to connect to admin login service.' };
     }
-  }, []);
-
-  const logout = useCallback(() => {
-    endCustomerSession();
-    setCustomer(null);
-    removeStorage(CUSTOMER_SESSION_KEY);
-  }, []);
-
-  const adminLogout = useCallback(() => {
-    setAdmin(null);
-    removeStorage(ADMIN_SESSION_KEY);
   }, []);
 
   const updateProfile = useCallback((updatedFields) => {
@@ -140,7 +207,6 @@ export function AuthProvider({ children }) {
     setCustomer(updatedUser);
     writeStorage(CUSTOMER_SESSION_KEY, updatedUser);
 
-    // Update in customers array list as well
     const rawList = customers && customers.length > 0 ? customers : readStorage(CUSTOMER_USERS_KEY, []);
     const currentList = Array.isArray(rawList) ? rawList : [];
     const nextCustomers = currentList.map((c) => (c && (c.id === customer.id || c.email === customer.email)) ? updatedUser : c);
@@ -150,19 +216,23 @@ export function AuthProvider({ children }) {
     return { success: true, message: 'Profile updated successfully!', user: updatedUser };
   }, [customer, customers]);
 
+  const isCustomerAuth = Boolean(customer && (customer.token || customer.email) && !isSessionExpired(customer));
+  const isAdminAuth = Boolean(admin && admin.token && !isSessionExpired(admin));
+
   const value = useMemo(() => ({
-    customer,
+    customer: isCustomerAuth ? customer : null,
     customers: Array.isArray(customers) ? customers : [],
-    admin,
-    isCustomerAuthenticated: Boolean(customer),
-    isAdminAuthenticated: Boolean(admin?.token && admin?.role === 'admin'),
+    admin: isAdminAuth ? admin : null,
+    isCustomerAuthenticated: isCustomerAuth,
+    isAuthenticated: isCustomerAuth,
+    isAdminAuthenticated: isAdminAuth,
     signup,
     login,
     adminLogin,
     logout,
     adminLogout,
     updateProfile,
-  }), [admin, adminLogin, adminLogout, customer, customers, login, logout, signup, updateProfile]);
+  }), [admin, adminLogin, adminLogout, customer, customers, isCustomerAuth, isAdminAuth, login, logout, signup, updateProfile]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

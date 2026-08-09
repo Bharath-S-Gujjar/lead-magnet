@@ -3,16 +3,19 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Package, CheckCircle, ShoppingBag, ArrowLeft } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
-import { fetchCustomerOrders } from '../services/api';
+import { fetchCustomerOrders, getCustomerSession, trackCustomerEvent } from '../services/api';
 
 export const Orders = () => {
   const navigate = useNavigate();
   const { addToCart } = useCart();
-  const { customer } = useAuth();
+  const { customer: authCustomer } = useAuth();
+  const customer = authCustomer || getCustomerSession();
   const [orders, setOrders] = useState([]);
 
   useEffect(() => {
-    fetchCustomerOrders(customer?.email)
+    trackCustomerEvent('page_view', { page: '/orders' });
+    const email = customer?.email || getCustomerSession()?.email;
+    fetchCustomerOrders(email)
       .then(setOrders)
       .catch(() => setOrders([]));
   }, [customer?.email]);

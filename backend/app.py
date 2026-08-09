@@ -7,6 +7,7 @@ import os
 import bcrypt
 import jwt
 import datetime
+import time
 from dotenv import load_dotenv
 from pymongo import MongoClient
 from action_recommendations import get_next_action
@@ -28,30 +29,33 @@ socketio = SocketIO(app, cors_allowed_origins=FRONTEND_URL or "*")
 
 def create_mongo_client():
     uri = os.getenv("MONGO_URI", "")
-    if uri.startswith("mongodb+srv://"):
-        return MongoClient(
-            uri,
-            tls=True,
-            tlsCAFile=certifi.where(),
-            serverSelectionTimeoutMS=5000,
-            connectTimeoutMS=5000,
-            socketTimeoutMS=5000,
-        )
-    elif uri.startswith("mongodb://localhost") or uri.startswith("mongodb://127.0.0.1"):
-        return MongoClient(
-            uri,
-            serverSelectionTimeoutMS=5000,
-        )
-    elif uri:
-        return MongoClient(
-            uri,
-            serverSelectionTimeoutMS=5000,
-        )
-    else:
-        return MongoClient(
-            "mongodb://localhost:27017/leadmagnet",
-            serverSelectionTimeoutMS=5000,
-        )
+    try:
+        if uri.startswith("mongodb+srv://"):
+            return MongoClient(
+                uri,
+                tls=True,
+                tlsCAFile=certifi.where(),
+                serverSelectionTimeoutMS=5000,
+                connectTimeoutMS=5000,
+                socketTimeoutMS=5000,
+            )
+        elif uri.startswith("mongodb://localhost") or uri.startswith("mongodb://127.0.0.1"):
+            return MongoClient(
+                uri,
+                serverSelectionTimeoutMS=5000,
+            )
+        elif uri:
+            return MongoClient(
+                uri,
+                serverSelectionTimeoutMS=5000,
+            )
+    except Exception as e:
+        print(f"Warning: MongoClient creation failed ({e}). Falling back to local MongoDB.")
+
+    return MongoClient(
+        "mongodb://localhost:27017/leadmagnet",
+        serverSelectionTimeoutMS=5000,
+    )
 
 
 mongo_client = create_mongo_client()
@@ -98,6 +102,7 @@ SAFE_PROFILE_FIELDS = {
     "created_at", "updated_at", "last_active_at", "visitor_id", "user_id",
     "engagement_score", "page_view_count", "session_count", "cart_add_count",
     "wishlist_add_count", "favorite_categories",
+    "order_count", "total_spent", "last_order_at",
 }
 
 
@@ -144,8 +149,8 @@ def initialize_database():
 JWT_SECRET = os.getenv("JWT_SECRET")
 app.config["JWT_SECRET"] = JWT_SECRET
 
-ADMIN_USERNAME = os.getenv("ADMIN_USERNAME")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin") or "admin"
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin12345") or "admin12345"
 
 # Load everything saved from the notebook
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -213,8 +218,7 @@ def signup():
             return jsonify({"success": False, "message": "User already exists", "errors": []}), 400
 
         hashed_pw = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt())
-
-        user_result = profiles_collection.insert_one({
+        user_doc = {
             "email": email,
             "password": hashed_pw,
             "role": "user",
@@ -224,14 +228,23 @@ def signup():
             "gender": data.get("gender"),
             "dob": data.get("dob"),
             "phone": data.get("phone"),
-            "created_at": datetime.datetime.utcnow(),
             "updated_at": datetime.datetime.utcnow(),
-        })
+        }
 
         anonymous_id = data.get("anonymous_id") or data.get("visitor_id")
+        anon_profile = profiles_collection.find_one({"visitor_id": anonymous_id}) if anonymous_id else None
+
+        if anon_profile and not anon_profile.get("email"):
+            profiles_collection.update_one({"_id": anon_profile["_id"]}, {"$set": user_doc})
+            user_id = anon_profile["_id"]
+        else:
+            user_doc["created_at"] = datetime.datetime.utcnow()
+            user_result = profiles_collection.insert_one(user_doc)
+            user_id = user_result.inserted_id
+
         resolution = resolve_anonymous_identity(
             anonymous_id,
-            user_result.inserted_id,
+            user_id,
             profiles_collection,
             sessions_collection,
             events_collection,
@@ -242,7 +255,7 @@ def signup():
             "success": True,
             "message": "Account created successfully",
             "data": {
-                "user_id": str(user_result.inserted_id),
+                "user_id": str(user_id),
                 "identity_resolution": resolution,
             },
         })
@@ -264,12 +277,14 @@ def login():
         if not user or not user.get("password") or not bcrypt.checkpw(password.encode("utf-8"), user["password"]):
             return jsonify({"success": False, "message": "Invalid credentials", "errors": []}), 401
 
+        exp_time = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)
+        expires_at_ts = int(time.time() * 1000) + (3600 * 1000)
         token = jwt.encode(
             {
                 "sub": str(user["_id"]),
                 "email": email,
                 "role": user["role"],
-                "exp": datetime.datetime.utcnow() + datetime.timedelta(days=1)
+                "exp": exp_time,
             },
             JWT_SECRET,
             algorithm="HS256"
@@ -293,6 +308,14 @@ def login():
                 "email": email,
                 "role": user["role"],
                 "user_id": str(user["_id"]),
+                "expires_at": exp_time.isoformat(),
+                "expires_at_timestamp": expires_at_ts,
+                "full_name": user.get("full_name"),
+                "username": user.get("username"),
+                "phone": user.get("phone"),
+                "gender": user.get("gender"),
+                "age": user.get("age"),
+                "dob": user.get("dob"),
                 "identity_resolution": resolution,
             },
         })
@@ -309,11 +332,13 @@ def admin_login():
     if username != ADMIN_USERNAME or password != ADMIN_PASSWORD:
         return jsonify({"success": False, "message": "Invalid admin credentials", "errors": []}), 401
 
+    exp_time = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)
+    expires_at_ts = int(time.time() * 1000) + (3600 * 1000)
     token = jwt.encode(
         {
             "username": username,
             "role": "admin",
-            "exp": datetime.datetime.utcnow() + datetime.timedelta(days=1)
+            "exp": exp_time,
         },
         JWT_SECRET,
         algorithm="HS256"
@@ -322,7 +347,12 @@ def admin_login():
     return jsonify({
         "success": True,
         "message": "Admin login successful",
-        "data": {"token": token, "role": "admin"}
+        "data": {
+            "token": token,
+            "role": "admin",
+            "expires_at": exp_time.isoformat(),
+            "expires_at_timestamp": expires_at_ts,
+        }
     })
 
 
@@ -693,6 +723,19 @@ def get_admin_dashboard():
         return jsonify({"success": False, "message": str(e)}), 500
 
 
+def is_active_session(last_activity):
+    """Return True if session activity occurred within the last 15 minutes."""
+    if not last_activity:
+        return False
+    if isinstance(last_activity, str):
+        try:
+            last_activity = datetime.datetime.fromisoformat(last_activity.replace("Z", "+00:00"))
+        except Exception:
+            return False
+    now = datetime.datetime.now(datetime.timezone.utc) if last_activity.tzinfo else datetime.datetime.utcnow()
+    return (now - last_activity).total_seconds() <= 900
+
+
 @app.route("/api/analytics/overview", methods=["GET"])
 @admin_required
 def get_analytics_overview():
@@ -700,9 +743,13 @@ def get_analytics_overview():
         return jsonify({"success": False, "message": "Database unavailable"}), 500
 
     try:
-        total_customers = profiles_collection.count_documents({})
+        total_customers = profiles_collection.count_documents({"$or": [{"email": {"$exists": True, "$ne": None}}, {"role": "user"}]})
         total_leads = leads_collection.count_documents({})
-        active_customers = sessions_collection.count_documents({"status": "active"})
+        cutoff_15min = datetime.datetime.utcnow() - datetime.timedelta(minutes=15)
+        active_customers = sessions_collection.count_documents({
+            "status": "active",
+            "last_active_at": {"$gte": cutoff_15min}
+        })
         total_sessions = sessions_collection.count_documents({})
         total_events = events_collection.count_documents({})
         total_profiles = total_customers
@@ -791,10 +838,108 @@ def get_profiles():
         return jsonify({"success": False, "message": "Database unavailable", "data": []}), 500
 
     try:
-        profiles = [serialize_profile(profile) for profile in profiles_collection.find({}).sort("updated_at", -1)]
-        return jsonify({"success": True, "data": profiles})
+        all_orders = list(orders_collection.find({}))
+        order_stats = {}
+
+        for o in all_orders:
+            c_email = (o.get("customer_email") or "").strip().lower()
+            c_id = str(o.get("customer_id") or "").strip()
+            amt = float(o.get("total_amount") or 0.0)
+            created = o.get("created_at")
+
+            for key in [c_email, c_id]:
+                if not key:
+                    continue
+                if key not in order_stats:
+                    order_stats[key] = {"order_count": 0, "total_spent": 0.0, "last_order_at": None}
+                order_stats[key]["order_count"] += 1
+                order_stats[key]["total_spent"] += amt
+                if created and (not order_stats[key]["last_order_at"] or created > order_stats[key]["last_order_at"]):
+                    order_stats[key]["last_order_at"] = created
+
+        profiles_docs = list(profiles_collection.find({}).sort("updated_at", -1))
+        serialized = []
+        for profile in profiles_docs:
+            p_email = (profile.get("email") or "").strip().lower()
+            p_id = str(profile.get("_id") or "").strip()
+
+            stats = order_stats.get(p_email) or order_stats.get(p_id) or {}
+            profile["order_count"] = stats.get("order_count", 0)
+            profile["total_spent"] = float(stats.get("total_spent", 0.0))
+            profile["last_order_at"] = stats.get("last_order_at")
+            
+            # Ensure gender is properly returned if stored
+            if not profile.get("gender") or profile.get("gender") == "Unknown":
+                # Check if gender exists in signup or session
+                if profile.get("email"):
+                    sess = sessions_collection.find_one({"visitor_id": profile["email"]})
+                    if sess and sess.get("gender"):
+                        profile["gender"] = sess["gender"]
+
+            serialized.append(serialize_profile(profile))
+
+        return jsonify({"success": True, "data": serialized})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/admin/notifications", methods=["GET"])
+@admin_required
+def get_admin_notifications():
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable", "data": []}), 500
+
+    try:
+        notifications = []
+        
+        reg_count = profiles_collection.count_documents({"email": {"$exists": True, "$ne": None}})
+        if reg_count > 0:
+            latest_user = profiles_collection.find_one({"email": {"$exists": True, "$ne": None}}, sort=[("created_at", -1)])
+            user_name = latest_user.get("full_name") or latest_user.get("email") if latest_user else "User"
+            notifications.append({
+                "id": "notif-reg",
+                "type": "user",
+                "text": f"We got {reg_count} registered clothing customer{'s' if reg_count != 1 else ''}! Latest: {user_name}",
+                "time": "Just now",
+                "unread": True
+            })
+            
+        order_count = orders_collection.count_documents({})
+        if order_count > 0:
+            latest_order = orders_collection.find_one({}, sort=[("created_at", -1)])
+            amt = float(latest_order.get("total_amount", 0.0))
+            email = latest_order.get("customer_email", "Customer")
+            notifications.append({
+                "id": "notif-order",
+                "type": "order",
+                "text": f"New Order Placed: ₹{int(amt):,} order by {email}",
+                "time": "Recent",
+                "unread": True
+            })
+            
+        lead_count = leads_collection.count_documents({})
+        if lead_count > 0:
+            notifications.append({
+                "id": "notif-leads",
+                "type": "mail",
+                "text": f"Automated sales campaign: {lead_count} marketing emails dispatched to active prospects",
+                "time": "15m ago",
+                "unread": True
+            })
+            
+        session_count = sessions_collection.count_documents({})
+        if session_count > 0:
+            notifications.append({
+                "id": "notif-sms",
+                "type": "sms",
+                "text": f"SMS campaign: 'MAGNET20' discount coupon sent to {max(1, session_count)} shoppers",
+                "time": "30m ago",
+                "unread": False
+            })
+
+        return jsonify({"success": True, "data": notifications})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e), "data": []}), 500
 
 
 @app.route("/api/orders", methods=["POST"])

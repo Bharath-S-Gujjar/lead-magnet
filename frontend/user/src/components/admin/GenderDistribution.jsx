@@ -1,38 +1,91 @@
 import React, { useState } from 'react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
-import { Check } from 'lucide-react';
+import { Check, Users } from 'lucide-react';
 
-const COLORS = ['#ec4899', '#3b82f6', '#f59e0b', '#10b981', '#8b5cf6'];
+const DEMO_BRACKETS = [
+  'Male 18–24',
+  'Male 25–34',
+  'Male 35+',
+  'Female 18–24',
+  'Female 25–34',
+  'Female 35+',
+  'Other/Unknown',
+];
 
-export const GenderDistribution = ({ eventAnalytics, overview }) => {
+const DEMO_COLORS = [
+  '#3b82f6', // Male 18-24 (blue)
+  '#2563eb', // Male 25-34 (darker blue)
+  '#1d4ed8', // Male 35+ (deep blue)
+  '#ec4899', // Female 18-24 (pink)
+  '#db2777', // Female 25-34 (darker pink)
+  '#be185d', // Female 35+ (deep pink)
+  '#94a3b8', // Other/Unknown (slate)
+];
+
+export const GenderDistribution = ({ eventAnalytics, overview, customers = [] }) => {
   const [hoveredCategory, setHoveredCategory] = useState(null);
-  const categoryCounts = eventAnalytics?.category_counts || [];
-  const totalCustomers = overview?.total_customers || overview?.total_profiles || 0;
+
+  // Group real user_profiles by age + gender from MongoDB
+  const counts = {
+    'Male 18–24': 0,
+    'Male 25–34': 0,
+    'Male 35+': 0,
+    'Female 18–24': 0,
+    'Female 25–34': 0,
+    'Female 35+': 0,
+    'Other/Unknown': 0,
+  };
+
+  customers.forEach((c) => {
+    const rawGender = String(c.gender || '').trim().toLowerCase();
+    const age = parseInt(c.age, 10);
+    const gender = rawGender === 'male' ? 'Male' : rawGender === 'female' ? 'Female' : null;
+
+    if (!gender || isNaN(age)) {
+      counts['Other/Unknown'] += 1;
+    } else if (gender === 'Male') {
+      if (age >= 18 && age <= 24) counts['Male 18–24'] += 1;
+      else if (age >= 25 && age <= 34) counts['Male 25–34'] += 1;
+      else if (age >= 35) counts['Male 35+'] += 1;
+      else counts['Other/Unknown'] += 1;
+    } else if (gender === 'Female') {
+      if (age >= 18 && age <= 24) counts['Female 18–24'] += 1;
+      else if (age >= 25 && age <= 34) counts['Female 25–34'] += 1;
+      else if (age >= 35) counts['Female 35+'] += 1;
+      else counts['Other/Unknown'] += 1;
+    }
+  });
+
+  const totalProfileCount = Object.values(counts).reduce((a, b) => a + b, 0);
+
+  const chartData = DEMO_BRACKETS.map((bracket, index) => {
+    const val = counts[bracket] || 0;
+    const pctNumber = totalProfileCount > 0 ? (val / totalProfileCount) * 100 : 0;
+    return {
+      name: bracket,
+      value: val,
+      pct: `${pctNumber.toFixed(1)}%`,
+      color: DEMO_COLORS[index],
+    };
+  });
+
+  const totalCustomers = overview?.total_customers || customers.length || 0;
   const totalLeads = overview?.total_leads || 0;
-  const totalCategoryEvents = categoryCounts.reduce((sum, item) => sum + item.count, 0);
-  const chartData = (categoryCounts.length ? categoryCounts : [{ category: 'Uncategorized', count: totalCustomers || 0 }]).map((item, index) => ({
-    name: item.category || 'Uncategorized',
-    value: item.count,
-    pct: totalCategoryEvents > 0 ? `${((item.count / totalCategoryEvents) * 100).toFixed(1)}%` : '0%',
-    color: COLORS[index % COLORS.length],
-  }));
 
   const demographics = chartData.map((item) => ({
     name: item.name,
-    leads: item.value,
-    totalLeads,
+    customerCount: item.value,
     pct: item.pct,
     color: item.color,
     totalCustomers,
-    conversion: totalCustomers > 0 ? `${((item.value / totalCustomers) * 100).toFixed(1)}%` : '0%',
   }));
 
   return (
     <div className="glass-card" style={{ padding: '24px 28px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <div>
-          <h3 className="heading-lg" style={{ color: 'var(--text-primary)' }}>Customer Distribution (Demographic Split)</h3>
-          <p className="text-subtle">Real customer interest distribution from tracked clothing events</p>
+          <h3 className="heading-lg" style={{ color: 'var(--text-primary)' }}>Customer Demographic Distribution</h3>
+          <p className="text-subtle">Real customer age & gender breakdown from MongoDB user profiles</p>
         </div>
       </div>
 
@@ -63,7 +116,7 @@ export const GenderDistribution = ({ eventAnalytics, overview }) => {
                   boxShadow: 'var(--panel-shadow)',
                   fontSize: '0.85rem'
                 }}
-                formatter={(value, name) => [`${value.toLocaleString()} Events (${chartData.find(c => c.name === name)?.pct})`, name]}
+                formatter={(value, name) => [`${value} Customers (${chartData.find(c => c.name === name)?.pct})`, name]}
               />
             </PieChart>
           </ResponsiveContainer>
@@ -82,27 +135,24 @@ export const GenderDistribution = ({ eventAnalytics, overview }) => {
           }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: '2px', lineHeight: 1 }}>
               <span style={{ fontFamily: 'var(--font-heading)', fontSize: '1.9rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
-                {totalLeads.toLocaleString('en-IN')}
-              </span>
-              <span style={{ fontFamily: 'var(--font-heading)', fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-muted)' }}>
-                /{totalCustomers.toLocaleString('en-IN')}
+                {totalCustomers.toLocaleString('en-IN')}
               </span>
             </div>
             <div style={{
               fontSize: '0.75rem',
               fontWeight: 700,
-              color: 'var(--accent-emerald)',
+              color: 'var(--accent-indigo)',
               display: 'flex',
               alignItems: 'center',
               gap: '4px',
               marginTop: '4px'
             }}>
-              <Check size={13} strokeWidth={3} /> Qualified Leads
+              <Users size={13} strokeWidth={3} /> Registered Shoppers
             </div>
           </div>
         </div>
 
-        <div style={{ width: '440px', maxWidth: '100%', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div style={{ width: '440px', maxWidth: '100%', display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {demographics.map((demo) => {
             const isHovered = hoveredCategory === demo.name;
             return (
@@ -114,24 +164,24 @@ export const GenderDistribution = ({ eventAnalytics, overview }) => {
                   background: isHovered ? 'rgba(79, 70, 229, 0.04)' : 'var(--table-header-bg)',
                   border: isHovered ? '1px solid var(--accent-indigo)' : '1px solid var(--panel-border)',
                   borderRadius: 'var(--radius-md)',
-                  padding: '12px 16px',
+                  padding: '10px 14px',
                   transition: 'all 0.2s ease',
                   cursor: 'pointer'
                 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: demo.color }} />
-                    <span style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-primary)' }}>{demo.name}</span>
+                    <span style={{ fontWeight: 700, fontSize: '0.86rem', color: 'var(--text-primary)' }}>{demo.name}</span>
                   </div>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                    {demo.leads} Events <span style={{ color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.78rem' }}>({demo.pct})</span>
+                  <div style={{ fontSize: '0.84rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                    {demo.customerCount} Customers <span style={{ color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.76rem' }}>({demo.pct})</span>
                   </div>
                 </div>
 
                 <div style={{
                   width: '100%',
-                  height: '7px',
+                  height: '6px',
                   background: 'rgba(148, 163, 184, 0.16)',
                   borderRadius: 'var(--radius-full)',
                   overflow: 'hidden'
@@ -144,26 +194,6 @@ export const GenderDistribution = ({ eventAnalytics, overview }) => {
                     transition: 'width 0.8s cubic-bezier(0.16, 1, 0.3, 1)'
                   }} />
                 </div>
-
-                {isHovered && (
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '16px',
-                    marginTop: '10px',
-                    paddingTop: '8px',
-                    borderTop: '1px dashed var(--panel-border)',
-                    fontSize: '0.78rem',
-                    color: 'var(--text-secondary)',
-                    animation: 'fadeIn 0.2s ease'
-                  }}>
-                    <span><strong>Total Customers:</strong> {demo.totalCustomers.toLocaleString()}</span>
-                    <span>-</span>
-                    <span><strong>Total Leads:</strong> {demo.totalLeads.toLocaleString()}</span>
-                    <span>-</span>
-                    <span><strong>Event Share:</strong> <strong style={{ color: 'var(--accent-emerald)' }}>{demo.conversion}</strong></span>
-                  </div>
-                )}
               </div>
             );
           })}

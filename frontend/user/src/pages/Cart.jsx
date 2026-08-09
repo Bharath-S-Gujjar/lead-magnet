@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Trash2, ShoppingBag, ArrowLeft, ShieldCheck, Tag, Check } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
-import { createOrder, getCustomerSession } from '../services/api';
+import { createOrder, getCustomerSession, trackCustomerEvent } from '../services/api';
 import confetti from 'canvas-confetti';
 
 export const Cart = () => {
@@ -18,13 +18,18 @@ export const Cart = () => {
     deliveryFee, 
     totalPrice 
   } = useCart();
-  const { customer } = useAuth();
+  const { customer: authCustomer } = useAuth();
+  const customer = authCustomer || getCustomerSession();
   
   const navigate = useNavigate();
   const [couponCode, setCouponCode] = useState('');
   const [couponApplied, setCouponApplied] = useState(false);
   const [orderPlaced, setOrderPlaced] = useState(false);
   const [checkoutError, setCheckoutError] = useState('');
+
+  useEffect(() => {
+    trackCustomerEvent('page_view', { page: '/cart' });
+  }, []);
 
   const handleApplyCoupon = (e) => {
     e.preventDefault();

@@ -23,7 +23,7 @@ export const CustomerTable = ({
   // 2. Auto-Sort Rows in Descending Order based on metric
   const sorted = [...filtered].sort((a, b) => {
     if (sortOption === 'time-spent') return b.timeSpentMinutes - a.timeSpentMinutes;
-    if (sortOption === 'orders') return b.orders - a.orders;
+    if (sortOption === 'orders') return (b.order_count ?? b.orders ?? 0) - (a.order_count ?? a.orders ?? 0);
     if (sortOption === 'cart-items') return b.cartItemsCount - a.cartItemsCount;
     if (sortOption === 'likes') return b.likedItemsCount - a.likedItemsCount;
     if (sortOption === 'psychographic') return a.psychographic.localeCompare(b.psychographic);
@@ -124,7 +124,7 @@ export const CustomerTable = ({
         </div>
       ) : (
         /* Dynamic Table Container */
-        <div style={{ overflowX: 'auto' }}>
+        <div style={{ overflowX: 'auto', maxHeight: '480px', overflowY: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '0 8px', textAlign: 'left', fontSize: '0.9rem' }}>
             <thead>
               <tr style={{ background: 'var(--table-header-bg)', color: 'var(--text-secondary)' }}>
@@ -179,21 +179,21 @@ export const CustomerTable = ({
                       />
                       <div>
                         <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.95rem' }}>{cust.name}</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{cust.gender}, {cust.age} yrs</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{cust.gender || 'Unknown'}{cust.age && cust.age !== '-' ? `, ${cust.age} yrs` : ''}</div>
                       </div>
                     </div>
                   </td>
 
                   {/* Column 2: Gender */}
                   <td style={{ padding: '18px 16px', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                    {cust.gender}
+                    {cust.gender || 'Unknown'}
                   </td>
 
                   {/* Render All Columns OR Selected Metric Column */}
                   {isDefaultView ? (
                     <>
                       <td style={{ padding: '18px 16px', textAlign: 'center', fontWeight: 800, color: 'var(--text-primary)', fontSize: '1rem' }}>
-                        {cust.orders}
+                        {cust.order_count ?? cust.orders ?? 0}
                       </td>
 
                       <td style={{ padding: '18px 16px', textAlign: 'center', fontWeight: 700, color: 'var(--accent-indigo)' }}>
@@ -234,7 +234,7 @@ export const CustomerTable = ({
                       )}
                       {sortOption === 'orders' && (
                         <div style={{ fontWeight: 800, color: 'var(--text-primary)', fontSize: '1.05rem' }}>
-                          {cust.orders} Orders
+                          {cust.order_count ?? cust.orders ?? 0} Orders
                         </div>
                       )}
                       {sortOption === 'cart-items' && (

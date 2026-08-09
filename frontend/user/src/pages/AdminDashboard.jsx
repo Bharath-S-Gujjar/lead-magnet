@@ -6,6 +6,7 @@ import { LeadAnalyticsSummary } from '../components/admin/LeadAnalyticsSummary';
 import { GenderDistribution } from '../components/admin/GenderDistribution';
 import { CustomerTable } from '../components/admin/CustomerTable';
 import { CustomerDetailDrawer } from '../components/admin/CustomerDetailDrawer';
+import { LeadsTable } from '../components/admin/LeadsTable';
 import { ShoppingBag, Clock, User, Package } from 'lucide-react';
 import {
   fetchAnalyticsEvents,
@@ -14,6 +15,7 @@ import {
   fetchProfiles,
   fetchSessions,
   fetchAllOrders,
+  fetchAdminNotifications,
 } from '../services/api';
 import '../styles/admin.css';
 
@@ -73,9 +75,12 @@ function buildCustomers(profiles, sessions, leads) {
       id: String(visitorId),
       name: String(profile.full_name || profile.email || profile.user_id || visitorId),
       avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(String(visitorId))}`,
-      gender: profile.gender || 'Unknown',
-      age: profile.age || '-',
-      orders: 0,
+      gender: profile.gender || '',
+      age: profile.age != null ? profile.age : '-',
+      orders: profile.order_count ?? 0,
+      order_count: profile.order_count ?? 0,
+      total_spent: profile.total_spent ?? 0,
+      last_order_at: profile.last_order_at || null,
       cartItemsCount: profile.cart_add_count || 0,
       likedItemsCount: profile.wishlist_add_count || 0,
       timeSpent: `${totalMinutes} mins`,
@@ -197,7 +202,7 @@ function RecentOrders({ orders }) {
         </span>
       </div>
 
-      <div style={{ overflowX: 'auto' }}>
+      <div style={{ overflowX: 'auto', maxHeight: '440px', overflowY: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '0 8px', fontSize: '0.875rem' }}>
           <thead>
             <tr style={{ background: 'var(--table-header-bg)', color: 'var(--text-secondary)' }}>
@@ -262,7 +267,9 @@ export function AdminDashboard() {
   const [overview, setOverview] = useState(null);
   const [eventAnalytics, setEventAnalytics] = useState(null);
   const [customers, setCustomers] = useState([]);
+  const [rawLeads, setRawLeads] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [notifications, setNotifications] = useState([]);
   const [loadError, setLoadError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
@@ -276,48 +283,66 @@ export function AdminDashboard() {
     let isMounted = true;
     setIsLoading(true);
 
-    Promise.all([
-      fetchAnalyticsOverview(),
-      fetchAnalyticsEvents(),
-      fetchLeads(),
-      fetchSessions(),
-      fetchProfiles(),
-      fetchAllOrders(),
-    ])
-      .then(([overviewResponse, eventResponse, leadsResponse, sessionsResponse, profilesResponse, ordersResponse]) => {
-        if (!isMounted) return;
-        const overviewData = overviewResponse.data;
-        const eventData = eventResponse.data;
-        const leads = leadsResponse.data;
-        const sessions = sessionsResponse.data;
-        const profiles = profilesResponse.data;
-        const allOrders = ordersResponse.data;
-        console.log('ADMIN OVERVIEW', overviewData);
-        setOverview(overviewData);
-        setEventAnalytics(eventData);
-        setCustomers(buildCustomers(profiles || [], sessions || [], leads || []));
-        setOrders(allOrders || []);
-        setLoadError('');
-      })
-      .catch((error) => {
-        if (!isMounted) return;
-        setLoadError(error.message);
-        setCustomers([]);
-        setOrders([]);
-      })
-      .finally(() => {
-        if (isMounted) setIsLoading(false);
-      });
+    const loadAll = () => {
+      Promise.all([
+        fetchAnalyticsOverview(),
+        fetchAnalyticsEvents(),
+        fetchLeads(),
+        fetchSessions(),
+        fetchProfiles(),
+        fetchAllOrders(),
+        fetchAdminNotifications(),
+      ])
+        .then(([overviewResponse, eventResponse, leadsResponse, sessionsResponse, profilesResponse, ordersResponse, notifData]) => {
+          if (!isMounted) return;
+          const overviewData = overviewResponse.data;
+          const eventData = eventResponse.data;
+          const leads = leadsResponse.data;
+          const sessions = sessionsResponse.data;
+          const profiles = profilesResponse.data;
+          const allOrders = ordersResponse.data;
+          setOverview(overviewData);
+          setEventAnalytics(eventData);
+          setCustomers(buildCustomers(profiles || [], sessions || [], leads || []));
+          setRawLeads(leads || []);
+          setOrders(allOrders || []);
+          setNotifications(notifData || []);
+          setLoadError('');
+        })
+        .catch((error) => {
+          if (!isMounted) return;
+          setLoadError(error.message);
+          setCustomers([]);
+          setOrders([]);
+        })
+        .finally(() => {
+          if (isMounted) setIsLoading(false);
+        });
+    };
+
+    loadAll();
+
+    // 15-second live refresh polling for analytics overview
+    const interval = setInterval(() => {
+      fetchAnalyticsOverview()
+        .then((res) => {
+          if (isMounted && res?.data) {
+            setOverview(res.data);
+          }
+        })
+        .catch(() => {});
+    }, 15000);
 
     return () => {
       isMounted = false;
+      clearInterval(interval);
     };
   }, [isAdminAuthenticated]);
 
   const dashboardKpis = useMemo(() => ({
     totalCustomers: overview?.total_customers || 0,
     totalLeads: overview?.total_leads || 0,
-    activeToday: overview?.active_customers_today || overview?.active_sessions || 0,
+    activeToday: overview?.active_customers_today ?? overview?.active_customers ?? overview?.active_sessions ?? 0,
     totalSessions: overview?.total_sessions || 0,
     totalEvents: overview?.total_events || 0,
   }), [overview]);
@@ -340,6 +365,7 @@ export function AdminDashboard() {
       <AdminTopbar
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
+        notifications={notifications}
       />
 
       <main className="content-body">
@@ -349,7 +375,7 @@ export function AdminDashboard() {
           <>
             <LeadAnalyticsSummary kpis={dashboardKpis} />
 
-            <GenderDistribution eventAnalytics={eventAnalytics} overview={overview} />
+            <GenderDistribution eventAnalytics={eventAnalytics} overview={overview} customers={customers} />
 
             {loadError ? (
               <div className="glass-card" style={{ padding: '18px 24px', color: 'var(--accent-rose)', marginBottom: '20px' }}>
@@ -366,6 +392,11 @@ export function AdminDashboard() {
               setSortOption={setSortOption}
               searchQuery={searchQuery}
               onClearSearch={handleClearSearch}
+            />
+
+            <LeadsTable
+              leads={rawLeads}
+              onSelectLead={handleSelectCustomer}
             />
           </>
         )}

@@ -7,7 +7,8 @@ function Login() {
   const navigate = useNavigate();
   const location = useLocation();
   const { adminLogin, login } = useAuth();
-  const isAdminMode = new URLSearchParams(location.search).get('mode') === 'admin';
+  const searchString = location.search || (window.location.hash.includes('?') ? window.location.hash.split('?')[1] : '');
+  const isAdminMode = new URLSearchParams(searchString).get('mode') === 'admin';
   
   const [customerForm, setCustomerForm] = useState({ identifier: '', password: '' });
   const [error, setError] = useState('');
@@ -100,7 +101,7 @@ function Login() {
         </form>
 
         <div className="auth-links">
-          <Link to="/signup">Don't have an account? Register here</Link>
+          {!isAdminMode && <Link to="/signup">Don't have an account? Register here</Link>}
           <Link to="/">Back to Store</Link>
         </div>
       </div>

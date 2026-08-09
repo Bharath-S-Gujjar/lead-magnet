@@ -16,11 +16,26 @@ import Login from './pages/Login';
 import Signup from './pages/Signup';
 import AdminDashboard from './pages/AdminDashboard';
 import { Profile } from './pages/Profile';
+import { Account } from './pages/Account';
+
+import { getAdminSession, getCustomerSession } from './services/api';
 
 function ProtectedAdminRoute({ children }) {
-  const { isAdminAuthenticated } = useAuth();
-  if (!isAdminAuthenticated) {
+  const { isAdminAuthenticated, admin } = useAuth();
+  const storedAdmin = getAdminSession();
+  const hasToken = Boolean(isAdminAuthenticated || admin?.token || storedAdmin?.token);
+  if (!hasToken) {
     return <Navigate to="/login?mode=admin" replace />;
+  }
+  return children;
+}
+
+function ProtectedCustomerRoute({ children }) {
+  const { isCustomerAuthenticated, isAuthenticated, customer } = useAuth();
+  const storedCustomer = getCustomerSession();
+  const hasToken = Boolean(isCustomerAuthenticated || isAuthenticated || customer?.token || customer?.email || storedCustomer?.token || storedCustomer?.email);
+  if (!hasToken) {
+    return <Navigate to="/login" replace />;
   }
   return children;
 }
@@ -79,9 +94,30 @@ export function App() {
                       <Route path="/product/:id" element={<ProductDetails />} />
                       <Route path="/cart" element={<Cart />} />
                       <Route path="/wishlist" element={<Wishlist />} />
-                      <Route path="/orders" element={<Orders />} />
-                      <Route path="/profile" element={<Profile />} />
-                      <Route path="/account" element={<Profile />} />
+                      <Route 
+                        path="/orders" 
+                        element={
+                          <ProtectedCustomerRoute>
+                            <Orders />
+                          </ProtectedCustomerRoute>
+                        } 
+                      />
+                      <Route 
+                        path="/profile" 
+                        element={
+                          <ProtectedCustomerRoute>
+                            <Profile />
+                          </ProtectedCustomerRoute>
+                        } 
+                      />
+                      <Route 
+                        path="/account" 
+                        element={
+                          <ProtectedCustomerRoute>
+                            <Account />
+                          </ProtectedCustomerRoute>
+                        } 
+                      />
                     </Routes>
                   </main>
                 </div>
