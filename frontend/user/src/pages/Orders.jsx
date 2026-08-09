@@ -1,14 +1,21 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Package, CheckCircle, ShoppingBag, ArrowLeft } from 'lucide-react';
 import { useCart } from '../context/CartContext';
+import { useAuth } from '../context/AuthContext';
+import { fetchCustomerOrders } from '../services/api';
 
 export const Orders = () => {
   const navigate = useNavigate();
   const { addToCart } = useCart();
+  const { customer } = useAuth();
+  const [orders, setOrders] = useState([]);
 
-  // Orders state - empty when no orders placed yet
-  const orders = [];
+  useEffect(() => {
+    fetchCustomerOrders(customer?.email)
+      .then(setOrders)
+      .catch(() => setOrders([]));
+  }, [customer?.email]);
 
   const handleBuyAgain = (product) => {
     if (product) {
@@ -40,62 +47,67 @@ export const Orders = () => {
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-        {orders.map(order => (
-          <div key={order.id} className="glass-card" style={{ padding: '24px', display: 'flex', alignItems: 'center', gap: '24px' }}>
-            {order.product?.image && (
-              <img 
-                src={order.product.image} 
-                alt={order.product.name || 'Order Item'} 
-                style={{ width: '90px', height: '110px', borderRadius: 'var(--radius-md)', objectFit: 'cover' }}
-              />
-            )}
+        {orders.map(order => {
+          const firstItem = order.items?.[0];
+          const totalQuantity = order.items?.reduce((sum, item) => sum + (item.quantity || 1), 0) || 1;
 
-            <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginBottom: '6px' }}>
-                <span className="badge badge-indigo">
-                  {order.id}
+          return (
+            <div key={order._id} className="glass-card" style={{ padding: '24px', display: 'flex', alignItems: 'center', gap: '24px' }}>
+              {firstItem?.image && (
+                <img 
+                  src={firstItem.image} 
+                  alt={firstItem.name || 'Order Item'} 
+                  style={{ width: '90px', height: '110px', borderRadius: 'var(--radius-md)', objectFit: 'cover' }}
+                />
+              )}
+
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginBottom: '6px' }}>
+                  <span className="badge badge-indigo">
+                    {order._id}
+                  </span>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                    Ordered on {new Date(order.created_at).toLocaleDateString('en-IN')}
+                  </span>
+                </div>
+
+                <h4 style={{ fontWeight: 700, fontSize: '1.05rem', color: 'var(--text-primary)', marginBottom: '4px' }}>
+                  {firstItem?.name || 'Clothing Item'}
+                </h4>
+                <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                  Brand: <strong>{firstItem?.brand || 'Lead Magnet'}</strong> • Qty: {totalQuantity}
                 </span>
-                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                  Ordered on {order.date}
-                </span>
               </div>
 
-              <h4 style={{ fontWeight: 700, fontSize: '1.05rem', color: 'var(--text-primary)', marginBottom: '4px' }}>
-                {order.product?.name || order.title || 'Clothing Item'}
-              </h4>
-              <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-                Brand: <strong>{order.product?.brand || 'Lead Magnet'}</strong> • Qty: {order.quantity || 1}
-              </span>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  fontSize: '0.82rem',
+                  fontWeight: 700,
+                  color: '#10b981',
+                  marginBottom: '8px'
+                }}>
+                  <CheckCircle size={15} /> {order.status || 'placed'}
+                </div>
+                <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '1.2rem', color: 'var(--text-primary)' }}>
+                  ₹{(order.total_amount || 0).toLocaleString('en-IN')}
+                </div>
+              </div>
+
+              {firstItem && (
+                <button 
+                  onClick={() => handleBuyAgain({ ...firstItem, id: firstItem.product_id })}
+                  className="btn btn-primary"
+                  style={{ padding: '10px 18px', fontSize: '0.85rem' }}
+                >
+                  <ShoppingBag size={16} /> Buy Again
+                </button>
+              )}
             </div>
-
-            <div style={{ textAlign: 'right' }}>
-              <div style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                fontSize: '0.82rem',
-                fontWeight: 700,
-                color: order.statusColor || '#10b981',
-                marginBottom: '8px'
-              }}>
-                <CheckCircle size={15} /> {order.status || 'Delivered'}
-              </div>
-              <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '1.2rem', color: 'var(--text-primary)' }}>
-                ₹{(order.total || 0).toLocaleString('en-IN')}
-              </div>
-            </div>
-
-            {order.product && (
-              <button 
-                onClick={() => handleBuyAgain(order.product)}
-                className="btn btn-primary"
-                style={{ padding: '10px 18px', fontSize: '0.85rem' }}
-              >
-                <ShoppingBag size={16} /> Buy Again
-              </button>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

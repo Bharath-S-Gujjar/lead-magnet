@@ -1,10 +1,29 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Heart, ShoppingBag, Star, Truck, ShieldCheck, RefreshCw, ArrowLeft, Check } from 'lucide-react';
 import { CLOTHING_PRODUCTS } from '../data/clothingProducts';
 import { useCart } from '../context/CartContext';
 import { useWishlist } from '../context/WishlistContext';
 import { useTracking } from '../hooks/useTracking';
+import { API_BASE_URL, parseJsonResponse, trackCustomerEvent } from '../services/api';
+
+function normalizeProduct(product) {
+  return {
+    ...product,
+    id: product._id || product.id,
+    image: product.image || product.images?.[0] || 'https://via.placeholder.com/600x800?text=Clothing',
+    images: product.images || [product.image || 'https://via.placeholder.com/600x800?text=Clothing'],
+    rating: product.rating || 4.3,
+    discount: product.discount || 0,
+    sizes: product.sizes || ['M', 'L', 'XL'],
+    colors: product.colors || ['Standard'],
+    fabric: product.fabric || 'Cotton Blend',
+    material: product.material || 'Premium Fabric',
+    fit: product.fit || 'Regular Fit',
+    washInstructions: product.washInstructions || 'Machine wash',
+    price: Number(product.price || 0),
+  };
+}
 
 export const ProductDetails = () => {
   const { id } = useParams();
@@ -12,22 +31,56 @@ export const ProductDetails = () => {
   const { addToCart } = useCart();
   const { toggleWishlist, isInWishlist } = useWishlist();
 
-  const product = CLOTHING_PRODUCTS.find(p => p.id === id) || CLOTHING_PRODUCTS[0];
+  const [product, setProduct] = useState(() => CLOTHING_PRODUCTS.find(p => p.id === id) || null);
+
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/api/products/${id}`)
+      .then((response) => parseJsonResponse(response))
+      .then((payload) => {
+        if (payload.success && payload.data) {
+          setProduct(normalizeProduct(payload.data));
+        }
+      })
+      .catch(() => {
+        setProduct(CLOTHING_PRODUCTS.find(p => p.id === id) || CLOTHING_PRODUCTS[0]);
+      });
+  }, [id]);
+
+  useEffect(() => {
+    if (product) {
+      trackCustomerEvent('product_view', {
+        page: `/product/${product.id}`,
+        entity: {
+          type: 'product',
+          id: product.id,
+          name: product.name,
+          category: product.category,
+          brand: product.brand,
+          price: product.price,
+        },
+      });
+    }
+  }, [product]);
 
   // Silent Background Customer Telemetry Tracking
   useTracking(product);
 
-  const [selectedImage, setSelectedImage] = useState(product.image);
-  const [selectedSize, setSelectedSize] = useState(product.sizes ? product.sizes[0] : 'M');
-  const [selectedColor, setSelectedColor] = useState(product.colors ? product.colors[0] : 'Standard');
+  const [selectedImage, setSelectedImage] = useState(product?.image);
+  const [selectedSize, setSelectedSize] = useState(product?.sizes ? product.sizes[0] : 'M');
+  const [selectedColor, setSelectedColor] = useState(product?.colors ? product.colors[0] : 'Standard');
   const [quantity, setQuantity] = useState(1);
 
-  React.useEffect(() => {
+  useEffect(() => {
+    if (!product) return;
     setSelectedImage(product.image);
     setSelectedColor(product.colors ? product.colors[0] : 'Standard');
     setSelectedSize(product.sizes ? product.sizes[0] : 'M');
     setQuantity(1);
-  }, [product.id]);
+  }, [product]);
+
+  if (!product) {
+    return null;
+  }
 
   const handleColorSelect = (col) => {
     setSelectedColor(col);

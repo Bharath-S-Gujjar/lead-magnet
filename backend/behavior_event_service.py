@@ -27,6 +27,7 @@ SUPPORTED_EVENT_TYPES = {
     "wishlist_remove": ("commerce", "remove"),
     "checkout_start": ("commerce", "start"),
     "purchase": ("commerce", "purchase"),
+    "order_placed": ("commerce", "purchase"),
     "recommendation_view": ("recommendation", "view"),
     "recommendation_click": ("recommendation", "click"),
     "banner_view": ("engagement", "view"),

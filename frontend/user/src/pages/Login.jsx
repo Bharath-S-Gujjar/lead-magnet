@@ -6,7 +6,8 @@ import '../styles/auth.css';
 function Login() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login } = useAuth();
+  const { adminLogin, login } = useAuth();
+  const isAdminMode = new URLSearchParams(location.search).get('mode') === 'admin';
   
   const [customerForm, setCustomerForm] = useState({ identifier: '', password: '' });
   const [error, setError] = useState('');
@@ -26,17 +27,27 @@ function Login() {
     [customerForm.identifier, customerForm.password]
   );
 
-  const handleCustomerSubmit = (event) => {
+  const handleCustomerSubmit = async (event) => {
     event.preventDefault();
     setError('');
     setSuccessNotice('');
 
     if (!isCustomerValid) {
-      setError('Please enter your email/username and password.');
+      setError(isAdminMode ? 'Please enter administrator name and password.' : 'Please enter your email/username and password.');
       return;
     }
 
-    const result = login(customerForm.identifier, customerForm.password);
+    if (isAdminMode) {
+      const result = await adminLogin(customerForm.identifier, customerForm.password);
+      if (!result.success) {
+        setError(result.message);
+        return;
+      }
+      navigate('/admin');
+      return;
+    }
+
+    const result = await login(customerForm.identifier, customerForm.password);
     if (!result.success) {
       setError(result.message);
       return;
@@ -49,18 +60,18 @@ function Login() {
       <div className="auth-card glass-panel">
         <div className="auth-card-header">
           <p className="eyebrow">Lead Magnet Store</p>
-          <h2>User Login</h2>
-          <p>Welcome back! Sign in to your account to continue shopping.</p>
+          <h2>{isAdminMode ? 'Admin Login' : 'User Login'}</h2>
+          <p>{isAdminMode ? 'Sign in with administrator credentials to access the dashboard.' : 'Welcome back! Sign in to your account to continue shopping.'}</p>
         </div>
 
         {successNotice ? <div className="success-text" style={{ marginBottom: '14px' }}>{successNotice}</div> : null}
 
         <form className="auth-form" onSubmit={handleCustomerSubmit} noValidate>
           <label>
-            Email Address, Username or Phone
+            {isAdminMode ? 'Administrator Username' : 'Email Address, Username or Phone'}
             <input 
               type="text" 
-              placeholder="e.g. rahul@gmail.com or rahul"
+              placeholder={isAdminMode ? 'e.g. admin' : 'e.g. rahul@gmail.com or rahul'}
               value={customerForm.identifier} 
               onChange={(e) => {
                 setError('');
@@ -84,7 +95,7 @@ function Login() {
           </label>
           {error ? <div className="error-text">{error}</div> : null}
           <button className="btn" type="submit" disabled={!isCustomerValid}>
-            Sign In
+            {isAdminMode ? 'Admin Sign In' : 'Sign In'}
           </button>
         </form>
 

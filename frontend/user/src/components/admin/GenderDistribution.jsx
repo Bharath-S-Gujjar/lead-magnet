@@ -1,59 +1,47 @@
 import React, { useState } from 'react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
-import { CLOTHING_GENDER_CHART } from '../../data/mockData';
 import { Check } from 'lucide-react';
 
-export const GenderDistribution = () => {
-  const [hoveredCategory, setHoveredCategory] = useState(null);
+const COLORS = ['#ec4899', '#3b82f6', '#f59e0b', '#10b981', '#8b5cf6'];
 
-  const demographics = [
-    { 
-      name: "Women", 
-      leads: 470, 
-      totalLeads: 985, 
-      pct: "47.7%", 
-      color: "#ec4899", 
-      totalCustomers: 1200, 
-      conversion: "39.1%" 
-    },
-    { 
-      name: "Men", 
-      leads: 420, 
-      totalLeads: 985, 
-      pct: "42.6%", 
-      color: "#3b82f6", 
-      totalCustomers: 1000, 
-      conversion: "42.0%" 
-    },
-    { 
-      name: "Kids", 
-      leads: 95, 
-      totalLeads: 985, 
-      pct: "9.7%", 
-      color: "#f59e0b", 
-      totalCustomers: 300, 
-      conversion: "31.6%" 
-    },
-  ];
+export const GenderDistribution = ({ eventAnalytics, overview }) => {
+  const [hoveredCategory, setHoveredCategory] = useState(null);
+  const categoryCounts = eventAnalytics?.category_counts || [];
+  const totalCustomers = overview?.total_customers || overview?.total_profiles || 0;
+  const totalLeads = overview?.total_leads || 0;
+  const totalCategoryEvents = categoryCounts.reduce((sum, item) => sum + item.count, 0);
+  const chartData = (categoryCounts.length ? categoryCounts : [{ category: 'Uncategorized', count: totalCustomers || 0 }]).map((item, index) => ({
+    name: item.category || 'Uncategorized',
+    value: item.count,
+    pct: totalCategoryEvents > 0 ? `${((item.count / totalCategoryEvents) * 100).toFixed(1)}%` : '0%',
+    color: COLORS[index % COLORS.length],
+  }));
+
+  const demographics = chartData.map((item) => ({
+    name: item.name,
+    leads: item.value,
+    totalLeads,
+    pct: item.pct,
+    color: item.color,
+    totalCustomers,
+    conversion: totalCustomers > 0 ? `${((item.value / totalCustomers) * 100).toFixed(1)}%` : '0%',
+  }));
 
   return (
     <div className="glass-card" style={{ padding: '24px 28px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <div>
           <h3 className="heading-lg" style={{ color: 'var(--text-primary)' }}>Customer Distribution (Demographic Split)</h3>
-          <p className="text-subtle">Demographic division of 985 qualified leads out of 2,500 clothing shoppers</p>
+          <p className="text-subtle">Real customer interest distribution from tracked clothing events</p>
         </div>
       </div>
 
-      {/* Main Container: Compact Layout */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', flexWrap: 'wrap', gap: '48px' }}>
-        
-        {/* Left Side: LeetCode-Style Doughnut Chart */}
         <div style={{ width: '220px', height: '220px', position: 'relative', flexShrink: 0 }}>
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
-                data={CLOTHING_GENDER_CHART}
+                data={chartData}
                 cx="50%"
                 cy="50%"
                 innerRadius={62}
@@ -63,7 +51,7 @@ export const GenderDistribution = () => {
                 animationDuration={1000}
                 stroke="none"
               >
-                {CLOTHING_GENDER_CHART.map((entry, index) => (
+                {chartData.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={entry.color} />
                 ))}
               </Pie>
@@ -75,12 +63,11 @@ export const GenderDistribution = () => {
                   boxShadow: 'var(--panel-shadow)',
                   fontSize: '0.85rem'
                 }}
-                formatter={(value, name) => [`${value.toLocaleString()} Customers (${CLOTHING_GENDER_CHART.find(c => c.name === name)?.pct})`, name]}
+                formatter={(value, name) => [`${value.toLocaleString()} Events (${chartData.find(c => c.name === name)?.pct})`, name]}
               />
             </PieChart>
           </ResponsiveContainer>
 
-          {/* Center Display: 985 / 2500 */}
           <div style={{
             position: 'absolute',
             top: '50%',
@@ -95,10 +82,10 @@ export const GenderDistribution = () => {
           }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: '2px', lineHeight: 1 }}>
               <span style={{ fontFamily: 'var(--font-heading)', fontSize: '1.9rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
-                985
+                {totalLeads.toLocaleString('en-IN')}
               </span>
               <span style={{ fontFamily: 'var(--font-heading)', fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-muted)' }}>
-                /2500
+                /{totalCustomers.toLocaleString('en-IN')}
               </span>
             </div>
             <div style={{
@@ -115,7 +102,6 @@ export const GenderDistribution = () => {
           </div>
         </div>
 
-        {/* Right Side: Compact LeetCode Progress Cards */}
         <div style={{ width: '440px', maxWidth: '100%', display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {demographics.map((demo) => {
             const isHovered = hoveredCategory === demo.name;
@@ -133,18 +119,16 @@ export const GenderDistribution = () => {
                   cursor: 'pointer'
                 }}
               >
-                {/* Header Row: Category Name & Ratio (Leads / Total Leads) */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: demo.color }} />
                     <span style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-primary)' }}>{demo.name}</span>
                   </div>
                   <div style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                    {demo.leads} / {demo.totalLeads} Leads <span style={{ color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.78rem' }}>({demo.pct})</span>
+                    {demo.leads} Events <span style={{ color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.78rem' }}>({demo.pct})</span>
                   </div>
                 </div>
 
-                {/* LeetCode Progress Bar */}
                 <div style={{
                   width: '100%',
                   height: '7px',
@@ -161,7 +145,6 @@ export const GenderDistribution = () => {
                   }} />
                 </div>
 
-                {/* Detailed Hover Reveal Row */}
                 {isHovered && (
                   <div style={{
                     display: 'flex',
@@ -175,10 +158,10 @@ export const GenderDistribution = () => {
                     animation: 'fadeIn 0.2s ease'
                   }}>
                     <span><strong>Total Customers:</strong> {demo.totalCustomers.toLocaleString()}</span>
-                    <span>•</span>
-                    <span><strong>Total Leads:</strong> {demo.leads}</span>
-                    <span>•</span>
-                    <span><strong>Conversion:</strong> <strong style={{ color: 'var(--accent-emerald)' }}>{demo.conversion}</strong></span>
+                    <span>-</span>
+                    <span><strong>Total Leads:</strong> {demo.totalLeads.toLocaleString()}</span>
+                    <span>-</span>
+                    <span><strong>Event Share:</strong> <strong style={{ color: 'var(--accent-emerald)' }}>{demo.conversion}</strong></span>
                   </div>
                 )}
               </div>

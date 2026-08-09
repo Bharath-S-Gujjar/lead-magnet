@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { trackCustomerEvent } from '../services/api';
 
 const WishlistContext = createContext();
 
@@ -16,8 +17,14 @@ export const WishlistProvider = ({ children }) => {
     setWishlist(prev => {
       const exists = prev.some(item => item.id === product.id);
       if (exists) {
+        trackCustomerEvent('wishlist_remove', {
+          entity: { type: 'product', id: product.id, name: product.name, category: product.category, brand: product.brand },
+        });
         return prev.filter(item => item.id !== product.id);
       } else {
+        trackCustomerEvent('wishlist_add', {
+          entity: { type: 'product', id: product.id, name: product.name, category: product.category, brand: product.brand },
+        });
         return [...prev, { ...product, dateLiked: 'Just now' }];
       }
     });

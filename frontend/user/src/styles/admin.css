@@ -210,3 +210,9 @@
 @media (max-width: 640px) {
   .grid-4 { grid-template-columns: 1fr; }
 }
+
+@keyframes skeletonPulse {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+

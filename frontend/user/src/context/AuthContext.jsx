@@ -1,13 +1,16 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { adminCredentials } from '../data/adminCredentials';
 import { ADMIN_SESSION_KEY, CUSTOMER_SESSION_KEY, CUSTOMER_USERS_KEY, readStorage, removeStorage, writeStorage } from '../utils/auth';
+import { API_BASE_URL, endCustomerSession, getAdminSession, parseJsonResponse, saveCustomerSession, startCustomerSession } from '../services/api';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [customer, setCustomer] = useState(() => readStorage(CUSTOMER_SESSION_KEY, null));
   const [customers, setCustomers] = useState(() => readStorage(CUSTOMER_USERS_KEY, []));
-  const [admin, setAdmin] = useState(() => readStorage(ADMIN_SESSION_KEY, null));
+  const [admin, setAdmin] = useState(() => {
+    const session = getAdminSession();
+    return session?.token && session?.role === 'admin' ? session : null;
+  });
 
   useEffect(() => {
     if (customer) {
@@ -18,7 +21,7 @@ export function AuthProvider({ children }) {
   }, [customer]);
 
   useEffect(() => {
-    if (admin) {
+    if (admin?.token && admin?.role === 'admin') {
       writeStorage(ADMIN_SESSION_KEY, admin);
     } else {
       removeStorage(ADMIN_SESSION_KEY);
@@ -26,82 +29,97 @@ export function AuthProvider({ children }) {
   }, [admin]);
 
   const signup = useCallback((profile) => {
-    const normalizedEmail = (profile.email || '').trim().toLowerCase();
-    const rawUsername = profile.username || profile.fullName || '';
-    const username = rawUsername.trim().toLowerCase().replace(/\s+/g, '');
-    const phone = (profile.phone || '').trim();
+    return fetch(`${API_BASE_URL}/api/auth/signup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(profile),
+    })
+      .then((response) => parseJsonResponse(response).then((payload) => ({ response, payload })))
+      .then(({ response, payload }) => {
+        if (!response.ok || !payload.success) {
+          return { success: false, message: payload.message || 'Unable to create account.' };
+        }
+        return { success: true, message: payload.message, user: payload.data };
+      })
+      .catch(() => ({ success: false, message: 'Unable to connect to signup service.' }));
+  }, []);
 
-    // Check if user already exists in current state or fresh storage
-    const currentList = customers.length > 0 ? customers : readStorage(CUSTOMER_USERS_KEY, []);
-    const existingUser = currentList.some((entry) => {
-      const sameEmail = entry.email && entry.email.toLowerCase() === normalizedEmail;
-      const sameUser = entry.username && entry.username.toLowerCase() === username;
-      const samePhone = phone && entry.phone && entry.phone === phone;
-      return sameEmail || sameUser || samePhone;
-    });
-
-    if (existingUser) {
-      return { success: false, message: 'An account with this email, username, or phone number already exists.' };
-    }
-
-    const nextUser = {
-      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `usr-${Date.now()}`,
-      ...profile,
-      username,
-      email: normalizedEmail,
-      createdAt: new Date().toISOString(),
-    };
-
-    const nextCustomers = [nextUser, ...currentList];
-    setCustomers(nextCustomers);
-    writeStorage(CUSTOMER_USERS_KEY, nextCustomers);
-    return { success: true, message: 'Account created successfully.', user: nextUser };
-  }, [customers]);
-
-  const login = useCallback((identifier, password) => {
+  const login = useCallback(async (identifier, password) => {
     if (!identifier || !password) {
       return { success: false, message: 'Please enter both credentials.' };
     }
 
-    const normalizedIdentifier = identifier.trim().toLowerCase();
-    const currentList = customers.length > 0 ? customers : readStorage(CUSTOMER_USERS_KEY, []);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: identifier.trim(),
+          password,
+        }),
+      });
+      const payload = await parseJsonResponse(response);
 
-    const matchingUser = currentList.find((entry) => {
-      const sameEmail = entry.email?.toLowerCase() === normalizedIdentifier;
-      const sameUsername = (entry.username || '').toLowerCase() === normalizedIdentifier;
-      const sameFullName = (entry.fullName || '').toLowerCase() === normalizedIdentifier;
-      const samePhone = (entry.phone || '').toLowerCase() === normalizedIdentifier;
-      return (sameEmail || sameUsername || sameFullName || samePhone) && entry.password === password;
-    });
+      if (!response.ok || !payload.success) {
+        return { success: false, message: payload.message || 'Invalid Email or Password' };
+      }
 
-    if (!matchingUser) {
-      return { success: false, message: 'Invalid Email or Password' };
+      const customerSession = {
+        email: payload.data.email,
+        role: payload.data.role,
+        token: payload.data.token,
+        user_id: payload.data.user_id,
+      };
+      const sessionData = await startCustomerSession(customerSession);
+      customerSession.session_id = sessionData.session_id;
+      customerSession.visitor_id = sessionData.visitor_id;
+      customerSession.anonymous_id = sessionData.anonymous_id;
+
+      setCustomer(customerSession);
+      saveCustomerSession(customerSession);
+      return { success: true, message: 'Signed in successfully.', user: customerSession };
+    } catch (error) {
+      return { success: false, message: 'Unable to connect to login service.' };
     }
+  }, []);
 
-    setCustomer(matchingUser);
-    writeStorage(CUSTOMER_SESSION_KEY, matchingUser);
-    return { success: true, message: 'Signed in successfully.', user: matchingUser };
-  }, [customers]);
-
-  const adminLogin = useCallback((name, password) => {
+  const adminLogin = useCallback(async (name, password) => {
     if (!name || !password) {
       return { success: false, message: 'Please enter administrator name and password.' };
     }
 
-    const match = adminCredentials.find(
-      (entry) => entry.name.toLowerCase() === name.trim().toLowerCase() && entry.password === password
-    );
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/auth/admin/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: name.trim(),
+          password,
+        }),
+      });
+      const payload = await parseJsonResponse(response);
 
-    if (!match) {
-      return { success: false, message: 'Invalid Administrator Credentials' };
+      if (!response.ok || !payload.success) {
+        return { success: false, message: payload.message || 'Invalid Administrator Credentials' };
+      }
+
+      const adminSession = {
+        token: payload.data.token,
+        role: payload.data.role,
+        username: name.trim(),
+        loggedInAt: new Date().toISOString()
+      };
+
+      setAdmin(adminSession);
+      localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(adminSession));
+      return { success: true, message: 'Administrator access granted.', admin: adminSession };
+    } catch (error) {
+      return { success: false, message: 'Unable to connect to admin login service.' };
     }
-
-    setAdmin(match);
-    writeStorage(ADMIN_SESSION_KEY, match);
-    return { success: true, message: 'Administrator access granted.', admin: match };
   }, []);
 
   const logout = useCallback(() => {
+    endCustomerSession();
     setCustomer(null);
     removeStorage(CUSTOMER_SESSION_KEY);
   }, []);
@@ -137,7 +155,7 @@ export function AuthProvider({ children }) {
     customers: Array.isArray(customers) ? customers : [],
     admin,
     isCustomerAuthenticated: Boolean(customer),
-    isAdminAuthenticated: Boolean(admin),
+    isAdminAuthenticated: Boolean(admin?.token && admin?.role === 'admin'),
     signup,
     login,
     adminLogin,

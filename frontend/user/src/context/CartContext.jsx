@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import confetti from 'canvas-confetti';
+import { trackCustomerEvent } from '../services/api';
 
 const CartContext = createContext();
 
@@ -29,6 +30,18 @@ export const CartProvider = ({ children }) => {
       } else {
         return [...prev, { ...product, selectedSize: size, selectedColor: color, quantity }];
       }
+    });
+
+    trackCustomerEvent('add_to_cart', {
+      entity: {
+        type: 'product',
+        id: product.id,
+        name: product.name,
+        category: product.category,
+        brand: product.brand,
+        price: product.price,
+      },
+      metadata: { quantity, size, color },
     });
 
     confetti({

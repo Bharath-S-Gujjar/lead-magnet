@@ -55,7 +55,7 @@ export const CustomerTable = ({
             </h3>
             {isFocusedMode && (
               <span className="badge badge-emerald">
-                1 Search Result
+                {filtered.length} Search Result{filtered.length === 1 ? '' : 's'}
               </span>
             )}
           </div>

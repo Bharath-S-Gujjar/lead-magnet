@@ -1,18 +1,56 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { HeroBanner } from '../components/HeroBanner';
 import { CategorySection } from '../components/CategorySection';
 import { ProductGrid } from '../components/ProductGrid';
 import { FilterPanel } from '../components/FilterPanel';
 import { CLOTHING_PRODUCTS } from '../data/clothingProducts';
+import { API_BASE_URL, parseJsonResponse, trackCustomerEvent } from '../services/api';
+
+function normalizeProduct(product) {
+  return {
+    ...product,
+    id: product._id || product.id,
+    image: product.image || product.images?.[0] || 'https://via.placeholder.com/600x800?text=Clothing',
+    rating: product.rating || 4.3,
+    discount: product.discount || 0,
+    gender: product.gender || 'Unisex',
+    category: product.category || 'Clothing',
+    brand: product.brand || 'Lead Magnet',
+    price: Number(product.price || 0),
+  };
+}
 
 export const UserDashboard = ({ searchQuery, selectedGender, setSelectedGender }) => {
+  const [products, setProducts] = useState(CLOTHING_PRODUCTS);
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedBrand, setSelectedBrand] = useState('all');
   const [maxPrice, setMaxPrice] = useState(10000);
   const [minRating, setMinRating] = useState(0);
 
+  useEffect(() => {
+    trackCustomerEvent('page_view', { page: '/' });
+    fetch(`${API_BASE_URL}/api/products`)
+      .then((response) => parseJsonResponse(response))
+      .then((payload) => {
+        if (payload.success && Array.isArray(payload.data)) {
+          setProducts(payload.data.map(normalizeProduct));
+        }
+      })
+      .catch(() => {
+        setProducts(CLOTHING_PRODUCTS);
+      });
+  }, []);
+
+  useEffect(() => {
+    if (searchQuery && searchQuery.trim()) {
+      trackCustomerEvent('search', {
+        metadata: { query: searchQuery.trim() },
+      });
+    }
+  }, [searchQuery]);
+
   const filteredProducts = useMemo(() => {
-    return CLOTHING_PRODUCTS.filter(product => {
+    return products.filter(product => {
       // 1. Gender Filter
       if (selectedGender && selectedGender !== 'all') {
         if (product.gender.toLowerCase() !== selectedGender.toLowerCase()) return false;
@@ -46,12 +84,12 @@ export const UserDashboard = ({ searchQuery, selectedGender, setSelectedGender }
 
       return true;
     });
-  }, [selectedGender, selectedCategory, selectedBrand, maxPrice, minRating, searchQuery]);
+  }, [products, selectedGender, selectedCategory, selectedBrand, maxPrice, minRating, searchQuery]);
 
   React.useEffect(() => {
     // Reset selected category to 'all' if current category is not available for new gender selection
     if (selectedGender && selectedGender !== 'all' && selectedCategory !== 'all') {
-      const isValid = CLOTHING_PRODUCTS.some(p => 
+      const isValid = products.some(p => 
         p.gender.toLowerCase() === selectedGender.toLowerCase() && 
         p.category.toLowerCase() === selectedCategory.toLowerCase()
       );
@@ -59,7 +97,7 @@ export const UserDashboard = ({ searchQuery, selectedGender, setSelectedGender }
         setSelectedCategory('all');
       }
     }
-  }, [selectedGender]);
+  }, [products, selectedGender]);
 
   const handleResetFilters = () => {
     setSelectedGender && setSelectedGender('all');

@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Trash2, ShoppingBag, ArrowLeft, ShieldCheck, Tag, Check } from 'lucide-react';
 import { useCart } from '../context/CartContext';
+import { useAuth } from '../context/AuthContext';
+import { createOrder, getCustomerSession } from '../services/api';
 import confetti from 'canvas-confetti';
 
 export const Cart = () => {
@@ -16,11 +18,13 @@ export const Cart = () => {
     deliveryFee, 
     totalPrice 
   } = useCart();
+  const { customer } = useAuth();
   
   const navigate = useNavigate();
   const [couponCode, setCouponCode] = useState('');
   const [couponApplied, setCouponApplied] = useState(false);
   const [orderPlaced, setOrderPlaced] = useState(false);
+  const [checkoutError, setCheckoutError] = useState('');
 
   const handleApplyCoupon = (e) => {
     e.preventDefault();
@@ -29,16 +33,49 @@ export const Cart = () => {
     }
   };
 
-  const handleCheckout = () => {
+  const handleCheckout = async () => {
+    setCheckoutError('');
+    if (!customer?.email) {
+      setCheckoutError('Please log in before placing an order.');
+      navigate('/login');
+      return;
+    }
+
+    const payableTotal = Math.round(couponApplied ? totalPrice * 0.9 : totalPrice);
+    const customerSession = getCustomerSession();
+
+    try {
+      await createOrder({
+        customer_id: customer.user_id,
+        customer_email: customer.email,
+        session_id: customerSession?.session_id,
+        items: cart.map((item) => ({
+          product_id: item.id,
+          name: item.name,
+          brand: item.brand,
+          category: item.category,
+          gender: item.gender,
+          price: item.price,
+          quantity: item.quantity,
+          selectedSize: item.selectedSize,
+          selectedColor: item.selectedColor,
+          image: item.image,
+        })),
+        total_amount: payableTotal,
+      });
+    } catch (error) {
+      setCheckoutError(error.message);
+      return;
+    }
+
     confetti({
       particleCount: 100,
       spread: 70,
       origin: { y: 0.6 }
     });
     setOrderPlaced(true);
-    setTimeout(() => {
-      clearCart();
-    }, 1500);
+    clearCart();
+    navigate('/orders');
   };
 
   if (orderPlaced) {
@@ -206,6 +243,8 @@ export const Cart = () => {
               <Tag size={13} /> Coupon LEAD40 Applied (Extra 10% Off)
             </div>
           )}
+
+          {checkoutError ? <div className="error-text">{checkoutError}</div> : null}
 
           {/* Price Calculations */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.88rem', color: 'var(--text-secondary)' }}>

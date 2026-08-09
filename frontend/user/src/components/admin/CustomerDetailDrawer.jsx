@@ -17,9 +17,9 @@ export const CustomerDetailDrawer = ({ customer, isOpen, onClose }) => {
 
   // Session math for Time Spent analysis
   const sessionMinutes = customer.sessions.map(s => s.minutes);
-  const avgTime = (sessionMinutes.reduce((a, b) => a + b, 0) / sessionMinutes.length).toFixed(1);
-  const longestVisit = Math.max(...sessionMinutes);
-  const shortestVisit = Math.min(...sessionMinutes);
+  const avgTime = sessionMinutes.length ? (sessionMinutes.reduce((a, b) => a + b, 0) / sessionMinutes.length).toFixed(1) : '0.0';
+  const longestVisit = sessionMinutes.length ? Math.max(...sessionMinutes) : 0;
+  const shortestVisit = sessionMinutes.length ? Math.min(...sessionMinutes) : 0;
 
   const CustomSessionTooltip = ({ active, payload }) => {
     if (active && payload && payload.length) {

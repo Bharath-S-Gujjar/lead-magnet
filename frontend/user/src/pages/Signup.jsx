@@ -57,7 +57,7 @@ function Signup() {
     return nextErrors;
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
     setMessage('');
 
@@ -69,7 +69,7 @@ function Signup() {
       return;
     }
 
-    const result = signup({
+    const result = await signup({
       fullName: formData.fullName.trim(),
       username: formData.fullName.trim().toLowerCase().replace(/\s+/g, ''),
       age: Number(formData.age),
