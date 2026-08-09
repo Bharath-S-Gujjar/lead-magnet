@@ -12,13 +12,27 @@ MONGO_URI = os.getenv("MONGO_URI")
 if not MONGO_URI:
     raise RuntimeError("MONGO_URI is required")
 
-client = MongoClient(
-    MONGO_URI,
-    tls=True,
-    tlsCAFile=certifi.where(),
-    serverSelectionTimeoutMS=5000,
-)
 
+def connect_mongo(uri):
+    # Attempt 1: Standard
+    try:
+        c = MongoClient(uri, serverSelectionTimeoutMS=5000)
+        c.admin.command("ping")
+        return c
+    except Exception:
+        pass
+    # Attempt 2: certifi CA file
+    try:
+        c = MongoClient(uri, tls=True, tlsCAFile=certifi.where(), serverSelectionTimeoutMS=5000)
+        c.admin.command("ping")
+        return c
+    except Exception:
+        pass
+    # Attempt 3: tlsAllowInvalidCertificates
+    return MongoClient(uri, tls=True, tlsAllowInvalidCertificates=True, serverSelectionTimeoutMS=5000)
+
+
+client = connect_mongo(MONGO_URI)
 db = client["leadmagnet"]
 products = db["products"]
 

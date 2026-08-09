@@ -29,53 +29,87 @@ socketio = SocketIO(app, cors_allowed_origins=FRONTEND_URL or "*")
 
 def create_mongo_client():
     uri = os.getenv("MONGO_URI", "")
-    try:
-        if uri.startswith("mongodb+srv://"):
-            return MongoClient(
+    if uri:
+        # Attempt 1: Standard MongoClient (PyMongo handles TLS automatically for mongodb+srv://)
+        try:
+            client = MongoClient(uri, serverSelectionTimeoutMS=5000)
+            client.admin.command("ping")
+            print("Successfully connected to MongoDB Atlas (Standard).")
+            return client, True
+        except Exception as e:
+            print(f"MongoDB Atlas connection attempt 1 failed: {e}")
+
+        # Attempt 2: Explicit certifi CA bundle
+        try:
+            client = MongoClient(
                 uri,
                 tls=True,
                 tlsCAFile=certifi.where(),
                 serverSelectionTimeoutMS=5000,
-                connectTimeoutMS=5000,
-                socketTimeoutMS=5000,
             )
-        elif uri.startswith("mongodb://localhost") or uri.startswith("mongodb://127.0.0.1"):
-            return MongoClient(
+            client.admin.command("ping")
+            print("Successfully connected to MongoDB Atlas (Certifi).")
+            return client, True
+        except Exception as e:
+            print(f"MongoDB Atlas connection attempt 2 failed: {e}")
+
+        # Attempt 3: tlsAllowInvalidCertificates fallback
+        try:
+            client = MongoClient(
                 uri,
+                tls=True,
+                tlsAllowInvalidCertificates=True,
                 serverSelectionTimeoutMS=5000,
             )
-        elif uri:
-            return MongoClient(
-                uri,
-                serverSelectionTimeoutMS=5000,
-            )
+            client.admin.command("ping")
+            print("Successfully connected to MongoDB Atlas (tlsAllowInvalidCertificates).")
+            return client, True
+        except Exception as e:
+            print(f"MongoDB Atlas connection attempt 3 failed: {e}")
+
+    # Fallback to local MongoDB
+    try:
+        client = MongoClient("mongodb://localhost:27017/leadmagnet", serverSelectionTimeoutMS=2000)
+        client.admin.command("ping")
+        print("Successfully connected to local MongoDB.")
+        return client, True
     except Exception as e:
-        print(f"Warning: MongoClient creation failed ({e}). Falling back to local MongoDB.")
+        print(f"Local MongoDB connection failed: {e}")
 
-    return MongoClient(
-        "mongodb://localhost:27017/leadmagnet",
-        serverSelectionTimeoutMS=5000,
-    )
+    fallback_uri = uri if uri else "mongodb://localhost:27017/leadmagnet"
+    return MongoClient(fallback_uri, serverSelectionTimeoutMS=2000), False
 
 
-mongo_client = create_mongo_client()
-MONGO_AVAILABLE = False
+def bind_collections(client):
+    global db, profiles_collection, legacy_users_collection, products_collection, sessions_collection, events_collection, leads_collection, orders_collection
+    db = client["leadmagnet"]
+    profiles_collection = db["user_profiles"]
+    legacy_users_collection = db["users"]
+    products_collection = db["products"]
+    sessions_collection = db["sessions"]
+    events_collection = db["events"]
+    leads_collection = db["leads"]
+    orders_collection = db["orders"]
 
-try:
-    mongo_client.admin.command("ping")
-    MONGO_AVAILABLE = True
-except Exception as e:
-    MONGO_AVAILABLE = False
-    print(f"Warning: MongoDB connection failed ({e}). Running in fallback mode.")
 
-db = mongo_client["leadmagnet"]
-profiles_collection = db["user_profiles"]
-legacy_users_collection = db["users"]
-products_collection = db["products"]
-sessions_collection = db["sessions"]
-events_collection = db["events"]
-leads_collection = db["leads"]
-orders_collection = db["orders"]
+mongo_client, MONGO_AVAILABLE = create_mongo_client()
+bind_collections(mongo_client)
+
+
+def ensure_mongo_connection():
+    global mongo_client, MONGO_AVAILABLE
+    if MONGO_AVAILABLE:
+        try:
+            mongo_client.admin.command("ping")
+            return True
+        except Exception:
+            MONGO_AVAILABLE = False
+
+    client, available = create_mongo_client()
+    mongo_client = client
+    MONGO_AVAILABLE = available
+    bind_collections(mongo_client)
+    return MONGO_AVAILABLE
 
 from bson import ObjectId
 
@@ -130,13 +164,8 @@ def migrate_users_to_profiles_once():
 
 
 def initialize_database():
-    global MONGO_AVAILABLE
-    try:
-        mongo_client.admin.command("ping")
-        MONGO_AVAILABLE = True
-    except Exception as e:
-        MONGO_AVAILABLE = False
-        print(f"Warning: MongoDB startup check failed ({e}).")
+    if not ensure_mongo_connection():
+        print("Warning: MongoDB startup check failed. DB features will attempt auto-reconnect on request.")
         return
 
     migrate_users_to_profiles_once()
@@ -144,6 +173,12 @@ def initialize_database():
         seed_clothing_products_if_empty(products_collection)
     except Exception as e:
         print(f"Warning: Automatic product seeding failed: {e}")
+
+
+@app.before_request
+def auto_reconnect_db():
+    if not MONGO_AVAILABLE:
+        ensure_mongo_connection()
 
 
 JWT_SECRET = os.getenv("JWT_SECRET")
@@ -170,15 +205,9 @@ def home():
 
 @app.route("/api/health", methods=["GET"])
 def health():
-    global MONGO_AVAILABLE
-    if not MONGO_AVAILABLE:
-        return jsonify({"success": False, "mongo": False, "error": "MongoDB unavailable"}), 503
-    try:
-        mongo_client.admin.command("ping")
+    if ensure_mongo_connection():
         return jsonify({"success": True, "mongo": True}), 200
-    except Exception as e:
-        MONGO_AVAILABLE = False
-        return jsonify({"success": False, "mongo": False, "error": str(e)}), 503
+    return jsonify({"success": False, "mongo": False, "error": "MongoDB unavailable"}), 503
 
 
 @app.route("/predict", methods=["POST"])

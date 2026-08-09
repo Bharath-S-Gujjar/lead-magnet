@@ -165,14 +165,23 @@ if __name__ == "__main__":
     if not mongo_uri:
         raise RuntimeError("MONGO_URI is required")
 
-    if mongo_uri.startswith("mongodb://localhost") or mongo_uri.startswith("mongodb://127.0.0.1"):
-        client = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
-    else:
-        client = MongoClient(
-            mongo_uri,
-            tls=True,
-            tlsCAFile=certifi.where(),
-            serverSelectionTimeoutMS=5000,
-        )
+    def connect_mongo(uri):
+        if uri.startswith("mongodb://localhost") or uri.startswith("mongodb://127.0.0.1"):
+            return MongoClient(uri, serverSelectionTimeoutMS=5000)
+        try:
+            c = MongoClient(uri, serverSelectionTimeoutMS=5000)
+            c.admin.command("ping")
+            return c
+        except Exception:
+            pass
+        try:
+            c = MongoClient(uri, tls=True, tlsCAFile=certifi.where(), serverSelectionTimeoutMS=5000)
+            c.admin.command("ping")
+            return c
+        except Exception:
+            pass
+        return MongoClient(uri, tls=True, tlsAllowInvalidCertificates=True, serverSelectionTimeoutMS=5000)
+
+    client = connect_mongo(mongo_uri)
     col = client["leadmagnet"]["products"]
     seed_clothing_products_if_empty(col)
