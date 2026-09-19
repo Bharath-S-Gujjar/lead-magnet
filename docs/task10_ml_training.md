@@ -1,6 +1,6 @@
 # Task 10 Phase 2A — Generic E-Commerce ML Training Pipeline Documentation
 
-> **DISCLAIMER**: The dataset used in this phase (`data/ml/ecommerce_customer_behavior.csv`) is **SYNTHETIC** and engineered specifically for generic e-commerce behavioral lead scoring. Performance metrics reported below reflect model learning behavior on synthetic distributions and serve as a prototype baseline until real production customer conversion data is accumulated.
+> **DISCLAIMER**: The dataset used in this phase (`data/ml/ecommerce_customer_behavior.csv`) is **SYNTHETIC** and engineered specifically for generic e-commerce behavioral lead scoring. High performance metrics reported below reflect model learning behavior on synthetic distributions and serve as a prototype baseline until real production customer conversion data is accumulated.
 
 ---
 
@@ -52,39 +52,43 @@
 
 ---
 
-## 4. Target Definition
+## 4. Target Definition & Synthetic Generation Assumptions
 - **Column Name**: `converted_in_window`
 - **Definition**:
-  - `1`: Customer completes a purchase/conversion within the 30-day prediction window following observation.
+  - `1`: Customer completes a purchase/conversion within the 30-day prediction window following observation ($T > T_{obs}$).
   - `0`: Customer does not complete a purchase within that window.
+- **Generation Assumptions**:
+  The target label is generated probabilistically via a non-deterministic logistic log-odds formula with additive Gaussian noise ($\mu=0, \sigma=0.6$):
+
+  $$\text{log\_odds} = -3.5 + 1.15 \cdot \text{checkout\_attempts} + 0.006 \cdot \text{cart\_value} + 0.30 \cdot \text{high\_intent\_visits} + 0.10 \cdot \text{product\_interactions} + 0.18 \cdot \text{wishlist\_items} - 0.045 \cdot \text{days\_inactive} + 0.50 \cdot \text{orders\_count} + \epsilon$$
+
+  $$\text{probability} = \frac{1}{1 + e^{-\text{log\_odds}}}$$
+
+  $$\text{converted\_in\_window} = \begin{cases} 1 & \text{if } \text{probability} \ge 0.50 \\ 0 & \text{otherwise} \end{cases}$$
+
+- **Synthetic vs Real Production Performance**:
+  High validation metrics ($\text{ROC-AUC} \approx 0.96 - 0.97$) are an expected outcome of learning from a known mathematical generation function. They represent benchmark capability on synthetic intent distributions, **not** real-world production accuracy.
 
 ---
 
-## 5. Synthetic Label Generation Assumptions
-The target label is generated probabilistically via a non-deterministic logistic log-odds formula with additive Gaussian noise ($\mu=0, \sigma=0.6$):
-
-$$\text{log\_odds} = -3.5 + 1.15 \cdot \text{checkout\_attempts} + 0.006 \cdot \text{cart\_value} + 0.30 \cdot \text{high\_intent\_visits} + 0.10 \cdot \text{product\_interactions} + 0.18 \cdot \text{wishlist\_items} - 0.045 \cdot \text{days\_inactive} + 0.50 \cdot \text{orders\_count} + \epsilon$$
-
-$$\text{probability} = \frac{1}{1 + e^{-\text{log\_odds}}}$$
-
-$$\text{converted\_in\_window} = \begin{cases} 1 & \text{if } \text{probability} \ge 0.50 \\ 0 & \text{otherwise} \end{cases}$$
-
----
-
-## 6. Leakage Prevention
-- **Temporal Constraint**: All 23 feature variables are calculated using behavior timestamped strictly BEFORE observation time $T_{obs}$.
-- **Zero Future Leakage**: No post-window order values, future cart modifications, or future timestamps are included in feature calculations.
+## 5. Leakage & Temporal Audit
+- **Temporal Constraint**: All 23 feature variables represent historical activity occurring strictly BEFORE observation time $T_{obs}$.
+- **Feature Review**:
+  - `orders_count`, `total_order_value`, `average_order_value`: Represent historical completed orders prior to $T_{obs}$.
+  - `cart_value`, `checkout_attempts`, `product_interactions`: Represent active shopping intent prior to $T_{obs}$.
+  - `converted_in_window`: Evaluates future order completion occurring strictly AFTER $T_{obs}$ ($(T_{obs}, T_{obs} + 30\text{ days}]$).
+- **Leakage Status**: **ZERO LEAKAGE.** No post-observation features or future conversion metrics leak into the training matrix.
 
 ---
 
-## 7. Dataset Statistics
+## 6. Dataset Statistics
 - **Total Rows**: 6,000
 - **Missing Values**: 0
 - **Duplicate Customer IDs**: 0
 - **Class Distribution**:
   - Class `0` (Non-converted): 3,573 rows (**59.55%**)
   - Class `1` (Converted): 2,427 rows (**40.45%**)
-- **Top Target Feature Correlations**:
+- **Top Feature Correlations with Target**:
   1. `checkout_attempts`: +0.4928
   2. `cart_value`: +0.4594
   3. `cart_item_count`: +0.4013
@@ -94,30 +98,49 @@ $$\text{converted\_in\_window} = \begin{cases} 1 & \text{if } \text{probability}
 
 ---
 
-## 8. Training & Evaluation Strategy
-- **Reproducibility**: Seed fixed at `42` (`np.random.seed(42)`, `random_state=42`).
+## 7. Training & Evaluation Strategy
+- **Reproducibility**: Fixed random seed at `42` (`np.random.seed(42)`, `random_state=42`).
 - **Data Splits**:
-  - **Train**: 4,200 rows (**70%**)
-  - **Validation**: 900 rows (**15%**)
-  - **Test**: 900 rows (**15%**)
+  - **Train Set**: 4,200 rows (**70%**)
+  - **Validation Set**: 900 rows (**15%**)
+  - **Test Set**: 900 rows (**15%**)
 - **Preprocessing**: `StandardScaler` fitted on `X_train`.
 
 ---
 
-## 9. Baseline vs XGBoost Model Comparison
+## 8. Baseline vs XGBoost Model Comparison & Model Selection
 
 | Model | Split | ROC-AUC | PR-AUC | Precision | Recall | F1-Score | Precision@Top-10% |
 |---|---|---|---|---|---|---|---|
-| **Logistic Regression (Baseline)** | Validation | 0.9721 | 0.9620 | 0.8930 | 0.8654 | 0.8790 | 100.00% |
-| **Logistic Regression (Baseline)** | Test | 0.9764 | 0.9685 | 0.8988 | 0.8736 | 0.8860 | 100.00% |
-| **XGBoost Classifier (Primary)** | Validation | **0.9573** | **0.9417** | **0.8603** | **0.8626** | **0.8615** | **100.00%** |
-| **XGBoost Classifier (Primary)** | Test | **0.9680** | **0.9575** | **0.8848** | **0.8654** | **0.8750** | **100.00%** |
+| **Logistic Regression (Baseline)** | Validation | **0.9721** | **0.9620** | **0.8930** | **0.8654** | **0.8790** | **100.00%** |
+| **Logistic Regression (Baseline)** | Test | **0.9764** | **0.9685** | **0.8988** | **0.8736** | **0.8860** | **100.00%** |
+| **XGBoost Classifier (Candidate)** | Validation | 0.9573 | 0.9417 | 0.8603 | 0.8626 | 0.8615 | 100.00% |
+| **XGBoost Classifier (Candidate)** | Test | 0.9680 | 0.9575 | 0.8848 | 0.8654 | 0.8750 | 100.00% |
+
+### Model Selection Audit Rationale
+- **Measured Performance**: **Logistic Regression** achieved the higher measured validation/test scores (ROC-AUC `0.9721` vs `0.9573`) because the synthetic dataset label was generated via a logistic log-odds formula.
+- **Candidate Prototype Choice**: **XGBoost** is retained as an evaluated candidate prototype model for tree-based non-linear behavior modeling because gradient-boosted trees naturally handle non-linear feature interactions, non-monotonic decision thresholds, and unscaled feature shifts expected in production e-commerce traffic.
+- **Provisional Status**: Final model selection remains **provisional** until retrained and evaluated on real e-commerce production data.
 
 ### Confusion Matrix (XGBoost Test Set)
 - True Negatives (TN): 512
 - False Positives (FP): 41
 - False Negatives (FN): 49
 - True Positives (TP): 298
+
+---
+
+## 9. Top-K Metric Verification
+
+- **Precision@Top-10% Calculation**:
+  - Validation set size $N_{val} = 900$. Top 10% ratio = $90$ customers.
+  - Predicted probabilities `val_probs` computed strictly on `X_val_scaled` (transformed using scaler fitted on `X_train`).
+  - Top 90 highest predicted probability customers selected from `X_val`.
+  - Actual positive count in top 90 group = $90 / 90$ = **100.00%**.
+- **Precision@Top-20% Calculation**:
+  - Top 20% ratio = $180$ customers.
+  - Actual positive count in top 180 group = $177 / 180$ = **98.33%**.
+- **Data Integrity**: Zero training data leaked into validation ranking.
 
 ---
 
@@ -131,17 +154,17 @@ $$\text{converted\_in\_window} = \begin{cases} 1 & \text{if } \text{probability}
 6. `cart_item_count`: **0.0583**
 7. `orders_count`: **0.0433**
 8. `total_order_value`: **0.0396**
-9. `page_views_count`: **0.0368**
-10. `high_intent_page_visits`: **0.0355**
 
 ---
 
 ## 11. Threshold Selection Methodology
 
-Rather than selecting arbitrary cutoffs (`high >= 0.7`, `medium >= 0.4`), thresholds are derived empirically from validation Precision@Top-K:
-- **`Hot` Lead Segment**: `lead_probability >= 0.70` (Precision@Top 10% = **100.00%** on validation data). Guarantees that sales/marketing bandwidth focuses on high-conviction prospects.
-- **`Warm` Lead Segment**: `0.35 <= lead_probability < 0.70` (Precision@Top 20% = **98.33%**). Represents engaged prospects with strong intent signals.
-- **`Cold` Lead Segment**: `lead_probability < 0.35`. Represents low-intent or dormant visitors.
+Thresholds correspond to validation Precision@Top-K intent tiers on synthetic data:
+- **`Hot` Lead Segment**: `lead_probability >= 0.70` (Precision@Top 10% = **100.00%**).
+- **`Warm` Lead Segment**: `0.35 <= lead_probability < 0.70` (Precision@Top 20% = **98.33%**).
+- **`Cold` Lead Segment**: `lead_probability < 0.35`.
+
+**Production Note**: These thresholds are configurable prototype guidelines. In production, thresholds will be selected dynamically based on sales team outreach capacity and marketing ROI curves.
 
 ---
 
@@ -152,7 +175,7 @@ All new e-commerce model artifacts are saved in `model/` without overwriting leg
 - `model/ecommerce_xgb_model.pkl`: `XGBClassifier` model binary.
 - `model/ecommerce_scaler.pkl`: `StandardScaler` binary.
 - `model/ecommerce_feature_columns.pkl`: List of 23 feature column names.
-- `model/ecommerce_model_metadata.json`: Complete JSON metadata registry.
+- `model/ecommerce_model_metadata.json`: Complete JSON metadata registry storing metrics for both Logistic Regression and XGBoost.
 
 ---
 
@@ -161,4 +184,4 @@ All new e-commerce model artifacts are saved in `model/` without overwriting leg
 When real customer order history accumulates in the production MongoDB (`user_profiles`, `sessions`, `events`, `orders`):
 1. Export real `customer_features` records joined with historical 30-day order outcomes.
 2. Replace `data/ml/ecommerce_customer_behavior.csv` with real production observations.
-3. Rerun `scripts/train_ecommerce_model.py` to retrain `ecommerce_xgb_model.pkl` on real customer behavior.
+3. Rerun `scripts/train_ecommerce_model.py` to retrain and compare Logistic Regression vs XGBoost on real production data.
