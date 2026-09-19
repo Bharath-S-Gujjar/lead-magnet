@@ -15,8 +15,12 @@ from auth_middleware import admin_required
 from identity_service import generate_anonymous_id, resolve_anonymous_identity
 from lead_processing_service import process_session
 from behavior_event_service import BehaviorEventError, log_behavior_event
-from customer_profile_service import build_profile_update, apply_profile_update
+from customer_profile_service import build_profile_update, apply_profile_update, get_customer_profile
 from seed_clothing_products import seed_clothing_products_if_empty
+from cart_service import get_user_cart, add_to_cart, update_cart_quantity, remove_from_cart, clear_cart
+from wishlist_service import get_user_wishlist, add_to_wishlist, remove_from_wishlist
+from recommendation_service import get_personalized_recommendations
+from marketing_service import get_all_campaigns, create_campaign, get_campaign_logs, evaluate_campaign_triggers
 import certifi
 
 load_dotenv()
@@ -81,7 +85,7 @@ def create_mongo_client():
 
 
 def bind_collections(client):
-    global db, profiles_collection, legacy_users_collection, products_collection, sessions_collection, events_collection, leads_collection, orders_collection
+    global db, profiles_collection, legacy_users_collection, products_collection, sessions_collection, events_collection, leads_collection, orders_collection, cart_collection, wishlist_collection, campaigns_collection, campaign_logs_collection
     db = client["leadmagnet"]
     profiles_collection = db["user_profiles"]
     legacy_users_collection = db["users"]
@@ -90,6 +94,10 @@ def bind_collections(client):
     events_collection = db["events"]
     leads_collection = db["leads"]
     orders_collection = db["orders"]
+    cart_collection = db["cart"]
+    wishlist_collection = db["wishlist"]
+    campaigns_collection = db["campaigns"]
+    campaign_logs_collection = db["campaign_logs"]
 
 
 mongo_client, MONGO_AVAILABLE = create_mongo_client()
@@ -169,10 +177,11 @@ def initialize_database():
         return
 
     migrate_users_to_profiles_once()
-    try:
-        seed_clothing_products_if_empty(products_collection)
-    except Exception as e:
-        print(f"Warning: Automatic product seeding failed: {e}")
+    if os.getenv("AUTO_SEED_PRODUCTS", "false").lower() == "true":
+        try:
+            seed_clothing_products_if_empty(products_collection)
+        except Exception as e:
+            print(f"Warning: Automatic product seeding failed: {e}")
 
 
 @app.before_request
@@ -278,6 +287,8 @@ def signup():
             sessions_collection,
             events_collection,
             leads_collection,
+            cart_collection,
+            wishlist_collection,
         )
 
         return jsonify({
@@ -327,6 +338,8 @@ def login():
             sessions_collection,
             events_collection,
             leads_collection,
+            cart_collection,
+            wishlist_collection,
         )
 
         return jsonify({
@@ -486,8 +499,9 @@ def get_product(product_id):
 
         item["_id"] = str(item["_id"])
         return jsonify({"success": True, "message": "Product fetched", "data": item})
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e), "errors": []}), 500
+    except Exception:
+        # Invalid ObjectId values are not server errors; no product can match them.
+        return jsonify({"success": False, "message": "Product not found", "errors": []}), 404
 
 
 def update_profile_from_event(session_id, event_id):
@@ -969,6 +983,328 @@ def get_admin_notifications():
         return jsonify({"success": True, "data": notifications})
     except Exception as e:
         return jsonify({"success": False, "message": str(e), "data": []}), 500
+
+
+# --- Cart APIs (V2.2) ---
+
+@app.route("/api/cart", methods=["GET"])
+def get_cart_route():
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable", "data": []}), 500
+
+    user_id = request.args.get("user_id")
+    anonymous_id = request.args.get("anonymous_id")
+    try:
+        items = get_user_cart(cart_collection, products_collection, user_id=user_id, anonymous_id=anonymous_id)
+        return jsonify({"success": True, "data": items})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e), "data": []}), 400
+
+
+@app.route("/api/cart", methods=["POST"])
+def add_to_cart_route():
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable"}), 500
+
+    data = request.get_json(force=True) or {}
+    product_id = data.get("product_id")
+    user_id = data.get("user_id")
+    anonymous_id = data.get("anonymous_id")
+    session_id = data.get("session_id")
+
+    if not product_id:
+        return jsonify({"success": False, "message": "product_id is required"}), 400
+
+    try:
+        quantity = int(data.get("quantity", 1))
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "message": "quantity must be a positive integer"}), 400
+    if quantity <= 0:
+        return jsonify({"success": False, "message": "quantity must be a positive integer"}), 400
+
+    try:
+        items = add_to_cart(cart_collection, products_collection, product_id, quantity, user_id, anonymous_id)
+        if session_id:
+            try:
+                log_behavior_event(
+                    events_collection=events_collection,
+                    sessions_collection=sessions_collection,
+                    session_id=session_id,
+                    event_type="add_to_cart",
+                    entity={"type": "product", "id": product_id},
+                    metadata={"quantity": quantity},
+                    user_id=user_id,
+                    anonymous_id=anonymous_id
+                )
+            except Exception:
+                pass
+
+        return jsonify({"success": True, "message": "Added to cart", "data": items})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+
+
+@app.route("/api/cart/<product_id>", methods=["PUT"])
+def update_cart_route(product_id):
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable"}), 500
+
+    data = request.get_json(force=True) or {}
+    user_id = data.get("user_id")
+    anonymous_id = data.get("anonymous_id")
+
+    try:
+        quantity = int(data.get("quantity", 1))
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "message": "quantity must be an integer"}), 400
+
+    try:
+        items = update_cart_quantity(cart_collection, products_collection, product_id, quantity, user_id, anonymous_id)
+        return jsonify({"success": True, "message": "Cart updated", "data": items})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+
+
+@app.route("/api/cart/<product_id>", methods=["DELETE"])
+def remove_from_cart_route(product_id):
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable"}), 500
+
+    user_id = request.args.get("user_id")
+    anonymous_id = request.args.get("anonymous_id")
+    session_id = request.args.get("session_id")
+
+    try:
+        items = remove_from_cart(cart_collection, products_collection, product_id, user_id, anonymous_id)
+        if session_id:
+            try:
+                log_behavior_event(
+                    events_collection=events_collection,
+                    sessions_collection=sessions_collection,
+                    session_id=session_id,
+                    event_type="remove_from_cart",
+                    entity={"type": "product", "id": product_id},
+                    user_id=user_id,
+                    anonymous_id=anonymous_id
+                )
+            except Exception:
+                pass
+
+        return jsonify({"success": True, "message": "Item removed from cart", "data": items})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+
+
+@app.route("/api/cart", methods=["DELETE"])
+def clear_cart_route():
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable"}), 500
+
+    user_id = request.args.get("user_id")
+    anonymous_id = request.args.get("anonymous_id")
+
+    try:
+        clear_cart(cart_collection, user_id, anonymous_id)
+        return jsonify({"success": True, "message": "Cart cleared", "data": []})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+
+
+# --- Wishlist APIs (V2.2) ---
+
+@app.route("/api/wishlist", methods=["GET"])
+def get_wishlist_route():
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable", "data": []}), 500
+
+    user_id = request.args.get("user_id")
+    anonymous_id = request.args.get("anonymous_id")
+
+    try:
+        items = get_user_wishlist(wishlist_collection, products_collection, user_id=user_id, anonymous_id=anonymous_id)
+        return jsonify({"success": True, "data": items})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e), "data": []}), 400
+
+
+@app.route("/api/wishlist", methods=["POST"])
+def add_to_wishlist_route():
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable"}), 500
+
+    data = request.get_json(force=True) or {}
+    product_id = data.get("product_id")
+    user_id = data.get("user_id")
+    anonymous_id = data.get("anonymous_id")
+    session_id = data.get("session_id")
+
+    if not product_id:
+        return jsonify({"success": False, "message": "product_id is required"}), 400
+
+    try:
+        items = add_to_wishlist(wishlist_collection, products_collection, product_id, user_id, anonymous_id)
+        if session_id:
+            try:
+                log_behavior_event(
+                    events_collection=events_collection,
+                    sessions_collection=sessions_collection,
+                    session_id=session_id,
+                    event_type="wishlist_add",
+                    entity={"type": "product", "id": product_id},
+                    user_id=user_id,
+                    anonymous_id=anonymous_id
+                )
+            except Exception:
+                pass
+
+        return jsonify({"success": True, "message": "Added to wishlist", "data": items})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+
+
+@app.route("/api/wishlist/<product_id>", methods=["DELETE"])
+def remove_from_wishlist_route(product_id):
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable"}), 500
+
+    user_id = request.args.get("user_id")
+    anonymous_id = request.args.get("anonymous_id")
+    session_id = request.args.get("session_id")
+
+    try:
+        items = remove_from_wishlist(wishlist_collection, products_collection, product_id, user_id, anonymous_id)
+        if session_id:
+            try:
+                log_behavior_event(
+                    events_collection=events_collection,
+                    sessions_collection=sessions_collection,
+                    session_id=session_id,
+                    event_type="wishlist_remove",
+                    entity={"type": "product", "id": product_id},
+                    user_id=user_id,
+                    anonymous_id=anonymous_id
+                )
+            except Exception:
+                pass
+
+        return jsonify({"success": True, "message": "Removed from wishlist", "data": items})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+
+
+# --- Customer Profile API (V2.4) ---
+
+@app.route("/api/profile", methods=["GET"])
+def get_profile_route():
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable", "data": None}), 500
+
+    user_id = request.args.get("user_id")
+    visitor_id = request.args.get("visitor_id") or request.args.get("anonymous_id")
+
+    try:
+        profile = get_customer_profile(profiles_collection, user_id=user_id, visitor_id=visitor_id)
+        if not profile:
+            return jsonify({"success": True, "data": None, "message": "Profile not found"}), 200
+
+        return jsonify({"success": True, "data": serialize_mongo_value(profile)})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+
+
+# --- Recommendation API (V2.5) ---
+
+@app.route("/api/recommendations", methods=["GET"])
+def get_recommendations_route():
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable", "data": []}), 500
+
+    user_id = request.args.get("user_id")
+    visitor_id = request.args.get("visitor_id") or request.args.get("anonymous_id")
+    limit = int(request.args.get("limit", 8))
+
+    try:
+        recs = get_personalized_recommendations(
+            products_collection=products_collection,
+            profiles_collection=profiles_collection,
+            cart_collection=cart_collection,
+            wishlist_collection=wishlist_collection,
+            user_id=user_id,
+            visitor_id=visitor_id,
+            limit=limit
+        )
+        serialized = [serialize_mongo_value(prod) for prod in recs]
+        return jsonify({"success": True, "data": serialized})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e), "data": []}), 400
+
+
+# --- Marketing Automation APIs (V2.7) ---
+
+@app.route("/api/campaigns", methods=["GET"])
+def get_campaigns_route():
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable", "data": []}), 500
+
+    try:
+        camps = get_all_campaigns(campaigns_collection)
+        return jsonify({"success": True, "data": [serialize_mongo_value(c) for c in camps]})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e), "data": []}), 500
+
+
+@app.route("/api/campaigns", methods=["POST"])
+@admin_required
+def create_campaign_route():
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable"}), 500
+
+    data = request.get_json(force=True) or {}
+    name = data.get("name")
+    trigger_type = data.get("trigger_type")
+    channel = data.get("channel", "email")
+    template = data.get("template", "")
+
+    if not name or not trigger_type:
+        return jsonify({"success": False, "message": "name and trigger_type required"}), 400
+
+    try:
+        camp = create_campaign(campaigns_collection, name, trigger_type, channel, template)
+        return jsonify({"success": True, "message": "Campaign created", "data": serialize_mongo_value(camp)})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+
+
+@app.route("/api/campaigns/logs", methods=["GET"])
+@admin_required
+def get_campaign_logs_route():
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable", "data": []}), 500
+
+    try:
+        logs = get_campaign_logs(campaign_logs_collection)
+        return jsonify({"success": True, "data": [serialize_mongo_value(l) for l in logs]})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e), "data": []}), 500
+
+
+@app.route("/api/campaigns/evaluate", methods=["POST"])
+@admin_required
+def evaluate_campaigns_route():
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable"}), 500
+
+    try:
+        triggered = evaluate_campaign_triggers(
+            campaigns_collection=campaigns_collection,
+            campaign_logs_collection=campaign_logs_collection,
+            cart_collection=cart_collection,
+            leads_collection=leads_collection,
+            profiles_collection=profiles_collection
+        )
+        return jsonify({"success": True, "message": f"Evaluated triggers, {len(triggered)} campaigns triggered", "data": [serialize_mongo_value(t) for t in triggered]})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
 
 
 @app.route("/api/orders", methods=["POST"])
