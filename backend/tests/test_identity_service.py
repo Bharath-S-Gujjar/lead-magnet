@@ -37,20 +37,21 @@ class IdentityServiceTests(unittest.TestCase):
             self.leads,
         )
 
-        self.assertEqual(result, {"sessions_merged": 2, "events_merged": 5, "leads_merged": 1})
+        self.assertEqual(result, {"sessions_merged": 2, "events_merged": 5, "leads_merged": 1, "cart_merged": 0, "wishlist_merged": 0})
         self.sessions.find.assert_called_once()
         self.events.update_many.assert_called_once()
         self.leads.update_many.assert_called_once()
-        self.users.update_one.assert_called_once_with(
-            {"_id": "user-1"}, {"$addToSet": {"anonymous_ids": "anon_visitor"}}
-        )
+        self.users.update_one.assert_called_once()
+        call_args = self.users.update_one.call_args
+        self.assertEqual(call_args[0][0], {"_id": "user-1"})
+        self.assertEqual(call_args[0][1]["$addToSet"], {"anonymous_ids": "anon_visitor"})
 
     def test_empty_identity_does_not_write_records(self):
         result = resolve_anonymous_identity(
             None, "user-1", self.users, self.sessions, self.events, self.leads
         )
 
-        self.assertEqual(result, {"sessions_merged": 0, "events_merged": 0, "leads_merged": 0})
+        self.assertEqual(result, {"sessions_merged": 0, "events_merged": 0, "leads_merged": 0, "cart_merged": 0, "wishlist_merged": 0})
         self.sessions.find.assert_not_called()
         self.sessions.update_many.assert_not_called()
         self.events.update_many.assert_not_called()

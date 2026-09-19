@@ -16,15 +16,21 @@ def resolve_anonymous_identity(
     sessions_collection,
     events_collection,
     leads_collection,
+    cart_collection=None,
+    wishlist_collection=None,
+    customer_features_collection=None,
+    db=None,
 ):
     """Associate existing anonymous records with an authenticated user.
 
     Raw events remain tied to their session IDs. Adding ``user_id`` to both the
     sessions and events allows either collection to be queried by the resolved
     identity without changing the event schema's existing session reference.
+    Also merges anonymous cart and wishlist items into the user account and
+    updates the customer feature store.
     """
     if not anonymous_id or not user_id:
-        return {"sessions_merged": 0, "events_merged": 0, "leads_merged": 0}
+        return {"sessions_merged": 0, "events_merged": 0, "leads_merged": 0, "cart_merged": 0, "wishlist_merged": 0}
 
     session_query = {
         "$or": [
@@ -71,8 +77,27 @@ def resolve_anonymous_identity(
         },
     )
 
+    cart_merged = 0
+    if cart_collection is not None:
+        from cart_service import merge_anonymous_cart
+        cart_merged = merge_anonymous_cart(cart_collection, anonymous_id, user_id)
+
+    wishlist_merged = 0
+    if wishlist_collection is not None:
+        from wishlist_service import merge_anonymous_wishlist
+        wishlist_merged = merge_anonymous_wishlist(wishlist_collection, anonymous_id, user_id)
+
+    if customer_features_collection is not None:
+        customer_features_collection.delete_many({"customer_id": anonymous_id})
+
+    if db is not None:
+        from customer_feature_service import upsert_customer_features
+        upsert_customer_features(user_id, db)
+
     return {
         "sessions_merged": sessions_result.modified_count,
         "events_merged": events_merged,
         "leads_merged": leads_result.modified_count,
+        "cart_merged": cart_merged,
+        "wishlist_merged": wishlist_merged,
     }

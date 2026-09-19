@@ -23,6 +23,7 @@ from wishlist_service import get_user_wishlist, add_to_wishlist, remove_from_wis
 from order_service import create_order as create_order_from_cart, get_user_orders, get_order_by_id
 from recommendation_service import get_personalized_recommendations
 from marketing_service import get_all_campaigns, create_campaign, get_campaign_logs, evaluate_campaign_triggers
+from customer_feature_service import ensure_customer_features_indexes, aggregate_customer_features, upsert_customer_features, get_customer_features
 import certifi
 
 load_dotenv()
@@ -100,7 +101,7 @@ def ensure_product_indexes(products_collection):
 
 
 def bind_collections(client):
-    global db, profiles_collection, legacy_users_collection, products_collection, sessions_collection, events_collection, leads_collection, orders_collection, cart_collection, wishlist_collection, campaigns_collection, campaign_logs_collection
+    global db, profiles_collection, legacy_users_collection, products_collection, sessions_collection, events_collection, leads_collection, orders_collection, cart_collection, wishlist_collection, campaigns_collection, campaign_logs_collection, customer_features_collection
     db = client["leadmagnet"]
     profiles_collection = db["user_profiles"]
     legacy_users_collection = db["users"]
@@ -113,7 +114,9 @@ def bind_collections(client):
     wishlist_collection = db["wishlist"]
     campaigns_collection = db["campaigns"]
     campaign_logs_collection = db["campaign_logs"]
+    customer_features_collection = db["customer_features"]
     ensure_product_indexes(products_collection)
+    ensure_customer_features_indexes(customer_features_collection)
 
 
 mongo_client, MONGO_AVAILABLE = create_mongo_client()
@@ -351,6 +354,8 @@ def signup():
             leads_collection,
             cart_collection,
             wishlist_collection,
+            customer_features_collection,
+            db,
         )
 
         return jsonify({
@@ -407,6 +412,8 @@ def login():
             leads_collection,
             cart_collection,
             wishlist_collection,
+            customer_features_collection,
+            db,
         )
 
         return jsonify({
@@ -733,6 +740,45 @@ def end_session():
             "message": str(e),
             "errors": []
         }), 500
+
+
+@app.route("/api/customer/features", methods=["GET"])
+def get_customer_features_endpoint():
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable", "errors": []}), 500
+
+    try:
+        user_id = request.args.get("user_id") or request.args.get("customer_id")
+        anonymous_id = request.args.get("anonymous_id") or request.args.get("visitor_id")
+
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header.split(" ")[1]
+            try:
+                payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+                if payload.get("sub"):
+                    user_id = payload.get("sub")
+            except Exception:
+                pass
+
+        if not user_id and not anonymous_id:
+            return jsonify({
+                "success": False,
+                "message": "user_id or anonymous_id required",
+                "errors": []
+            }), 400
+
+        target_id = user_id or anonymous_id
+        features = upsert_customer_features(target_id, db)
+        serialized = serialize_mongo_value(features)
+
+        return jsonify({
+            "success": True,
+            "message": "Customer features retrieved",
+            "data": serialized,
+        })
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e), "errors": []}), 500
 
 
 # ---- Admin Dashboard (Module 6) ----
