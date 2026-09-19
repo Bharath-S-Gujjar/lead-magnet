@@ -20,6 +20,7 @@ from customer_profile_service import build_profile_update, apply_profile_update,
 from seed_clothing_products import seed_clothing_products_if_empty
 from cart_service import get_user_cart, add_to_cart, update_cart_quantity, remove_from_cart, clear_cart
 from wishlist_service import get_user_wishlist, add_to_wishlist, remove_from_wishlist, clear_wishlist
+from order_service import create_order as create_order_from_cart, get_user_orders, get_order_by_id
 from recommendation_service import get_personalized_recommendations
 from marketing_service import get_all_campaigns, create_campaign, get_campaign_logs, evaluate_campaign_triggers
 import certifi
@@ -1436,41 +1437,42 @@ def create_order():
         return jsonify({"success": False, "message": "Database unavailable"}), 500
 
     try:
-        data = request.get_json(force=True)
-        customer_email = data.get("customer_email")
-        items = data.get("items") or []
+        data = request.get_json(silent=True) or {}
+        customer_id = data.get("customer_id") if "customer_id" in data else data.get("user_id")
+        if not request.headers.get("Authorization"):
+            return jsonify({"success": False, "message": "Authorization token required", "errors": []}), 401
+        owner, error = resolve_persistence_identity(customer_id, None)
+        if error:
+            return error
 
-        if not customer_email or not items:
-            return jsonify({"success": False, "message": "customer_email and items required", "errors": []}), 400
+        customer = profiles_collection.find_one({"_id": ObjectId(owner["user_id"])})
+        if not customer:
+            return jsonify({"success": False, "message": "User not found", "errors": []}), 404
 
-        customer = profiles_collection.find_one({"email": customer_email})
-        total_amount = data.get("total_amount")
-        if total_amount is None:
-            total_amount = sum((item.get("price", 0) * item.get("quantity", 1)) for item in items)
-
-        now = datetime.datetime.utcnow()
-        order_doc = {
-            "customer_id": customer.get("_id") if customer else data.get("customer_id"),
-            "customer_email": customer_email,
-            "items": items,
-            "total_amount": total_amount,
-            "status": "placed",
-            "created_at": now,
-        }
-        result = orders_collection.insert_one(order_doc)
+        order_doc = create_order_from_cart(
+            orders_collection=orders_collection,
+            cart_collection=cart_collection,
+            products_collection=products_collection,
+            user_id=owner["user_id"],
+            customer_email=customer.get("email"),
+            customer_name=customer.get("full_name") or customer.get("username"),
+            shipping_address=data.get("shipping_address"),
+            payment_method=data.get("payment_method", "Credit Card"),
+        )
+        now = order_doc["created_at"]
 
         session_id = data.get("session_id")
         event_doc = {
             "event_type": "order_placed",
             "event_category": "commerce",
             "event_action": "purchase",
-            "visitor_id": customer_email,
-            "anonymous_id": customer_email,
-            "user_id": customer.get("_id") if customer else None,
+            "visitor_id": customer.get("email"),
+            "anonymous_id": None,
+            "user_id": customer.get("_id"),
             "page": "/orders",
             "timestamp": now,
-            "entity": {"type": "order", "id": str(result.inserted_id)},
-            "metadata": {"total_amount": total_amount, "item_count": len(items)},
+            "entity": {"type": "order", "id": str(order_doc["_id"])},
+            "metadata": {"total_amount": order_doc["total_amount"], "item_count": len(order_doc["items"])},
             "context": {},
             "schema_version": 2,
         }
@@ -1492,10 +1494,12 @@ def create_order():
         return jsonify({
             "success": True,
             "data": {
-                "order_id": str(result.inserted_id),
+                "order_id": str(order_doc["_id"]),
                 "status": "placed",
             },
         }), 201
+    except ValueError as error:
+        return jsonify({"success": False, "message": str(error), "errors": []}), 400
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
 
@@ -1506,12 +1510,38 @@ def get_orders():
         return jsonify({"success": False, "message": "Database unavailable", "data": []}), 500
 
     try:
-        customer_email = request.args.get("customer_email")
-        query = {"customer_email": customer_email} if customer_email else {}
-        orders = [serialize_mongo_value(order) for order in orders_collection.find(query).sort("created_at", -1)]
+        if not request.headers.get("Authorization"):
+            return jsonify({"success": False, "message": "Authorization token required", "errors": []}), 401
+        owner, error = resolve_persistence_identity(request.args.get("user_id"), None)
+        if error:
+            return error
+        orders = [serialize_mongo_value(order) for order in get_user_orders(orders_collection, user_id=owner["user_id"])]
         return jsonify({"success": True, "data": orders})
     except Exception as e:
         return jsonify({"success": False, "message": str(e), "data": []}), 500
+
+
+@app.route("/api/orders/<order_id>", methods=["GET"])
+def get_order_detail(order_id):
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable"}), 500
+
+    try:
+        if not request.headers.get("Authorization"):
+            return jsonify({"success": False, "message": "Authorization token required", "errors": []}), 401
+        owner, error = resolve_persistence_identity(request.args.get("user_id"), None)
+        if error:
+            return error
+        if not ObjectId.is_valid(order_id):
+            return jsonify({"success": False, "message": "Order not found", "errors": []}), 404
+        order = get_order_by_id(orders_collection, order_id)
+        if not order or order.get("user_id") != ObjectId(owner["user_id"]):
+            return jsonify({"success": False, "message": "Order not found", "errors": []}), 404
+        return jsonify({"success": True, "data": serialize_mongo_value(order)})
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "message": "Order not found", "errors": []}), 404
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e), "errors": []}), 500
 
 
 @app.route("/api/analytics/summary", methods=["GET"])
