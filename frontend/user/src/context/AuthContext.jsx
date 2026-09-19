@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { ADMIN_SESSION_KEY, CUSTOMER_SESSION_KEY, CUSTOMER_USERS_KEY, readStorage, removeStorage, writeStorage } from '../utils/auth';
-import { API_BASE_URL, endCustomerSession, getAdminSession, parseJsonResponse, saveCustomerSession, startCustomerSession } from '../services/api';
+import { API_BASE_URL, endCustomerSession, getAdminSession, getAnonymousId, parseJsonResponse, saveCustomerSession, startCustomerSession } from '../services/api';
 
 const AuthContext = createContext(null);
 
@@ -87,7 +87,7 @@ export function AuthProvider({ children }) {
     return fetch(`${API_BASE_URL}/api/auth/signup`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(profile),
+      body: JSON.stringify({ ...profile, anonymous_id: getAnonymousId() }),
     })
       .then((response) => parseJsonResponse(response).then((payload) => ({ response, payload })))
       .then(({ response, payload }) => {
@@ -111,6 +111,7 @@ export function AuthProvider({ children }) {
         body: JSON.stringify({
           email: identifier.trim(),
           password,
+          anonymous_id: getAnonymousId(),
         }),
       });
       const payload = await parseJsonResponse(response);

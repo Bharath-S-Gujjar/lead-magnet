@@ -2,6 +2,7 @@ export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.
 
 const ADMIN_SESSION_KEY = 'lead_magnet_admin_session';
 const CUSTOMER_SESSION_KEY = 'lead_magnet_customer_session';
+const ANONYMOUS_ID_KEY = 'lead_magnet_anonymous_id';
 
 export function getAdminSession() {
   try {
@@ -23,6 +24,20 @@ export function getCustomerSession() {
 
 export function saveCustomerSession(session) {
   localStorage.setItem(CUSTOMER_SESSION_KEY, JSON.stringify(session));
+}
+
+export function getAnonymousId() {
+  let anonymousId = localStorage.getItem(ANONYMOUS_ID_KEY);
+  if (!anonymousId) {
+    anonymousId = `anon_${crypto.randomUUID()}`;
+    localStorage.setItem(ANONYMOUS_ID_KEY, anonymousId);
+  }
+  return anonymousId;
+}
+
+function customerAuthHeaders(userId) {
+  const session = getCustomerSession();
+  return userId && session?.token ? { Authorization: `Bearer ${session.token}` } : {};
 }
 
 export async function parseJsonResponse(response) {
@@ -104,7 +119,7 @@ export async function startCustomerSession(customer) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       visitor_id: customer.email,
-      anonymous_id: customer.email,
+      anonymous_id: customer.anonymous_id || getAnonymousId(),
     }),
   });
   const payload = await parseJsonResponse(response);
@@ -194,6 +209,69 @@ export async function fetchAdminNotifications() {
   const payload = await parseJsonResponse(response);
   if (!response.ok || !payload.success) {
     return [];
+  }
+  return payload.data || [];
+}
+export async function fetchCart(userId, anonymousId) {
+  const query = userId ? `user_id=${userId}` : `anonymous_id=${anonymousId}`;
+  const response = await fetch(`${API_BASE_URL}/api/cart?${query}`, {
+    headers: customerAuthHeaders(userId),
+  });
+  const payload = await parseJsonResponse(response);
+  if (!response.ok || payload.success === false) {
+    throw new Error(payload.message || 'Unable to load cart.');
+  }
+  return payload.data || [];
+}
+
+export async function addToCartApi(productId, quantity = 1, userId, anonymousId, sessionId) {
+  const response = await fetch(`${API_BASE_URL}/api/cart`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...customerAuthHeaders(userId) },
+    body: JSON.stringify({ product_id: productId, quantity, user_id: userId, anonymous_id: anonymousId, session_id: sessionId })
+  });
+  const payload = await parseJsonResponse(response);
+  if (!response.ok || payload.success === false) {
+    throw new Error(payload.message || 'Unable to update cart.');
+  }
+  return payload.data || [];
+}
+
+export async function updateCartApi(productId, quantity, userId, anonymousId) {
+  const response = await fetch(`${API_BASE_URL}/api/cart/${productId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...customerAuthHeaders(userId) },
+    body: JSON.stringify({ product_id: productId, quantity, user_id: userId, anonymous_id: anonymousId }),
+  });
+  const payload = await parseJsonResponse(response);
+  if (!response.ok || payload.success === false) {
+    throw new Error(payload.message || 'Unable to update cart.');
+  }
+  return payload.data || [];
+}
+
+export async function removeFromCartApi(productId, userId, anonymousId, sessionId) {
+  const query = userId ? `user_id=${userId}` : `anonymous_id=${anonymousId}`;
+  const response = await fetch(`${API_BASE_URL}/api/cart/${productId}?${query}&session_id=${sessionId || ''}`, {
+    method: 'DELETE',
+    headers: customerAuthHeaders(userId),
+  });
+  const payload = await parseJsonResponse(response);
+  if (!response.ok || payload.success === false) {
+    throw new Error(payload.message || 'Unable to remove cart item.');
+  }
+  return payload.data || [];
+}
+
+export async function clearCartApi(userId, anonymousId) {
+  const query = userId ? `user_id=${userId}` : `anonymous_id=${anonymousId}`;
+  const response = await fetch(`${API_BASE_URL}/api/cart?${query}`, {
+    method: 'DELETE',
+    headers: customerAuthHeaders(userId),
+  });
+  const payload = await parseJsonResponse(response);
+  if (!response.ok || payload.success === false) {
+    throw new Error(payload.message || 'Unable to clear cart.');
   }
   return payload.data || [];
 }
