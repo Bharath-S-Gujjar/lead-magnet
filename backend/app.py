@@ -259,15 +259,22 @@ def signup():
     if not MONGO_AVAILABLE:
         return jsonify({"success": False, "message": "Database unavailable", "errors": []}), 500
 
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     email = data.get("email")
     password = data.get("password")
+    username = data.get("username")
+    anonymous_id = data.get("anonymous_id") if "anonymous_id" in data else data.get("visitor_id")
 
-    if not email or not password:
+    if not isinstance(email, str) or not email.strip() or not isinstance(password, str) or not password:
         return jsonify({"success": False, "message": "Email and password required", "errors": []}), 400
+    if anonymous_id is not None and (not isinstance(anonymous_id, str) or not anonymous_id.strip()):
+        return jsonify({"success": False, "message": "Invalid anonymous identity", "errors": []}), 400
 
     try:
-        if profiles_collection.find_one({"email": email}):
+        duplicate_query = [{"email": email}]
+        if username:
+            duplicate_query.append({"username": username})
+        if profiles_collection.find_one({"$or": duplicate_query}):
             return jsonify({"success": False, "message": "User already exists", "errors": []}), 400
 
         hashed_pw = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt())
@@ -284,7 +291,6 @@ def signup():
             "updated_at": datetime.datetime.utcnow(),
         }
 
-        anonymous_id = data.get("anonymous_id") or data.get("visitor_id")
         anon_profile = profiles_collection.find_one({"visitor_id": anonymous_id}) if anonymous_id else None
 
         if anon_profile and not anon_profile.get("email"):
@@ -323,9 +329,15 @@ def login():
     if not MONGO_AVAILABLE:
         return jsonify({"success": False, "message": "Database unavailable", "errors": []}), 500
 
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     email = data.get("email")
     password = data.get("password")
+    anonymous_id = data.get("anonymous_id") if "anonymous_id" in data else data.get("visitor_id")
+
+    if not isinstance(email, str) or not email.strip() or not isinstance(password, str) or not password:
+        return jsonify({"success": False, "message": "Email and password required", "errors": []}), 400
+    if anonymous_id is not None and (not isinstance(anonymous_id, str) or not anonymous_id.strip()):
+        return jsonify({"success": False, "message": "Invalid anonymous identity", "errors": []}), 400
 
     try:
         user = profiles_collection.find_one({"email": email})
@@ -345,7 +357,6 @@ def login():
             algorithm="HS256"
         )
 
-        anonymous_id = data.get("anonymous_id") or data.get("visitor_id")
         resolution = resolve_anonymous_identity(
             anonymous_id,
             user["_id"],
@@ -382,9 +393,12 @@ def login():
 
 @app.route("/api/auth/admin/login", methods=["POST"])
 def admin_login():
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     username = data.get("username")
     password = data.get("password")
+
+    if not isinstance(username, str) or not username or not isinstance(password, str) or not password:
+        return jsonify({"success": False, "message": "Username and password required", "errors": []}), 400
 
     if username != ADMIN_USERNAME or password != ADMIN_PASSWORD:
         return jsonify({"success": False, "message": "Invalid admin credentials", "errors": []}), 401
@@ -550,8 +564,12 @@ def start_session():
     if not MONGO_AVAILABLE:
         return jsonify({"success": False, "message": "Database unavailable"}), 500
 
-    data = request.get_json(force=True)
-    anonymous_id = data.get("anonymous_id") or data.get("visitor_id") or generate_anonymous_id()
+    data = request.get_json(silent=True) or {}
+    supplied_anonymous_id = data.get("anonymous_id") if "anonymous_id" in data else data.get("visitor_id")
+    if supplied_anonymous_id is not None and (not isinstance(supplied_anonymous_id, str) or not supplied_anonymous_id.strip()):
+        return jsonify({"success": False, "message": "Invalid anonymous identity", "errors": []}), 400
+
+    anonymous_id = supplied_anonymous_id or generate_anonymous_id()
     visitor_id = data.get("visitor_id") or anonymous_id
 
     session_doc = {
