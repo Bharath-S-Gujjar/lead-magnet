@@ -612,17 +612,22 @@ def start_session():
 
     anonymous_id = supplied_anonymous_id or generate_anonymous_id()
     visitor_id = data.get("visitor_id") or anonymous_id
+    owner, error = resolve_persistence_identity(None, anonymous_id)
+    if error:
+        return error
 
     session_doc = {
         "visitor_id": visitor_id,
         "anonymous_id": anonymous_id,
-        "identity_status": "anonymous",
+        "identity_status": "authenticated" if owner.get("user_id") else "anonymous",
         "started_at": datetime.datetime.utcnow(),
         "last_active_at": datetime.datetime.utcnow(),
         "total_time_seconds": 0,
         "page_views": 0,
         "status": "active"
     }
+    if owner.get("user_id"):
+        session_doc["user_id"] = ObjectId(owner["user_id"])
 
     result = sessions_collection.insert_one(session_doc)
 

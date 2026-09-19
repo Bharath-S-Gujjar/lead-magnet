@@ -60,6 +60,8 @@ def process_session(session_id, sessions_collection, events_collection, leads_co
 
     lead_document = {
         "visitor_id": session.get("visitor_id", "unknown"),
+        "anonymous_id": session.get("anonymous_id"),
+        "user_id": session.get("user_id"),
         "session_id": session_object_id,
         "score": prediction["score"],
         "segment": prediction["segment"],

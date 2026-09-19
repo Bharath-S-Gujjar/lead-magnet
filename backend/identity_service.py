@@ -61,7 +61,14 @@ def resolve_anonymous_identity(
     )
     users_collection.update_one(
         {"_id": user_id},
-        {"$addToSet": {"anonymous_ids": anonymous_id}},
+        {
+            "$set": {
+                "user_id": user_id,
+                "identity_status": "authenticated",
+                "identity_resolved_at": now,
+            },
+            "$addToSet": {"anonymous_ids": anonymous_id},
+        },
     )
 
     return {

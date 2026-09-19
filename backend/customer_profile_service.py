@@ -83,9 +83,10 @@ def build_profile_update(session_doc, events):
 
 def apply_profile_update(profiles_collection, profile_update):
     visitor_id = profile_update.get('visitor_id')
+    user_id = profile_update.get('user_id')
 
-    if not visitor_id:
-        raise ValueError('visitor_id required for profile update')
+    if not visitor_id and not user_id:
+        raise ValueError('visitor_id or user_id required for profile update')
 
     inc_doc = {
         'session_count': profile_update.get('session_increment', 0),
@@ -115,19 +116,20 @@ def apply_profile_update(profiles_collection, profile_update):
         'updated_at': profile_update.get('updated_at')
     }
 
-    user_id = profile_update.get('user_id')
     if user_id is not None:
         set_doc['user_id'] = user_id
 
+    identity_query = {'user_id': user_id} if user_id is not None else {'visitor_id': visitor_id}
+    set_on_insert = {'created_at': datetime.datetime.utcnow()}
+    if visitor_id:
+        set_on_insert['visitor_id'] = visitor_id
+
     profiles_collection.update_one(
-        {'visitor_id': visitor_id},
+        identity_query,
         {
             '$set': set_doc,
             '$inc': inc_doc,
-            '$setOnInsert': {
-                'visitor_id': visitor_id,
-                'created_at': datetime.datetime.utcnow()
-            }
+            '$setOnInsert': set_on_insert,
         },
         upsert=True
     )
