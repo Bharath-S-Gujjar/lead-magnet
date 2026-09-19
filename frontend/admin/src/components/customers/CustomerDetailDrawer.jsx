@@ -1,373 +1,302 @@
-import React from 'react';
-import { 
-  X, 
-  Clock, 
-  ShoppingBag, 
-  Heart, 
-  Mail, 
-  MessageSquare, 
-  User, 
-  Calendar,
+import React, { useState, useEffect } from 'react';
+import { useAdminAuth } from '../../context/AdminAuthContext';
+import { getAdminCustomerIntelligence } from '../../services/api';
+import {
+  X,
+  User,
+  Activity,
+  Target,
+  ShoppingBag,
+  Mail,
+  Send,
+  MessageSquare,
+  Clock,
+  Flame,
   CheckCircle2,
-  TrendingUp,
-  Shirt
+  AlertCircle,
+  PackageCheck
 } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from 'recharts';
 
-export const CustomerDetailDrawer = ({ customer, isOpen, onClose }) => {
-  if (!customer) return null;
+export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
+  const { admin } = useAdminAuth();
+  const [detail, setDetail] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  // Session math for Time Spent analysis
-  const sessions = Array.isArray(customer.sessions) ? customer.sessions : [];
-  const interestHistory = Array.isArray(customer.interestHistory) ? customer.interestHistory : [];
-  const cartItems = Array.isArray(customer.cartItems) ? customer.cartItems : [];
-  const likedItems = Array.isArray(customer.likedItems) ? customer.likedItems : [];
-
-  const sessionMinutes = sessions.map(s => s.minutes || 0);
-  const avgTime = sessionMinutes.length > 0 ? (sessionMinutes.reduce((a, b) => a + b, 0) / sessionMinutes.length).toFixed(1) : '0.0';
-  const longestVisit = sessionMinutes.length > 0 ? Math.max(...sessionMinutes) : 0;
-  const shortestVisit = sessionMinutes.length > 0 ? Math.min(...sessionMinutes) : 0;
-
-  const CustomSessionTooltip = ({ active, payload }) => {
-    if (active && payload && payload.length) {
-      const item = payload[0].payload;
-      return (
-        <div style={{
-          background: 'var(--panel-solid)',
-          border: '1px solid var(--panel-border)',
-          padding: '12px 16px',
-          borderRadius: 'var(--radius-md)',
-          boxShadow: 'var(--panel-shadow)',
-          fontSize: '0.82rem',
-          color: 'var(--text-primary)',
-          maxWidth: '260px'
-        }}>
-          <div style={{ fontWeight: 800, color: 'var(--accent-indigo)', marginBottom: '4px' }}>{item.date}</div>
-          <div><strong>Minutes Spent:</strong> {item.minutes} mins</div>
-          <div><strong>Pages Visited:</strong> {item.pagesVisited} pages</div>
-          <div style={{ marginTop: '4px', color: 'var(--accent-emerald)', fontWeight: 700 }}>
-            <strong>Outcome:</strong> {item.outcome}
-          </div>
-        </div>
-      );
+  useEffect(() => {
+    if (!isOpen || !customerId) {
+      setDetail(null);
+      setError('');
+      return;
     }
-    return null;
+
+    let isMounted = true;
+    async function loadDetail() {
+      setIsLoading(true);
+      setError('');
+      try {
+        const data = await getAdminCustomerIntelligence(customerId, admin?.token);
+        if (isMounted) setDetail(data);
+      } catch (err) {
+        if (isMounted) {
+          setError(err.message || 'Unable to load customer intelligence detail.');
+          setDetail(null);
+        }
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    }
+
+    loadDetail();
+    return () => { isMounted = false; };
+  }, [isOpen, customerId, admin?.token]);
+
+  if (!isOpen) return null;
+
+  const profile = detail?.customer || {};
+  const behavior = detail?.behavior || {};
+  const lead = detail?.lead || {};
+  const orders = detail?.orders || [];
+  const autoEvents = detail?.marketing?.automation_events || [];
+  const comms = detail?.marketing?.communications || [];
+
+  const getChannelIcon = (ch) => {
+    if (ch === 'email') return <Mail size={14} style={{ color: '#3b82f6' }} />;
+    if (ch === 'sms') return <Send size={14} style={{ color: '#10b981' }} />;
+    if (ch === 'whatsapp') return <MessageSquare size={14} style={{ color: '#25d366' }} />;
+    return <Mail size={14} />;
   };
 
   return (
     <>
       {/* Background Overlay */}
-      <div 
+      <div
         className={`drawer-overlay ${isOpen ? 'open' : ''}`}
         onClick={onClose}
       />
 
-      {/* Slide-out Drawer Panel */}
-      <div className={`drawer-panel ${isOpen ? 'open' : ''}`}>
-        {/* Top Header */}
+      {/* Drawer Panel */}
+      <div className={`drawer-panel ${isOpen ? 'open' : ''}`} style={{ maxWidth: '640px', width: '100%', overflowY: 'auto' }}>
+        {/* Header */}
         <div style={{
           padding: '24px 32px',
           borderBottom: '1px solid var(--panel-border)',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          background: 'var(--panel-bg)'
+          background: 'var(--panel-bg)',
+          sticky: 'top'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <img 
-              src={customer.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(customer.name || 'user')}`} 
-              alt={customer.name}
-              style={{ width: '60px', height: '60px', borderRadius: '50%', objectFit: 'cover', border: '3px solid var(--accent-indigo)' }}
-            />
+            <div style={{
+              width: '56px',
+              height: '56px',
+              borderRadius: '50%',
+              background: 'linear-gradient(135deg, var(--accent-indigo), #8b5cf6)',
+              color: '#ffffff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontWeight: 800,
+              fontSize: '1.4rem'
+            }}>
+              {(profile.full_name || profile.username || 'C').charAt(0).toUpperCase()}
+            </div>
             <div>
-              <h2 className="heading-lg" style={{ color: 'var(--text-primary)' }}>{customer.name}</h2>
-              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'flex', gap: '12px', marginTop: '2px', flexWrap: 'wrap' }}>
-                <span>ID: {customer.id || 'N/A'}</span>
+              <h2 className="heading-lg" style={{ color: 'var(--text-primary)' }}>
+                {profile.full_name || profile.username || 'Customer Intelligence Profile'}
+              </h2>
+              <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', display: 'flex', gap: '10px', marginTop: '2px', flexWrap: 'wrap' }}>
+                <span>ID: {customerId}</span>
                 <span>•</span>
-                <span>{customer.gender || 'User'}, {customer.age ? `${customer.age} yrs` : ''}</span>
-                {customer.psychographic && (
-                  <>
-                    <span>•</span>
-                    <span className="badge badge-indigo">{customer.psychographic}</span>
-                  </>
-                )}
+                <span>{profile.email || 'No email registered'}</span>
               </div>
             </div>
           </div>
 
-          <button 
-            onClick={onClose}
-            className="btn btn-ghost"
-            style={{ padding: '8px', borderRadius: '50%' }}
-          >
-            <X size={22} />
+          <button onClick={onClose} className="btn btn-ghost" style={{ padding: '8px' }}>
+            <X size={20} />
           </button>
         </div>
 
-        {/* Scrollable Content */}
-        <div style={{ padding: '32px', display: 'flex', flexDirection: 'column', gap: '32px', overflowY: 'auto' }}>
-          
-          {/* SECTION 1: Customer Overview Cards */}
-          <div className="grid-4" style={{ gap: '16px' }}>
-            <div style={{ background: 'var(--table-header-bg)', border: '1px solid var(--panel-border)', padding: '16px', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
-              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>Customer ID</div>
-              <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--accent-indigo)', marginTop: '4px' }}>{customer.id || 'N/A'}</div>
+        {/* Content Body */}
+        <div style={{ padding: '32px' }}>
+          {isLoading ? (
+            <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)' }}>
+              Fetching real-time customer intelligence deep-dive...
             </div>
-
-            <div style={{ background: 'var(--table-header-bg)', border: '1px solid var(--panel-border)', padding: '16px', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
-              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>Gender & Age</div>
-              <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '4px' }}>{customer.gender || 'User'}{customer.age ? `, ${customer.age}` : ''}</div>
+          ) : error ? (
+            <div className="glass-card" style={{ padding: '20px', color: 'var(--accent-rose)', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <AlertCircle size={18} />
+              <span>{error}</span>
             </div>
-
-            <div style={{ background: 'var(--table-header-bg)', border: '1px solid var(--panel-border)', padding: '16px', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
-              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>Psychographic</div>
-              <div style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--accent-emerald)', marginTop: '4px' }}>{customer.psychographic || 'N/A'}</div>
-            </div>
-
-            <div style={{ background: 'var(--table-header-bg)', border: '1px solid var(--panel-border)', padding: '16px', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
-              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>Total Orders</div>
-              <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '4px' }}>{customer.orders || 0} Orders</div>
-            </div>
-          </div>
-
-          {/* SECTION 2: Time Spent Analysis Graph */}
-          <div className="glass-card" style={{ padding: '24px' }}>
-            <div style={{ marginBottom: '20px' }}>
-              <h3 className="heading-md" style={{ color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Clock size={18} style={{ color: 'var(--accent-indigo)' }} />
-                <span>Time Spent Analysis</span>
-              </h3>
-              <p className="text-subtle">Browsing session duration & engagement history</p>
-            </div>
-
-            {/* Session Bar Chart */}
-            <div style={{ height: '220px', width: '100%' }}>
-              {sessions.length === 0 ? (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                  No browsing session records available.
-                </div>
-              ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={sessions} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(148, 163, 184, 0.15)" />
-                    <XAxis dataKey="date" tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} unit="m" />
-                    <Tooltip content={<CustomSessionTooltip />} />
-                    <Bar dataKey="minutes" radius={[6, 6, 0, 0]} animationDuration={1000}>
-                      {sessions.map((entry, index) => (
-                        <Cell 
-                          key={`cell-${index}`} 
-                          fill={index === sessions.length - 1 ? 'var(--accent-indigo)' : '#94a3b8'} 
-                        />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
-            </div>
-
-            {/* Summary Row Below Graph */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginTop: '20px', borderTop: '1px solid var(--panel-border)', paddingTop: '16px', textAlign: 'center' }}>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+              
+              {/* SECTION 1: CUSTOMER PROFILE */}
               <div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>Average Time</div>
-                <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>{avgTime} mins</div>
-              </div>
-              <div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>Longest Visit</div>
-                <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--accent-indigo)' }}>{longestVisit} mins</div>
-              </div>
-              <div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>Shortest Visit</div>
-                <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-secondary)' }}>{shortestVisit} mins</div>
-              </div>
-            </div>
-          </div>
-
-          {/* SECTION 3: Interest History */}
-          <div className="glass-card" style={{ padding: '24px' }}>
-            <div style={{ marginBottom: '16px' }}>
-              <h3 className="heading-md" style={{ color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <TrendingUp size={18} style={{ color: 'var(--accent-indigo)' }} />
-                <span>Interest History Timeline</span>
-              </h3>
-              <p className="text-subtle">Sequential timeline of clothing product interactions</p>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {interestHistory.length === 0 ? (
-                <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                  No interest history logged yet.
+                <h3 className="heading-md" style={{ color: 'var(--text-primary)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <User size={18} style={{ color: 'var(--accent-indigo)' }} />
+                  <span>Canonical Customer Profile</span>
+                </h3>
+                <div style={{
+                  background: 'var(--table-header-bg)',
+                  border: '1px solid var(--panel-border)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '16px 20px',
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: '12px',
+                  fontSize: '0.88rem'
+                }}>
+                  <div><span style={{ color: 'var(--text-muted)' }}>Full Name:</span> <strong>{profile.full_name || profile.username || 'N/A'}</strong></div>
+                  <div><span style={{ color: 'var(--text-muted)' }}>Email:</span> <strong>{profile.email || 'N/A'}</strong></div>
+                  <div><span style={{ color: 'var(--text-muted)' }}>Phone:</span> <strong>{profile.phone || 'N/A'}</strong></div>
+                  <div><span style={{ color: 'var(--text-muted)' }}>Role:</span> <strong>{profile.role || 'user'}</strong></div>
+                  <div><span style={{ color: 'var(--text-muted)' }}>Created At:</span> <strong>{profile.created_at ? new Date(profile.created_at).toLocaleDateString() : 'N/A'}</strong></div>
+                  <div><span style={{ color: 'var(--text-muted)' }}>Last Active:</span> <strong>{profile.last_active_at ? new Date(profile.last_active_at).toLocaleString() : 'N/A'}</strong></div>
                 </div>
-              ) : (
-                interestHistory.map((item, idx) => (
-                  <div 
-                    key={idx}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '12px 16px',
-                      borderRadius: 'var(--radius-md)',
-                      background: 'var(--table-header-bg)',
-                      border: '1px solid var(--panel-border)'
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(79, 70, 229, 0.1)', color: 'var(--accent-indigo)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Shirt size={16} />
-                      </div>
-                      <div>
-                        <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)' }}>{item.event}</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Category: {item.category}</div>
-                      </div>
-                    </div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-                      {item.date}, {item.time}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
+              </div>
 
-          {/* SECTION 4: Cart Section */}
-          <div className="glass-card" style={{ padding: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 className="heading-md" style={{ color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <ShoppingBag size={18} style={{ color: 'var(--accent-indigo)' }} />
-                <span>Shopping Cart Items</span>
-              </h3>
-              <span className="badge badge-indigo">{cartItems.length} Products</span>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              {cartItems.length === 0 ? (
-                <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                  No cart items found for this customer.
-                </div>
-              ) : (
-                cartItems.map(item => (
-                  <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '14px', borderRadius: 'var(--radius-md)', background: 'var(--panel-solid)', border: '1px solid var(--panel-border)' }}>
-                    <img src={item.image} alt={item.name} style={{ width: '56px', height: '56px', borderRadius: '8px', objectFit: 'cover' }} />
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)' }}>{item.name}</div>
-                      <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', display: 'flex', gap: '12px', marginTop: '4px' }}>
-                        <span><strong>Size:</strong> {item.size}</span>
-                        <span><strong>Color:</strong> {item.color}</span>
-                        <span><strong>Category:</strong> {item.category}</span>
+              {/* SECTION 2: LEAD STATE & SCORE */}
+              <div>
+                <h3 className="heading-md" style={{ color: 'var(--text-primary)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Target size={18} style={{ color: 'var(--accent-indigo)' }} />
+                  <span>Lead State & Qualification Metrics</span>
+                </h3>
+                <div style={{
+                  background: 'var(--panel-solid)',
+                  border: '1.5px solid var(--panel-border)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '20px',
+                  boxShadow: 'var(--panel-shadow)'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                    <div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Lead Score</div>
+                      <div style={{ fontFamily: 'var(--font-heading)', fontSize: '2.5rem', fontWeight: 800, color: 'var(--accent-indigo)', lineHeight: 1, marginTop: '4px' }}>
+                        {lead.lead_score !== undefined && lead.lead_score !== null ? lead.lead_score : 'N/A'}
                       </div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--text-primary)' }}>₹{item.price.toLocaleString('en-IN')}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Qty: {item.qty}</div>
+                      <div style={{ marginBottom: '4px' }}>
+                        <span className={`badge ${lead.qualification_status === 'qualified' ? 'badge-emerald' : 'badge-subtle'}`}>
+                          {lead.qualification_status || 'not_qualified'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className={`badge ${lead.lead_segment === 'Hot' ? 'badge-rose' : 'badge-indigo'}`}>
+                          {lead.lead_segment || 'Cold'} Segment
+                        </span>
+                      </div>
                     </div>
                   </div>
-                ))
-              )}
-            </div>
-          </div>
 
-          {/* SECTION 5: Likes / Wishlist Section */}
-          <div className="glass-card" style={{ padding: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 className="heading-md" style={{ color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Heart size={18} style={{ color: 'var(--accent-rose)' }} />
-                <span>Liked Products & Wishlist</span>
-              </h3>
-              <span className="badge badge-rose">{likedItems.length} Liked</span>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {likedItems.length === 0 ? (
-                <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                  No liked products or wishlist items.
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '0.82rem', borderTop: '1px solid var(--panel-border)', paddingTop: '12px' }}>
+                    <div><span style={{ color: 'var(--text-muted)' }}>Lead Probability:</span> <strong>{lead.lead_probability ? `${(lead.lead_probability * 100).toFixed(2)}%` : 'N/A'}</strong></div>
+                    <div><span style={{ color: 'var(--text-muted)' }}>Model Version:</span> <strong>{lead.model_version || 'N/A'}</strong></div>
+                    <div><span style={{ color: 'var(--text-muted)' }}>First Qualified:</span> <strong>{lead.first_qualified_at ? new Date(lead.first_qualified_at).toLocaleString() : 'N/A'}</strong></div>
+                    <div><span style={{ color: 'var(--text-muted)' }}>Last Scored:</span> <strong>{lead.last_scored_at ? new Date(lead.last_scored_at).toLocaleString() : 'N/A'}</strong></div>
+                  </div>
                 </div>
-              ) : (
-                likedItems.map(item => (
-                  <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '12px 14px', borderRadius: 'var(--radius-md)', background: 'var(--panel-solid)', border: '1px solid var(--panel-border)' }}>
-                    <img src={item.image} alt={item.name} style={{ width: '48px', height: '48px', borderRadius: '8px', objectFit: 'cover' }} />
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-primary)' }}>{item.name}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Category: {item.category}</div>
-                    </div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      Liked: {item.dateLiked}
-                    </div>
+              </div>
+
+              {/* SECTION 3: BEHAVIORAL FEATURE STORE */}
+              <div>
+                <h3 className="heading-md" style={{ color: 'var(--text-primary)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Activity size={18} style={{ color: 'var(--accent-indigo)' }} />
+                  <span>Behavioral Feature Aggregations</span>
+                </h3>
+                <div style={{
+                  background: 'var(--table-header-bg)',
+                  border: '1px solid var(--panel-border)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '16px 20px',
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: '10px',
+                  fontSize: '0.85rem'
+                }}>
+                  <div><span style={{ color: 'var(--text-muted)' }}>Sessions Count:</span> <strong>{behavior.sessions_count || 0}</strong></div>
+                  <div><span style={{ color: 'var(--text-muted)' }}>Total Events:</span> <strong>{behavior.total_events || 0}</strong></div>
+                  <div><span style={{ color: 'var(--text-muted)' }}>Total Time Spent:</span> <strong>{behavior.total_time_spent ? `${Math.round(behavior.total_time_spent)}s` : '0s'}</strong></div>
+                  <div><span style={{ color: 'var(--text-muted)' }}>Page Views Count:</span> <strong>{behavior.page_views_count || 0}</strong></div>
+                  <div><span style={{ color: 'var(--text-muted)' }}>Products Viewed:</span> <strong>{behavior.products_viewed || 0}</strong></div>
+                  <div><span style={{ color: 'var(--text-muted)' }}>Unique Products Viewed:</span> <strong>{behavior.unique_products_viewed || 0}</strong></div>
+                  <div><span style={{ color: 'var(--text-muted)' }}>Product Interactions:</span> <strong>{behavior.product_interactions || 0}</strong></div>
+                  <div><span style={{ color: 'var(--text-muted)' }}>Search Count:</span> <strong>{behavior.search_count || 0}</strong></div>
+                  <div><span style={{ color: 'var(--text-muted)' }}>High Intent Page Visits:</span> <strong>{behavior.high_intent_page_visits || 0}</strong></div>
+                  <div><span style={{ color: 'var(--text-muted)' }}>Cart Items:</span> <strong>{behavior.cart_item_count || 0}</strong></div>
+                  <div><span style={{ color: 'var(--text-muted)' }}>Cart Value:</span> <strong>${behavior.cart_value || 0}</strong></div>
+                  <div><span style={{ color: 'var(--text-muted)' }}>Wishlist Items:</span> <strong>{behavior.wishlist_item_count || 0}</strong></div>
+                  <div><span style={{ color: 'var(--text-muted)' }}>Checkout Attempts:</span> <strong>{behavior.checkout_attempts || 0}</strong></div>
+                  <div><span style={{ color: 'var(--text-muted)' }}>Orders Count:</span> <strong>{behavior.orders_count || 0}</strong></div>
+                </div>
+              </div>
+
+              {/* SECTION 4: RECENT ORDERS */}
+              <div>
+                <h3 className="heading-md" style={{ color: 'var(--text-primary)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <ShoppingBag size={18} style={{ color: 'var(--accent-indigo)' }} />
+                  <span>Recent Orders ({orders.length})</span>
+                </h3>
+                {orders.length === 0 ? (
+                  <div style={{ padding: '16px', background: 'var(--table-header-bg)', borderRadius: 'var(--radius-md)', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                    No purchase history recorded yet.
                   </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          {/* SECTION 6: Customer Interest Summary */}
-          {customer.interestSummary && (
-            <div className="glass-card" style={{ padding: '24px', background: 'rgba(79, 70, 229, 0.04)', border: '1px solid rgba(79, 70, 229, 0.2)' }}>
-              <h3 className="heading-md" style={{ color: 'var(--accent-indigo)', marginBottom: '8px' }}>
-                Customer Interest Summary
-              </h3>
-              <p style={{ fontSize: '0.9rem', color: 'var(--text-primary)', lineHeight: 1.6 }}>
-                "{customer.interestSummary}"
-              </p>
-            </div>
-          )}
-
-          {/* SECTION 7: Automated Communication (READ-ONLY) */}
-          {(customer.sentEmail || customer.sentSms) && (
-            <div className="glass-card" style={{ padding: '24px' }}>
-              <h3 className="heading-md" style={{ color: 'var(--text-primary)', marginBottom: '16px' }}>
-                Automated Communications (Read-Only Log)
-              </h3>
-
-              <div className="grid-2" style={{ gap: '20px' }}>
-                {/* Sent Email Card */}
-                {customer.sentEmail && (
-                  <div style={{ background: 'var(--table-header-bg)', border: '1px solid var(--panel-border)', padding: '18px', borderRadius: 'var(--radius-lg)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                      <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Mail size={16} style={{ color: 'var(--accent-indigo)' }} />
-                        <span>Email Sent</span>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {orders.map((o, idx) => (
+                      <div key={idx} style={{ padding: '12px 16px', background: 'var(--table-header-bg)', borderRadius: 'var(--radius-md)', fontSize: '0.85rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <div style={{ fontWeight: 700 }}>Order #{o._id || o.id}</div>
+                          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{o.items ? `${o.items.length} items` : ''} • {o.created_at ? new Date(o.created_at).toLocaleDateString() : 'N/A'}</div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontWeight: 800, color: 'var(--accent-emerald)' }}>${o.total_amount || o.total || 0}</div>
+                          <span className="badge badge-emerald" style={{ padding: '2px 8px', fontSize: '0.72rem' }}>{o.status || 'placed'}</span>
+                        </div>
                       </div>
-                      <span className="badge badge-emerald">
-                        <CheckCircle2 size={12} /> {customer.sentEmail.status || 'Sent'}
-                      </span>
-                    </div>
-
-                    <div style={{ marginBottom: '8px' }}>
-                      <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Subject</div>
-                      <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--text-primary)' }}>{customer.sentEmail.subject}</div>
-                    </div>
-
-                    <div>
-                      <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Body</div>
-                      <div style={{ background: 'var(--panel-solid)', padding: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--panel-border)', fontSize: '0.8rem', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap' }}>
-                        {customer.sentEmail.body}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Sent SMS Card */}
-                {customer.sentSms && (
-                  <div style={{ background: 'var(--table-header-bg)', border: '1px solid var(--panel-border)', padding: '18px', borderRadius: 'var(--radius-lg)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                      <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <MessageSquare size={16} style={{ color: 'var(--accent-emerald)' }} />
-                        <span>SMS Sent</span>
-                      </div>
-                      <span className="badge badge-emerald">
-                        <CheckCircle2 size={12} /> {customer.sentSms.status || 'Delivered'}
-                      </span>
-                    </div>
-
-                    <div>
-                      <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Message Content</div>
-                      <div style={{ background: 'var(--panel-solid)', padding: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--panel-border)', fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                        {customer.sentSms.text}
-                      </div>
-                    </div>
+                    ))}
                   </div>
                 )}
               </div>
+
+              {/* SECTION 5: MARKETING DISPATCHES */}
+              <div>
+                <h3 className="heading-md" style={{ color: 'var(--text-primary)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <PackageCheck size={18} style={{ color: 'var(--accent-indigo)' }} />
+                  <span>Marketing Dispatches & Automation Events</span>
+                </h3>
+                {comms.length === 0 ? (
+                  <div style={{ padding: '16px', background: 'var(--table-header-bg)', borderRadius: 'var(--radius-md)', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                    No automated communications dispatched yet.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {comms.map((c, idx) => (
+                      <div key={idx} style={{ padding: '12px 16px', background: 'var(--table-header-bg)', borderRadius: 'var(--radius-md)', fontSize: '0.85rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          {getChannelIcon(c.channel)}
+                          <div>
+                            <div style={{ fontWeight: 700, textTransform: 'capitalize' }}>{c.channel} Channel</div>
+                            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Recipient: {c.recipient || 'N/A'}</div>
+                          </div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <span className={`badge ${c.status === 'sent' ? 'badge-emerald' : 'badge-subtle'}`} style={{ padding: '2px 8px', fontSize: '0.75rem' }}>
+                            {c.status}
+                          </span>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                            {c.sent_at ? new Date(c.sent_at).toLocaleTimeString() : (c.created_at ? new Date(c.created_at).toLocaleTimeString() : '')}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
             </div>
           )}
         </div>
