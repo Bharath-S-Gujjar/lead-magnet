@@ -46,27 +46,11 @@ export const Cart = () => {
       return;
     }
 
-    const payableTotal = Math.round(couponApplied ? totalPrice * 0.9 : totalPrice);
     const customerSession = getCustomerSession();
 
     try {
       await createOrder({
-        customer_id: customer.user_id,
-        customer_email: customer.email,
         session_id: customerSession?.session_id,
-        items: cart.map((item) => ({
-          product_id: item.id,
-          name: item.name,
-          brand: item.brand,
-          category: item.category,
-          gender: item.gender,
-          price: item.price,
-          quantity: item.quantity,
-          selectedSize: item.selectedSize,
-          selectedColor: item.selectedColor,
-          image: item.image,
-        })),
-        total_amount: payableTotal,
       });
     } catch (error) {
       setCheckoutError(error.message);

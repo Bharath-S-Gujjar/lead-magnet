@@ -151,9 +151,17 @@ export async function trackCustomerEvent(eventType, details = {}) {
 }
 
 export async function createOrder(order) {
+  const customerSession = getCustomerSession();
+  if (!customerSession?.token) {
+    throw new Error('Please log in before placing an order.');
+  }
+
   const response = await fetch(`${API_BASE_URL}/api/orders`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${customerSession.token}`,
+    },
     body: JSON.stringify(order),
   });
   const payload = await parseJsonResponse(response);
@@ -165,9 +173,12 @@ export async function createOrder(order) {
 
 export async function fetchCustomerOrders(email) {
   const session = getCustomerSession();
-  const targetEmail = email || session?.email;
-  if (!targetEmail) return [];
-  const response = await fetch(`${API_BASE_URL}/api/orders?customer_email=${encodeURIComponent(targetEmail)}`);
+  if (!session?.token || !session?.user_id) return [];
+  const response = await fetch(`${API_BASE_URL}/api/orders?user_id=${encodeURIComponent(session.user_id)}`, {
+    headers: {
+      Authorization: `Bearer ${session.token}`,
+    },
+  });
   const payload = await parseJsonResponse(response);
   if (!response.ok || !payload.success) {
     throw new Error(payload.message || 'Unable to load orders.');
