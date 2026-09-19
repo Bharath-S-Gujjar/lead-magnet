@@ -22,6 +22,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 # modules import any collection globals from it.
 import app as app_module
 
+app_module.app.config["TESTING"] = True
+app_module.app.testing = True
 app_module.db = app_module.mongo_client[TEST_DATABASE_NAME]
 app_module.profiles_collection = app_module.db["user_profiles"]
 app_module.legacy_users_collection = app_module.db["users"]

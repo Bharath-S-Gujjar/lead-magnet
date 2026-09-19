@@ -1,5 +1,6 @@
 import datetime
 from collections import Counter
+from bson import ObjectId
 
 HIGH_INTENT_EVENTS = {
     'product_view': 3,
@@ -133,3 +134,26 @@ def apply_profile_update(profiles_collection, profile_update):
         },
         upsert=True
     )
+
+
+def get_customer_profile(profiles_collection, user_id=None, visitor_id=None):
+    """Retrieve unified customer profile by user_id or visitor_id."""
+    if not user_id and not visitor_id:
+        return None
+
+    if user_id:
+        queries = [{"user_id": str(user_id)}]
+        try:
+            queries.append({"_id": ObjectId(user_id)})
+        except Exception:
+            pass
+        profile = profiles_collection.find_one({"$or": queries})
+        if profile:
+            return profile
+
+    if visitor_id:
+        profile = profiles_collection.find_one({"$or": [{"visitor_id": str(visitor_id)}, {"anonymous_id": str(visitor_id)}]})
+        if profile:
+            return profile
+
+    return None

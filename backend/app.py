@@ -41,9 +41,37 @@ import certifi
 load_dotenv()
 
 app = Flask(__name__)
+
+DEFAULT_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
 FRONTEND_URL = os.getenv("FRONTEND_URL")
-CORS(app, origins=FRONTEND_URL or "*")
-socketio = SocketIO(app, cors_allowed_origins=FRONTEND_URL or "*")
+if FRONTEND_URL:
+    ALLOWED_ORIGINS = [origin.strip() for origin in FRONTEND_URL.split(",") if origin.strip()]
+    for default_origin in DEFAULT_ALLOWED_ORIGINS:
+        if default_origin not in ALLOWED_ORIGINS:
+            ALLOWED_ORIGINS.append(default_origin)
+else:
+    IS_PROD_ENV = os.getenv("FLASK_ENV", "").lower() == "production" or os.getenv("ENV", "").lower() == "production"
+    ALLOWED_ORIGINS = DEFAULT_ALLOWED_ORIGINS if not IS_PROD_ENV else []
+
+CORS(app, origins=ALLOWED_ORIGINS if ALLOWED_ORIGINS else DEFAULT_ALLOWED_ORIGINS)
+socketio = SocketIO(app, cors_allowed_origins=ALLOWED_ORIGINS if ALLOWED_ORIGINS else DEFAULT_ALLOWED_ORIGINS)
+
+
+@app.after_request
+def add_security_headers(response):
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    return response
 
 
 def create_mongo_client():
@@ -273,6 +301,49 @@ app.config["JWT_SECRET"] = JWT_SECRET
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin") or "admin"
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin12345") or "admin12345"
 
+IS_PRODUCTION = os.getenv("FLASK_ENV", "").lower() == "production" or os.getenv("ENV", "").lower() == "production"
+if IS_PRODUCTION:
+    if not os.getenv("JWT_SECRET") or JWT_SECRET == "default_jwt_secret_key_for_lead_magnet":
+        raise ValueError("Insecure JWT_SECRET detected in production environment. A secure JWT_SECRET environment variable is required.")
+    if not os.getenv("ADMIN_PASSWORD") or ADMIN_PASSWORD == "admin12345":
+        raise ValueError("Insecure ADMIN_PASSWORD detected in production environment. A secure ADMIN_PASSWORD environment variable is required.")
+
+AUTH_RATE_LIMIT_ATTEMPTS = {}
+
+
+def is_rate_limited(ip_address, max_requests=10, window_seconds=60):
+    """Simple in-memory rate limiter for sensitive authentication endpoints."""
+    if app.config.get("TESTING") or app.testing:
+        return False
+    now = time.time()
+    timestamps = [ts for ts in AUTH_RATE_LIMIT_ATTEMPTS.get(ip_address, []) if now - ts < window_seconds]
+    AUTH_RATE_LIMIT_ATTEMPTS[ip_address] = timestamps
+    if len(timestamps) >= max_requests:
+        return True
+    AUTH_RATE_LIMIT_ATTEMPTS[ip_address].append(now)
+    return False
+
+
+def parse_pagination_params(default_page=1, default_limit=25, max_limit=100):
+    """Safely parse page and limit query parameters."""
+    try:
+        page = int(request.args.get("page", default_page))
+        if page < 1:
+            page = default_page
+    except (ValueError, TypeError):
+        page = default_page
+
+    try:
+        limit = int(request.args.get("limit", default_limit))
+        if limit < 1:
+            limit = default_limit
+        elif limit > max_limit:
+            limit = max_limit
+    except (ValueError, TypeError):
+        limit = default_limit
+
+    return page, limit
+
 # Load everything saved from the notebook
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "model"))
@@ -318,6 +389,10 @@ def predict():
 
 @app.route("/api/auth/signup", methods=["POST"])
 def signup():
+    ip_addr = request.remote_addr or "127.0.0.1"
+    if is_rate_limited(f"signup:{ip_addr}", max_requests=10, window_seconds=60):
+        return jsonify({"success": False, "message": "Too many requests. Please try again later.", "errors": []}), 429
+
     if not MONGO_AVAILABLE:
         return jsonify({"success": False, "message": "Database unavailable", "errors": []}), 500
 
@@ -390,6 +465,10 @@ def signup():
 
 @app.route("/api/auth/login", methods=["POST"])
 def login():
+    ip_addr = request.remote_addr or "127.0.0.1"
+    if is_rate_limited(f"login:{ip_addr}", max_requests=10, window_seconds=60):
+        return jsonify({"success": False, "message": "Too many requests. Please try again later.", "errors": []}), 429
+
     if not MONGO_AVAILABLE:
         return jsonify({"success": False, "message": "Database unavailable", "errors": []}), 500
 
@@ -459,6 +538,10 @@ def login():
 
 @app.route("/api/auth/admin/login", methods=["POST"])
 def admin_login():
+    ip_addr = request.remote_addr or "127.0.0.1"
+    if is_rate_limited(f"admin_login:{ip_addr}", max_requests=10, window_seconds=60):
+        return jsonify({"success": False, "message": "Too many requests. Please try again later.", "errors": []}), 429
+
     data = request.get_json(silent=True) or {}
     username = data.get("username")
     password = data.get("password")
@@ -769,24 +852,11 @@ def get_customer_features_endpoint():
         user_id = request.args.get("user_id") or request.args.get("customer_id")
         anonymous_id = request.args.get("anonymous_id") or request.args.get("visitor_id")
 
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header and auth_header.startswith("Bearer "):
-            token = auth_header.split(" ")[1]
-            try:
-                payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
-                if payload.get("sub"):
-                    user_id = payload.get("sub")
-            except Exception:
-                pass
+        owner, error = resolve_persistence_identity(user_id, anonymous_id)
+        if error:
+            return error
 
-        if not user_id and not anonymous_id:
-            return jsonify({
-                "success": False,
-                "message": "user_id or anonymous_id required",
-                "errors": []
-            }), 400
-
-        target_id = user_id or anonymous_id
+        target_id = owner.get("user_id") or owner.get("anonymous_id")
         features = upsert_customer_features(target_id, db)
         serialized = serialize_mongo_value(features)
 
@@ -1549,11 +1619,18 @@ def get_profile_route():
     visitor_id = request.args.get("visitor_id") or request.args.get("anonymous_id")
 
     try:
+        if request.headers.get("Authorization") or user_id:
+            owner, error = resolve_persistence_identity(user_id, visitor_id)
+            if error:
+                return error
+            user_id = owner.get("user_id")
+            visitor_id = owner.get("anonymous_id")
+
         profile = get_customer_profile(profiles_collection, user_id=user_id, visitor_id=visitor_id)
         if not profile:
             return jsonify({"success": True, "data": None, "message": "Profile not found"}), 200
 
-        return jsonify({"success": True, "data": serialize_mongo_value(profile)})
+        return jsonify({"success": True, "data": serialize_profile(profile)})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 400
 
@@ -1728,8 +1805,7 @@ def admin_intelligence_leads_route():
         segment_param = request.args.get("segment", "all")
         sort_by = request.args.get("sort_by", "lead_score")
         sort_order = request.args.get("sort_order", "desc")
-        page = int(request.args.get("page", 1))
-        limit = int(request.args.get("limit", 25))
+        page, limit = parse_pagination_params(default_page=1, default_limit=25, max_limit=100)
 
         res = get_qualified_leads_list(
             db,
@@ -1781,8 +1857,7 @@ def admin_intelligence_recent_leads_route():
     if not MONGO_AVAILABLE:
         return jsonify({"success": False, "message": "Database unavailable"}), 500
     try:
-        page = int(request.args.get("page", 1))
-        limit = int(request.args.get("limit", 10))
+        page, limit = parse_pagination_params(default_page=1, default_limit=10, max_limit=100)
         res = get_recent_leads(db, page=page, limit=limit)
         return jsonify({"success": True, "data": res})
     except Exception as e:
@@ -1795,8 +1870,7 @@ def admin_intelligence_marketing_activity_route():
     if not MONGO_AVAILABLE:
         return jsonify({"success": False, "message": "Database unavailable"}), 500
     try:
-        page = int(request.args.get("page", 1))
-        limit = int(request.args.get("limit", 25))
+        page, limit = parse_pagination_params(default_page=1, default_limit=25, max_limit=100)
         res = get_marketing_activity(db, page=page, limit=limit)
         return jsonify({"success": True, "data": res})
     except Exception as e:
@@ -1813,8 +1887,7 @@ def admin_intelligence_notifications_route():
         read_status = None
         if read_param is not None:
             read_status = read_param.lower() == "true"
-        page = int(request.args.get("page", 1))
-        limit = int(request.args.get("limit", 25))
+        page, limit = parse_pagination_params(default_page=1, default_limit=25, max_limit=100)
 
         res = get_admin_notifications_list(db, read_status=read_status, page=page, limit=limit)
         return jsonify({"success": True, "data": res})

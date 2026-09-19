@@ -24,6 +24,7 @@ def token_required(view):
                 token,
                 current_app.config["JWT_SECRET"],
                 algorithms=["HS256"],
+                options={"require": ["exp"]},
             )
         except jwt.ExpiredSignatureError:
             return _unauthorized("Token has expired")
