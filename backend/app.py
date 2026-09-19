@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, g
 from flask_cors import CORS
 import joblib
 import pandas as pd
@@ -12,7 +12,8 @@ import time
 from dotenv import load_dotenv
 from pymongo import MongoClient
 from action_recommendations import get_next_action
-from auth_middleware import admin_required
+from auth_middleware import token_required, admin_required
+from ecommerce_model_adapter import predict_customer_features
 from identity_service import generate_anonymous_id, resolve_anonymous_identity
 from lead_processing_service import process_session
 from behavior_event_service import BehaviorEventError, log_behavior_event
@@ -249,7 +250,7 @@ def auto_reconnect_db():
         ensure_mongo_connection()
 
 
-JWT_SECRET = os.getenv("JWT_SECRET")
+JWT_SECRET = os.getenv("JWT_SECRET") or "default_jwt_secret_key_for_lead_magnet"
 app.config["JWT_SECRET"] = JWT_SECRET
 
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin") or "admin"
@@ -777,6 +778,63 @@ def get_customer_features_endpoint():
             "message": "Customer features retrieved",
             "data": serialized,
         })
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e), "errors": []}), 500
+
+
+@app.route("/api/customer/lead-score", methods=["GET"])
+@token_required
+def get_customer_lead_score_endpoint():
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable", "errors": []}), 500
+
+    try:
+        user_id = g.current_user.get("sub") or g.current_user.get("user_id")
+        if not user_id:
+            return jsonify({"success": False, "message": "Authenticated user identity required", "errors": []}), 401
+
+        feature_doc = get_customer_features(user_id, customer_features_collection)
+        if not feature_doc:
+            return jsonify({
+                "success": False,
+                "message": "Customer feature record not found. Browse or perform actions to generate activity.",
+                "errors": []
+            }), 404
+
+        result = predict_customer_features(feature_doc)
+        return jsonify({
+            "success": True,
+            "message": "Customer lead score computed",
+            "data": result,
+        }), 200
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e), "errors": []}), 500
+
+
+@app.route("/api/admin/customer-lead-score/<customer_id>", methods=["GET"])
+@admin_required
+def get_admin_customer_lead_score_endpoint(customer_id):
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable", "errors": []}), 500
+
+    try:
+        if not customer_id:
+            return jsonify({"success": False, "message": "customer_id required", "errors": []}), 400
+
+        feature_doc = get_customer_features(customer_id, customer_features_collection)
+        if not feature_doc:
+            return jsonify({
+                "success": False,
+                "message": f"Customer feature record not found for customer_id: {customer_id}",
+                "errors": []
+            }), 404
+
+        result = predict_customer_features(feature_doc)
+        return jsonify({
+            "success": True,
+            "message": "Admin customer lead score computed",
+            "data": result,
+        }), 200
     except Exception as e:
         return jsonify({"success": False, "message": str(e), "errors": []}), 500
 
