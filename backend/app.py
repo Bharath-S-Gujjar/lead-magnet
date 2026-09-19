@@ -19,7 +19,7 @@ from behavior_event_service import BehaviorEventError, log_behavior_event
 from customer_profile_service import build_profile_update, apply_profile_update, get_customer_profile
 from seed_clothing_products import seed_clothing_products_if_empty
 from cart_service import get_user_cart, add_to_cart, update_cart_quantity, remove_from_cart, clear_cart
-from wishlist_service import get_user_wishlist, add_to_wishlist, remove_from_wishlist
+from wishlist_service import get_user_wishlist, add_to_wishlist, remove_from_wishlist, clear_wishlist
 from recommendation_service import get_personalized_recommendations
 from marketing_service import get_all_campaigns, create_campaign, get_campaign_logs, evaluate_campaign_triggers
 import certifi
@@ -166,6 +166,46 @@ SAFE_PROFILE_FIELDS = {
 def serialize_profile(profile):
     """Serialize a profile document, excluding sensitive fields like password."""
     return serialize_mongo_value({k: v for k, v in profile.items() if k in SAFE_PROFILE_FIELDS})
+
+
+def resolve_persistence_identity(user_id=None, anonymous_id=None):
+    """Resolve a cart or wishlist owner without trusting a spoofed user id."""
+    authorization = request.headers.get("Authorization", "")
+    token_user_id = None
+    if authorization:
+        scheme, _, token = authorization.partition(" ")
+        if scheme.lower() != "bearer" or not token:
+            return None, (jsonify({"success": False, "message": "Invalid authorization token", "errors": []}), 401)
+        try:
+            claims = jwt.decode(token, app.config["JWT_SECRET"], algorithms=["HS256"])
+            token_user_id = claims.get("sub")
+            if not token_user_id:
+                return None, (jsonify({"success": False, "message": "Invalid authorization token", "errors": []}), 401)
+        except jwt.ExpiredSignatureError:
+            return None, (jsonify({"success": False, "message": "Token has expired", "errors": []}), 401)
+        except jwt.InvalidTokenError:
+            return None, (jsonify({"success": False, "message": "Invalid authorization token", "errors": []}), 401)
+
+    if user_id is not None:
+        if not isinstance(user_id, str) or not ObjectId.is_valid(user_id):
+            return None, (jsonify({"success": False, "message": "Invalid user_id", "errors": []}), 400)
+        if token_user_id and token_user_id != user_id:
+            return None, (jsonify({"success": False, "message": "User ownership mismatch", "errors": []}), 403)
+        if not token_user_id:
+            return None, (jsonify({"success": False, "message": "Authorization token required", "errors": []}), 401)
+        return {"user_id": user_id, "anonymous_id": None}, None
+
+    if token_user_id:
+        if not ObjectId.is_valid(token_user_id):
+            return None, (jsonify({"success": False, "message": "Invalid authenticated user", "errors": []}), 401)
+        return {"user_id": token_user_id, "anonymous_id": None}, None
+
+    if anonymous_id is not None:
+        if not isinstance(anonymous_id, str) or not anonymous_id.strip():
+            return None, (jsonify({"success": False, "message": "Invalid anonymous_id", "errors": []}), 400)
+        return {"user_id": None, "anonymous_id": anonymous_id}, None
+
+    return None, (jsonify({"success": False, "message": "user_id or anonymous_id is required", "errors": []}), 400)
 
 
 
@@ -1033,8 +1073,11 @@ def get_cart_route():
 
     user_id = request.args.get("user_id")
     anonymous_id = request.args.get("anonymous_id")
+    owner, error = resolve_persistence_identity(user_id, anonymous_id)
+    if error:
+        return error
     try:
-        items = get_user_cart(cart_collection, products_collection, user_id=user_id, anonymous_id=anonymous_id)
+        items = get_user_cart(cart_collection, products_collection, **owner)
         return jsonify({"success": True, "data": items})
     except Exception as e:
         return jsonify({"success": False, "message": str(e), "data": []}), 400
@@ -1045,16 +1088,19 @@ def add_to_cart_route():
     if not MONGO_AVAILABLE:
         return jsonify({"success": False, "message": "Database unavailable"}), 500
 
-    data = request.get_json(force=True) or {}
+    data = request.get_json(silent=True) or {}
     product_id = data.get("product_id")
-    user_id = data.get("user_id")
-    anonymous_id = data.get("anonymous_id")
+    owner, error = resolve_persistence_identity(data.get("user_id"), data.get("anonymous_id"))
+    if error:
+        return error
     session_id = data.get("session_id")
 
     if not product_id:
         return jsonify({"success": False, "message": "product_id is required"}), 400
 
     try:
+        if not ObjectId.is_valid(product_id):
+            return jsonify({"success": False, "message": "Product not found", "errors": []}), 400
         quantity = int(data.get("quantity", 1))
     except (TypeError, ValueError):
         return jsonify({"success": False, "message": "quantity must be a positive integer"}), 400
@@ -1062,7 +1108,7 @@ def add_to_cart_route():
         return jsonify({"success": False, "message": "quantity must be a positive integer"}), 400
 
     try:
-        items = add_to_cart(cart_collection, products_collection, product_id, quantity, user_id, anonymous_id)
+        items = add_to_cart(cart_collection, products_collection, product_id, quantity, **owner)
         if session_id:
             try:
                 log_behavior_event(
@@ -1072,8 +1118,7 @@ def add_to_cart_route():
                     event_type="add_to_cart",
                     entity={"type": "product", "id": product_id},
                     metadata={"quantity": quantity},
-                    user_id=user_id,
-                    anonymous_id=anonymous_id
+                    **owner
                 )
             except Exception:
                 pass
@@ -1088,17 +1133,22 @@ def update_cart_route(product_id):
     if not MONGO_AVAILABLE:
         return jsonify({"success": False, "message": "Database unavailable"}), 500
 
-    data = request.get_json(force=True) or {}
-    user_id = data.get("user_id")
-    anonymous_id = data.get("anonymous_id")
+    data = request.get_json(silent=True) or {}
+    owner, error = resolve_persistence_identity(data.get("user_id"), data.get("anonymous_id"))
+    if error:
+        return error
 
     try:
+        if not ObjectId.is_valid(product_id):
+            return jsonify({"success": False, "message": "Product not found", "errors": []}), 400
+        if not products_collection.find_one({"_id": ObjectId(product_id)}, {"_id": 1}):
+            return jsonify({"success": False, "message": "Product not found", "errors": []}), 400
         quantity = int(data.get("quantity", 1))
     except (TypeError, ValueError):
         return jsonify({"success": False, "message": "quantity must be an integer"}), 400
 
     try:
-        items = update_cart_quantity(cart_collection, products_collection, product_id, quantity, user_id, anonymous_id)
+        items = update_cart_quantity(cart_collection, products_collection, product_id, quantity, **owner)
         return jsonify({"success": True, "message": "Cart updated", "data": items})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 400
@@ -1112,9 +1162,14 @@ def remove_from_cart_route(product_id):
     user_id = request.args.get("user_id")
     anonymous_id = request.args.get("anonymous_id")
     session_id = request.args.get("session_id")
+    owner, error = resolve_persistence_identity(user_id, anonymous_id)
+    if error:
+        return error
 
     try:
-        items = remove_from_cart(cart_collection, products_collection, product_id, user_id, anonymous_id)
+        if not ObjectId.is_valid(product_id):
+            return jsonify({"success": False, "message": "Product not found", "errors": []}), 400
+        items = remove_from_cart(cart_collection, products_collection, product_id, **owner)
         if session_id:
             try:
                 log_behavior_event(
@@ -1123,8 +1178,7 @@ def remove_from_cart_route(product_id):
                     session_id=session_id,
                     event_type="remove_from_cart",
                     entity={"type": "product", "id": product_id},
-                    user_id=user_id,
-                    anonymous_id=anonymous_id
+                    **owner
                 )
             except Exception:
                 pass
@@ -1141,9 +1195,12 @@ def clear_cart_route():
 
     user_id = request.args.get("user_id")
     anonymous_id = request.args.get("anonymous_id")
+    owner, error = resolve_persistence_identity(user_id, anonymous_id)
+    if error:
+        return error
 
     try:
-        clear_cart(cart_collection, user_id, anonymous_id)
+        clear_cart(cart_collection, **owner)
         return jsonify({"success": True, "message": "Cart cleared", "data": []})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 400
@@ -1158,9 +1215,12 @@ def get_wishlist_route():
 
     user_id = request.args.get("user_id")
     anonymous_id = request.args.get("anonymous_id")
+    owner, error = resolve_persistence_identity(user_id, anonymous_id)
+    if error:
+        return error
 
     try:
-        items = get_user_wishlist(wishlist_collection, products_collection, user_id=user_id, anonymous_id=anonymous_id)
+        items = get_user_wishlist(wishlist_collection, products_collection, **owner)
         return jsonify({"success": True, "data": items})
     except Exception as e:
         return jsonify({"success": False, "message": str(e), "data": []}), 400
@@ -1171,17 +1231,20 @@ def add_to_wishlist_route():
     if not MONGO_AVAILABLE:
         return jsonify({"success": False, "message": "Database unavailable"}), 500
 
-    data = request.get_json(force=True) or {}
+    data = request.get_json(silent=True) or {}
     product_id = data.get("product_id")
-    user_id = data.get("user_id")
-    anonymous_id = data.get("anonymous_id")
+    owner, error = resolve_persistence_identity(data.get("user_id"), data.get("anonymous_id"))
+    if error:
+        return error
     session_id = data.get("session_id")
 
     if not product_id:
         return jsonify({"success": False, "message": "product_id is required"}), 400
 
     try:
-        items = add_to_wishlist(wishlist_collection, products_collection, product_id, user_id, anonymous_id)
+        if not ObjectId.is_valid(product_id):
+            return jsonify({"success": False, "message": "Product not found", "errors": []}), 400
+        items = add_to_wishlist(wishlist_collection, products_collection, product_id, **owner)
         if session_id:
             try:
                 log_behavior_event(
@@ -1190,8 +1253,7 @@ def add_to_wishlist_route():
                     session_id=session_id,
                     event_type="wishlist_add",
                     entity={"type": "product", "id": product_id},
-                    user_id=user_id,
-                    anonymous_id=anonymous_id
+                    **owner
                 )
             except Exception:
                 pass
@@ -1209,9 +1271,14 @@ def remove_from_wishlist_route(product_id):
     user_id = request.args.get("user_id")
     anonymous_id = request.args.get("anonymous_id")
     session_id = request.args.get("session_id")
+    owner, error = resolve_persistence_identity(user_id, anonymous_id)
+    if error:
+        return error
 
     try:
-        items = remove_from_wishlist(wishlist_collection, products_collection, product_id, user_id, anonymous_id)
+        if not ObjectId.is_valid(product_id):
+            return jsonify({"success": False, "message": "Product not found", "errors": []}), 400
+        items = remove_from_wishlist(wishlist_collection, products_collection, product_id, **owner)
         if session_id:
             try:
                 log_behavior_event(
@@ -1220,13 +1287,30 @@ def remove_from_wishlist_route(product_id):
                     session_id=session_id,
                     event_type="wishlist_remove",
                     entity={"type": "product", "id": product_id},
-                    user_id=user_id,
-                    anonymous_id=anonymous_id
+                    **owner
                 )
             except Exception:
                 pass
 
         return jsonify({"success": True, "message": "Removed from wishlist", "data": items})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+
+
+@app.route("/api/wishlist", methods=["DELETE"])
+def clear_wishlist_route():
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable"}), 500
+
+    user_id = request.args.get("user_id")
+    anonymous_id = request.args.get("anonymous_id")
+    owner, error = resolve_persistence_identity(user_id, anonymous_id)
+    if error:
+        return error
+
+    try:
+        clear_wishlist(wishlist_collection, **owner)
+        return jsonify({"success": True, "message": "Wishlist cleared", "data": []})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 400
 
