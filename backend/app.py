@@ -27,6 +27,15 @@ from marketing_service import get_all_campaigns, create_campaign, get_campaign_l
 from customer_feature_service import ensure_customer_features_indexes, aggregate_customer_features, upsert_customer_features, get_customer_features
 from customer_lead_state_service import ensure_customer_lead_state_indexes, get_customer_lead_state, sync_customer_lead_state
 from marketing_automation_service import ensure_marketing_automation_indexes, create_automation_event_for_qualification, process_marketing_automation_event
+from admin_intelligence_service import (
+    get_intelligence_overview,
+    get_qualified_leads_list,
+    get_customer_intelligence_detail,
+    get_lead_distribution,
+    get_recent_leads,
+    get_marketing_activity,
+    get_admin_notifications_list,
+)
 import certifi
 
 load_dotenv()
@@ -1083,30 +1092,26 @@ def get_analytics_overview():
         return jsonify({"success": False, "message": "Database unavailable"}), 500
 
     try:
-        total_customers = profiles_collection.count_documents({"$or": [{"email": {"$exists": True, "$ne": None}}, {"role": "user"}]})
-        total_leads = leads_collection.count_documents({})
-        cutoff_15min = datetime.datetime.utcnow() - datetime.timedelta(minutes=15)
-        active_customers = sessions_collection.count_documents({
-            "status": "active",
-            "last_active_at": {"$gte": cutoff_15min}
-        })
+        overview = get_intelligence_overview(db)
         total_sessions = sessions_collection.count_documents({})
         total_events = events_collection.count_documents({})
-        total_profiles = total_customers
 
-        return jsonify({
-            "success": True,
-            "data": {
-                "total_customers": total_customers,
-                "total_leads": total_leads,
-                "active_customers": active_customers,
-                "active_customers_today": active_customers,
-                "active_sessions": active_customers,
-                "total_sessions": total_sessions,
-                "total_events": total_events,
-                "total_profiles": total_profiles,
-            },
-        })
+        payload = {
+            "total_customers": overview["customers"]["total"],
+            "total_leads": overview["leads"]["total_qualified"],
+            "active_customers": overview["customers"]["active_today"],
+            "active_customers_today": overview["customers"]["active_today"],
+            "active_sessions": overview["customers"]["active_today"],
+            "total_sessions": total_sessions,
+            "total_events": total_events,
+            "total_profiles": overview["customers"]["total"],
+            "predicted_future_leads": None,
+            "customers": overview["customers"],
+            "leads": overview["leads"],
+            "marketing": overview["marketing"],
+            "updated_at": overview["updated_at"],
+        }
+        return jsonify({"success": True, "data": payload})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
 
@@ -1696,6 +1701,126 @@ def admin_get_notifications():
         return jsonify({"success": True, "data": [serialize_mongo_value(n) for n in notifications]})
     except Exception as e:
         return jsonify({"success": False, "message": str(e), "data": []}), 500
+
+
+# --- Admin Intelligence APIs (Task 13) ---
+
+@app.route("/api/admin/intelligence/overview", methods=["GET"])
+@admin_required
+def admin_intelligence_overview_route():
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable"}), 500
+    try:
+        data = get_intelligence_overview(db)
+        return jsonify({"success": True, "data": data})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+
+@app.route("/api/admin/intelligence/leads", methods=["GET"])
+@admin_required
+def admin_intelligence_leads_route():
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable"}), 500
+    try:
+        status_param = request.args.get("qualification_status", "qualified")
+        segment_param = request.args.get("segment", "all")
+        sort_by = request.args.get("sort_by", "lead_score")
+        sort_order = request.args.get("sort_order", "desc")
+        page = int(request.args.get("page", 1))
+        limit = int(request.args.get("limit", 25))
+
+        res = get_qualified_leads_list(
+            db,
+            qualification_status=status_param,
+            segment=segment_param,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            page=page,
+            limit=limit
+        )
+        return jsonify({"success": True, "data": res})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/admin/intelligence/customers/<customer_id>", methods=["GET"])
+@admin_required
+def admin_intelligence_customer_detail_route(customer_id):
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable"}), 500
+
+    if not ObjectId.is_valid(customer_id):
+        return jsonify({"success": False, "message": "Invalid customer ID format", "errors": []}), 400
+
+    try:
+        detail = get_customer_intelligence_detail(db, customer_id)
+        if not detail:
+            return jsonify({"success": False, "message": "Customer not found", "errors": []}), 404
+        return jsonify({"success": True, "data": detail})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/admin/intelligence/lead-distribution", methods=["GET"])
+@admin_required
+def admin_intelligence_lead_distribution_route():
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable"}), 500
+    try:
+        res = get_lead_distribution(db)
+        return jsonify({"success": True, "data": res})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/admin/intelligence/recent-leads", methods=["GET"])
+@admin_required
+def admin_intelligence_recent_leads_route():
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable"}), 500
+    try:
+        page = int(request.args.get("page", 1))
+        limit = int(request.args.get("limit", 10))
+        res = get_recent_leads(db, page=page, limit=limit)
+        return jsonify({"success": True, "data": res})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/admin/intelligence/marketing-activity", methods=["GET"])
+@admin_required
+def admin_intelligence_marketing_activity_route():
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable"}), 500
+    try:
+        page = int(request.args.get("page", 1))
+        limit = int(request.args.get("limit", 25))
+        res = get_marketing_activity(db, page=page, limit=limit)
+        return jsonify({"success": True, "data": res})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/admin/intelligence/notifications", methods=["GET"])
+@admin_required
+def admin_intelligence_notifications_route():
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable"}), 500
+    try:
+        read_param = request.args.get("read")
+        read_status = None
+        if read_param is not None:
+            read_status = read_param.lower() == "true"
+        page = int(request.args.get("page", 1))
+        limit = int(request.args.get("limit", 25))
+
+        res = get_admin_notifications_list(db, read_status=read_status, page=page, limit=limit)
+        return jsonify({"success": True, "data": res})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
 
 
 
