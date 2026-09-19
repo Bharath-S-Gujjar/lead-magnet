@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Shirt, Lock, Mail, LogIn } from 'lucide-react';
+import { Shirt, Lock, User, LogIn } from 'lucide-react';
 import { useAdminAuth } from '../context/AdminAuthContext';
 
 export function AdminLogin() {
   const navigate = useNavigate();
   const { adminLogin } = useAdminAuth();
 
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -16,21 +16,23 @@ export function AdminLogin() {
     e.preventDefault();
     setError('');
 
-    if (!email || !password) {
-      setError('Please enter your administrator email and password.');
+    if (!username || !password) {
+      setError('Please enter your administrator username and password.');
       return;
     }
 
-    setLoading(true);
-    setTimeout(() => {
-      const res = adminLogin(email, password);
+    const submitLogin = async () => {
+      setLoading(true);
+      const res = await adminLogin(username, password);
       setLoading(false);
       if (!res.success) {
         setError(res.message);
       } else {
         navigate('/');
       }
-    }, 400);
+    };
+
+    submitLogin();
   };
 
   return (
@@ -100,7 +102,7 @@ export function AdminLogin() {
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div>
             <label style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)', display: 'block', marginBottom: '6px' }}>
-              Admin Email Address
+              Admin Username
             </label>
             <div style={{
               display: 'flex',
@@ -111,12 +113,12 @@ export function AdminLogin() {
               padding: '10px 14px',
               background: 'var(--bg-app)'
             }}>
-              <Mail size={18} style={{ color: 'var(--text-muted)' }} />
+              <User size={18} style={{ color: 'var(--text-muted)' }} />
               <input 
-                type="email"
-                placeholder="admin@leadmagnet.com"
-                value={email}
-                onChange={(e) => { setEmail(e.target.value); setError(''); }}
+                type="text"
+                placeholder="admin"
+                value={username}
+                onChange={(e) => { setUsername(e.target.value); setError(''); }}
                 required
                 style={{
                   border: 'none',
