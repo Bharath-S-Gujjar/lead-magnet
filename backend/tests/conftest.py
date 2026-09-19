@@ -36,6 +36,10 @@ app_module.campaigns_collection = app_module.db["campaigns"]
 app_module.campaign_logs_collection = app_module.db["campaign_logs"]
 app_module.customer_features_collection = app_module.db["customer_features"]
 app_module.customer_lead_state_collection = app_module.db["customer_lead_state"]
+app_module.marketing_automation_events_collection = app_module.db["marketing_automation_events"]
+app_module.marketing_communications_collection = app_module.db["marketing_communications"]
+app_module.admin_notifications_collection = app_module.db["admin_notifications"]
+
 
 
 @pytest.fixture(autouse=True)

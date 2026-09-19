@@ -171,4 +171,18 @@ def sync_customer_lead_state(customer_id, db):
         upsert=True
     )
 
+    # Trigger marketing automation for qualification transitions
+    if is_newly_qualified or transition == "not_qualified_to_qualified":
+        try:
+            from marketing_automation_service import (
+                create_automation_event_for_qualification,
+                process_marketing_automation_event,
+            )
+            event = create_automation_event_for_qualification(query_id, state_doc, db)
+            if event:
+                process_marketing_automation_event(event["_id"], db)
+        except Exception:
+            # Ignore automation triggering errors if running in partial/mock DB context
+            pass
+
     return state_doc

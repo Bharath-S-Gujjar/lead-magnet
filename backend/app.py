@@ -26,6 +26,7 @@ from recommendation_service import get_personalized_recommendations
 from marketing_service import get_all_campaigns, create_campaign, get_campaign_logs, evaluate_campaign_triggers
 from customer_feature_service import ensure_customer_features_indexes, aggregate_customer_features, upsert_customer_features, get_customer_features
 from customer_lead_state_service import ensure_customer_lead_state_indexes, get_customer_lead_state, sync_customer_lead_state
+from marketing_automation_service import ensure_marketing_automation_indexes, create_automation_event_for_qualification, process_marketing_automation_event
 import certifi
 
 load_dotenv()
@@ -103,7 +104,7 @@ def ensure_product_indexes(products_collection):
 
 
 def bind_collections(client):
-    global db, profiles_collection, legacy_users_collection, products_collection, sessions_collection, events_collection, leads_collection, orders_collection, cart_collection, wishlist_collection, campaigns_collection, campaign_logs_collection, customer_features_collection, customer_lead_state_collection
+    global db, profiles_collection, legacy_users_collection, products_collection, sessions_collection, events_collection, leads_collection, orders_collection, cart_collection, wishlist_collection, campaigns_collection, campaign_logs_collection, customer_features_collection, customer_lead_state_collection, marketing_automation_events_collection, marketing_communications_collection, admin_notifications_collection
     db = client["leadmagnet"]
     profiles_collection = db["user_profiles"]
     legacy_users_collection = db["users"]
@@ -118,9 +119,13 @@ def bind_collections(client):
     campaign_logs_collection = db["campaign_logs"]
     customer_features_collection = db["customer_features"]
     customer_lead_state_collection = db["customer_lead_state"]
+    marketing_automation_events_collection = db["marketing_automation_events"]
+    marketing_communications_collection = db["marketing_communications"]
+    admin_notifications_collection = db["admin_notifications"]
     ensure_product_indexes(products_collection)
     ensure_customer_features_indexes(customer_features_collection)
     ensure_customer_lead_state_indexes(customer_lead_state_collection)
+    ensure_marketing_automation_indexes(db)
 
 
 mongo_client, MONGO_AVAILABLE = create_mongo_client()
@@ -1641,6 +1646,57 @@ def evaluate_campaigns_route():
         return jsonify({"success": True, "message": f"Evaluated triggers, {len(triggered)} campaigns triggered", "data": [serialize_mongo_value(t) for t in triggered]})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/admin/marketing/automation-events", methods=["GET"])
+@admin_required
+def admin_get_marketing_automation_events():
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable", "data": []}), 500
+
+    try:
+        limit = int(request.args.get("limit", 100))
+        customer_id_str = request.args.get("customer_id")
+        query = {}
+        if customer_id_str and ObjectId.is_valid(customer_id_str):
+            query["customer_id"] = ObjectId(customer_id_str)
+        events = list(marketing_automation_events_collection.find(query).sort("created_at", -1).limit(limit))
+        return jsonify({"success": True, "data": [serialize_mongo_value(e) for e in events]})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e), "data": []}), 500
+
+
+@app.route("/api/admin/marketing/communications", methods=["GET"])
+@admin_required
+def admin_get_marketing_communications():
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable", "data": []}), 500
+
+    try:
+        limit = int(request.args.get("limit", 100))
+        customer_id_str = request.args.get("customer_id")
+        query = {}
+        if customer_id_str and ObjectId.is_valid(customer_id_str):
+            query["customer_id"] = ObjectId(customer_id_str)
+        comms = list(marketing_communications_collection.find(query).sort("created_at", -1).limit(limit))
+        return jsonify({"success": True, "data": [serialize_mongo_value(c) for c in comms]})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e), "data": []}), 500
+
+
+@app.route("/api/admin/notifications", methods=["GET"])
+@admin_required
+def admin_get_notifications():
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable", "data": []}), 500
+
+    try:
+        limit = int(request.args.get("limit", 100))
+        notifications = list(admin_notifications_collection.find({}).sort("created_at", -1).limit(limit))
+        return jsonify({"success": True, "data": [serialize_mongo_value(n) for n in notifications]})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e), "data": []}), 500
+
 
 
 @app.route("/api/orders", methods=["POST"])
