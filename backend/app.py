@@ -4,6 +4,7 @@ import joblib
 import pandas as pd
 from flask_socketio import SocketIO
 import os
+import re
 import bcrypt
 import jwt
 import datetime
@@ -84,6 +85,19 @@ def create_mongo_client():
     return MongoClient(fallback_uri, serverSelectionTimeoutMS=2000), False
 
 
+def ensure_product_indexes(products_collection):
+    """Create the minimal indexes used by the existing product queries, safely idempotently."""
+    existing = {index["name"] for index in products_collection.list_indexes()}
+    for index_name, fields in [
+        ("category_1", [("category", 1)]),
+        ("name_1", [("name", 1)]),
+        ("brand_1", [("brand", 1)]),
+        ("gender_1", [("gender", 1)]),
+    ]:
+        if index_name not in existing:
+            products_collection.create_index(fields, name=index_name, background=True)
+
+
 def bind_collections(client):
     global db, profiles_collection, legacy_users_collection, products_collection, sessions_collection, events_collection, leads_collection, orders_collection, cart_collection, wishlist_collection, campaigns_collection, campaign_logs_collection
     db = client["leadmagnet"]
@@ -98,6 +112,7 @@ def bind_collections(client):
     wishlist_collection = db["wishlist"]
     campaigns_collection = db["campaigns"]
     campaign_logs_collection = db["campaign_logs"]
+    ensure_product_indexes(products_collection)
 
 
 mongo_client, MONGO_AVAILABLE = create_mongo_client()
@@ -445,8 +460,11 @@ def get_products():
 
     try:
         category = request.args.get("category")
-        query = {"category": category} if category else {}
-        items = list(products_collection.find(query))
+        query = {}
+        if category:
+            query["category"] = {"$regex": f"^{re.escape(category)}$", "$options": "i"}
+
+        items = list(products_collection.find(query).sort("name", 1))
 
         for item in items:
             item["_id"] = str(item["_id"])
@@ -461,7 +479,7 @@ def get_products():
             "success": False,
             "message": str(e),
             "data": []
-        }), 500
+        }), 400
 
 
 @app.route("/api/debug/users-count", methods=["GET"])
@@ -493,6 +511,9 @@ def get_product(product_id):
         return jsonify({"success": False, "message": "Database unavailable", "errors": []}), 500
 
     try:
+        if not ObjectId.is_valid(product_id):
+            return jsonify({"success": False, "message": "Product not found", "errors": []}), 404
+
         item = products_collection.find_one({"_id": ObjectId(product_id)})
         if not item:
             return jsonify({"success": False, "message": "Product not found", "errors": []}), 404
