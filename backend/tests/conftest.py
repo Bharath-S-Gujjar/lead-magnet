@@ -35,6 +35,7 @@ app_module.wishlist_collection = app_module.db["wishlist"]
 app_module.campaigns_collection = app_module.db["campaigns"]
 app_module.campaign_logs_collection = app_module.db["campaign_logs"]
 app_module.customer_features_collection = app_module.db["customer_features"]
+app_module.customer_lead_state_collection = app_module.db["customer_lead_state"]
 
 
 @pytest.fixture(autouse=True)

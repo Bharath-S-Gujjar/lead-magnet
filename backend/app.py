@@ -25,6 +25,7 @@ from order_service import create_order as create_order_from_cart, get_user_order
 from recommendation_service import get_personalized_recommendations
 from marketing_service import get_all_campaigns, create_campaign, get_campaign_logs, evaluate_campaign_triggers
 from customer_feature_service import ensure_customer_features_indexes, aggregate_customer_features, upsert_customer_features, get_customer_features
+from customer_lead_state_service import ensure_customer_lead_state_indexes, get_customer_lead_state, sync_customer_lead_state
 import certifi
 
 load_dotenv()
@@ -102,7 +103,7 @@ def ensure_product_indexes(products_collection):
 
 
 def bind_collections(client):
-    global db, profiles_collection, legacy_users_collection, products_collection, sessions_collection, events_collection, leads_collection, orders_collection, cart_collection, wishlist_collection, campaigns_collection, campaign_logs_collection, customer_features_collection
+    global db, profiles_collection, legacy_users_collection, products_collection, sessions_collection, events_collection, leads_collection, orders_collection, cart_collection, wishlist_collection, campaigns_collection, campaign_logs_collection, customer_features_collection, customer_lead_state_collection
     db = client["leadmagnet"]
     profiles_collection = db["user_profiles"]
     legacy_users_collection = db["users"]
@@ -116,8 +117,10 @@ def bind_collections(client):
     campaigns_collection = db["campaigns"]
     campaign_logs_collection = db["campaign_logs"]
     customer_features_collection = db["customer_features"]
+    customer_lead_state_collection = db["customer_lead_state"]
     ensure_product_indexes(products_collection)
     ensure_customer_features_indexes(customer_features_collection)
+    ensure_customer_lead_state_indexes(customer_lead_state_collection)
 
 
 mongo_client, MONGO_AVAILABLE = create_mongo_client()
@@ -835,6 +838,106 @@ def get_admin_customer_lead_score_endpoint(customer_id):
             "message": "Admin customer lead score computed",
             "data": result,
         }), 200
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e), "errors": []}), 500
+
+
+@app.route("/api/customer/lead-state", methods=["GET"])
+@token_required
+def get_customer_lead_state_endpoint():
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable", "errors": []}), 500
+
+    try:
+        user_id = g.current_user.get("sub") or g.current_user.get("user_id")
+        if not user_id:
+            return jsonify({"success": False, "message": "Authenticated user identity required", "errors": []}), 401
+
+        state = get_customer_lead_state(user_id, customer_lead_state_collection)
+        if not state:
+            return jsonify({
+                "success": False,
+                "message": "Customer lead state not found",
+                "errors": []
+            }), 404
+
+        return jsonify({
+            "success": True,
+            "message": "Customer lead state retrieved",
+            "data": serialize_mongo_value(state),
+        }), 200
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e), "errors": []}), 500
+
+
+@app.route("/api/customer/lead-state/sync", methods=["POST"])
+@token_required
+def sync_customer_lead_state_endpoint():
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable", "errors": []}), 500
+
+    try:
+        user_id = g.current_user.get("sub") or g.current_user.get("user_id")
+        if not user_id:
+            return jsonify({"success": False, "message": "Authenticated user identity required", "errors": []}), 401
+
+        state = sync_customer_lead_state(user_id, db)
+        return jsonify({
+            "success": True,
+            "message": "Customer lead state synchronized",
+            "data": serialize_mongo_value(state),
+        }), 200
+    except ValueError as error:
+        return jsonify({"success": False, "message": str(error), "errors": []}), 404
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e), "errors": []}), 500
+
+
+@app.route("/api/admin/customer-lead-state/<customer_id>", methods=["GET"])
+@admin_required
+def get_admin_customer_lead_state_endpoint(customer_id):
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable", "errors": []}), 500
+
+    try:
+        if not customer_id:
+            return jsonify({"success": False, "message": "customer_id required", "errors": []}), 400
+
+        state = get_customer_lead_state(customer_id, customer_lead_state_collection)
+        if not state:
+            return jsonify({
+                "success": False,
+                "message": f"Customer lead state not found for customer_id: {customer_id}",
+                "errors": []
+            }), 404
+
+        return jsonify({
+            "success": True,
+            "message": "Admin customer lead state retrieved",
+            "data": serialize_mongo_value(state),
+        }), 200
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e), "errors": []}), 500
+
+
+@app.route("/api/admin/customer-lead-state/<customer_id>/sync", methods=["POST"])
+@admin_required
+def sync_admin_customer_lead_state_endpoint(customer_id):
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable", "errors": []}), 500
+
+    try:
+        if not customer_id:
+            return jsonify({"success": False, "message": "customer_id required", "errors": []}), 400
+
+        state = sync_customer_lead_state(customer_id, db)
+        return jsonify({
+            "success": True,
+            "message": "Admin customer lead state synchronized",
+            "data": serialize_mongo_value(state),
+        }), 200
+    except ValueError as error:
+        return jsonify({"success": False, "message": str(error), "errors": []}), 404
     except Exception as e:
         return jsonify({"success": False, "message": str(e), "errors": []}), 500
 
