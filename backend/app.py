@@ -151,7 +151,8 @@ def ensure_product_indexes(products_collection):
 
 def bind_collections(client):
     global db, profiles_collection, legacy_users_collection, products_collection, sessions_collection, events_collection, leads_collection, orders_collection, cart_collection, wishlist_collection, campaigns_collection, campaign_logs_collection, customer_features_collection, customer_lead_state_collection, marketing_automation_events_collection, marketing_communications_collection, admin_notifications_collection, lead_score_history_collection
-    db = client["leadmagnet"]
+    db_name = os.getenv("MONGO_DB_NAME", "leadmagnet")
+    db = client[db_name]
     profiles_collection = db["user_profiles"]
     legacy_users_collection = db["users"]
     products_collection = db["products"]
@@ -716,6 +717,13 @@ def update_profile_from_event(session_id, event_id):
     profile_update = build_profile_update(session_doc, [event_doc])
     apply_profile_update(profiles_collection, profile_update)
 
+    user_id = session_doc.get("user_id") or event_doc.get("user_id")
+    if user_id:
+        try:
+            rescore_customer(user_id, db, socketio=socketio)
+        except Exception:
+            pass
+
 
 # ---- Session Tracking (Module 3) ----
 
@@ -833,6 +841,13 @@ def end_session():
         profile_update = build_profile_update(session_doc, events)
 
         apply_profile_update(profiles_collection, profile_update)
+
+        user_id = session_doc.get("user_id") if session_doc else None
+        if user_id:
+            try:
+                rescore_customer(user_id, db, socketio=socketio)
+            except Exception:
+                pass
 
         return jsonify({
             "success": True,

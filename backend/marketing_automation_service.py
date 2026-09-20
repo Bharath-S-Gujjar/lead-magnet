@@ -87,23 +87,22 @@ def _is_channel_enabled(policy, channel_name):
 def evaluate_channel_eligibility(user_profile, policy=None):
     """Determine channel eligibility based on contact info and active policy.
 
+    Supported channels: email, whatsapp ONLY. NO SMS.
+
     Args:
         user_profile (dict): User profile document from user_profiles collection.
         policy (dict, optional): Channel policy flags. Defaults to DEFAULT_CHANNEL_POLICY.
 
     Returns:
-        dict: Eligibility mapping for email, sms, whatsapp.
+        dict: Eligibility mapping for email, whatsapp.
     """
     merged_policy = {
         "email": True,
-        "sms": False,
         "whatsapp": False,
     }
     if policy:
         if "email" in policy or "email_enabled" in policy:
             merged_policy["email"] = _is_channel_enabled(policy, "email")
-        if "sms" in policy or "sms_enabled" in policy:
-            merged_policy["sms"] = _is_channel_enabled(policy, "sms")
         if "whatsapp" in policy or "whatsapp_enabled" in policy:
             merged_policy["whatsapp"] = _is_channel_enabled(policy, "whatsapp")
 
@@ -116,11 +115,9 @@ def evaluate_channel_eligibility(user_profile, policy=None):
     has_valid_phone = isinstance(phone_val, str) and bool(phone_val.strip())
 
     email_enabled = merged_policy["email"]
-    sms_enabled = merged_policy["sms"]
     whatsapp_enabled = merged_policy["whatsapp"]
 
     email_eligible = email_enabled and has_valid_email
-    sms_eligible = sms_enabled and has_valid_phone
     whatsapp_eligible = whatsapp_enabled and has_valid_phone
 
     return {
@@ -128,11 +125,6 @@ def evaluate_channel_eligibility(user_profile, policy=None):
             "eligible": email_eligible,
             "recipient": email_val if has_valid_email else None,
             "reason": "eligible" if email_eligible else ("No valid email address found" if not has_valid_email else "Email channel disabled by policy")
-        },
-        "sms": {
-            "eligible": sms_eligible,
-            "recipient": phone_val if has_valid_phone else None,
-            "reason": "eligible" if sms_eligible else ("No phone number found" if not has_valid_phone else "SMS channel disabled by policy")
         },
         "whatsapp": {
             "eligible": whatsapp_eligible,
@@ -370,8 +362,6 @@ def process_marketing_automation_event(event_id, db, provider=None, policy=None)
 
         if channel == "email":
             res = provider.send_email(recipient, subject, body, metadata={"event_id": str(event["_id"])})
-        elif channel == "sms":
-            res = provider.send_sms(recipient, body, metadata={"event_id": str(event["_id"])})
         elif channel == "whatsapp":
             res = provider.send_whatsapp(recipient, body, metadata={"event_id": str(event["_id"])})
 

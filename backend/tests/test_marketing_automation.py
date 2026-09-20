@@ -195,8 +195,8 @@ class MarketingAutomationTests(unittest.TestCase):
         self.assertEqual(comm_docs[0]["status"], "skipped")
         self.assertIn("No valid email", comm_docs[0].get("last_error", ""))
 
-    # 6. Customer without phone skips SMS/WhatsApp safely
-    def test_06_customer_without_phone_skips_sms_whatsapp_safely(self):
+    # 6. Customer without phone skips WhatsApp safely
+    def test_06_customer_without_phone_skips_whatsapp_safely(self):
         customer_id = ObjectId()
         self.profiles.insert_one({
             "_id": customer_id,
@@ -207,16 +207,16 @@ class MarketingAutomationTests(unittest.TestCase):
         customer = self.profiles.find_one({"_id": customer_id})
         eligibility = evaluate_channel_eligibility(
             customer,
-            policy={"sms_enabled": True, "whatsapp_enabled": True}
+            policy={"whatsapp_enabled": True}
         )
 
         self.assertTrue(eligibility["email"]["eligible"])
-        self.assertFalse(eligibility["sms"]["eligible"])
+        self.assertNotIn("sms", eligibility)
         self.assertFalse(eligibility["whatsapp"]["eligible"])
-        self.assertIn("No phone number", eligibility["sms"]["reason"])
+        self.assertIn("No phone number", eligibility["whatsapp"]["reason"])
 
-    # 7. Disabled SMS does not attempt SMS
-    def test_07_disabled_sms_does_not_attempt_sms(self):
+    # 7. SMS channel is not present in eligibility evaluation
+    def test_07_sms_channel_removed_from_eligibility(self):
         customer_id = ObjectId()
         self.profiles.insert_one({
             "_id": customer_id,
@@ -227,11 +227,10 @@ class MarketingAutomationTests(unittest.TestCase):
 
         eligibility = evaluate_channel_eligibility(
             customer,
-            policy={"sms_enabled": False, "whatsapp_enabled": False}
+            policy={"whatsapp_enabled": False}
         )
 
-        self.assertFalse(eligibility["sms"]["eligible"])
-        self.assertIn("SMS channel disabled", eligibility["sms"]["reason"])
+        self.assertNotIn("sms", eligibility)
 
     # 8. Disabled WhatsApp does not attempt WhatsApp
     def test_08_disabled_whatsapp_does_not_attempt_whatsapp(self):
