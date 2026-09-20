@@ -255,9 +255,9 @@ class FullE2ELeadMagnetTests(unittest.TestCase):
         proc_result_2 = process_marketing_automation_event(event_doc["_id"], app_module.db)
         self.assertEqual(proc_result_2["status"], "completed")
 
-        # Verify counts remain unchanged (1 automation event, 3 channel records: 1 sent, 2 skipped)
+        # Verify counts remain unchanged (1 automation event, 2 channel records: email, whatsapp)
         self.assertEqual(app_module.marketing_automation_events_collection.count_documents({"customer_id": ObjectId(user_id)}), 1)
-        self.assertEqual(app_module.marketing_communications_collection.count_documents({"customer_id": ObjectId(user_id)}), 3)
+        self.assertEqual(app_module.marketing_communications_collection.count_documents({"customer_id": ObjectId(user_id)}), 2)
 
         # -------------------------------------------------------------
         # STEP 7: Admin Intelligence APIs & Dashboard Verification

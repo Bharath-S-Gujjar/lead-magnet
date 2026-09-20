@@ -2,18 +2,30 @@
 
 Translates customer qualification transitions into deterministic, idempotent automation events
 and communication dispatch records.
+
+Cooldown Policy:
+    After sending a qualification campaign, the system enforces a cooldown period
+    (MARKETING_COOLDOWN_HOURS, default 72h) before sending another campaign to the
+    same customer. This prevents repeated sends when a customer oscillates around
+    the qualification threshold.
+
+Channels:
+    EMAIL, WHATSAPP only. NO SMS.
 """
 
-from datetime import datetime, timezone
+import os
+from datetime import datetime, timezone, timedelta
 from bson import ObjectId
 
 from customer_feature_service import _to_object_id
 from communication_provider import get_communication_provider, DryRunCommunicationProvider
 
 
+# Configurable cooldown period — prevents repeated marketing sends
+MARKETING_COOLDOWN_HOURS = int(os.getenv("MARKETING_COOLDOWN_HOURS", "72"))
+
 DEFAULT_CHANNEL_POLICY = {
     "email": {"enabled": True},
-    "sms": {"enabled": False},
     "whatsapp": {"enabled": False},
 }
 
@@ -130,8 +142,62 @@ def evaluate_channel_eligibility(user_profile, policy=None):
     }
 
 
+def _is_within_cooldown(customer_id, db):
+    """Check if customer's last marketing campaign is within cooldown period.
+
+    Returns:
+        bool: True if within cooldown (should NOT send), False if safe to send.
+    """
+    if MARKETING_COOLDOWN_HOURS <= 0:
+        return False  # Cooldown disabled
+
+    comms_col = db["marketing_communications"]
+    c_oid = _to_object_id(customer_id)
+    query_id = c_oid if c_oid else customer_id
+
+    last_sent = comms_col.find_one(
+        {"customer_id": query_id, "status": "sent"},
+        sort=[("sent_at", -1)]
+    )
+
+    if not last_sent:
+        # Try string query fallback
+        if isinstance(customer_id, str) and c_oid:
+            last_sent = comms_col.find_one(
+                {"customer_id": str(c_oid), "status": "sent"},
+                sort=[("sent_at", -1)]
+            )
+
+    if not last_sent:
+        return False
+
+    sent_at_raw = last_sent.get("sent_at")
+    if not sent_at_raw:
+        return False
+
+    try:
+        if isinstance(sent_at_raw, str):
+            sent_at = datetime.fromisoformat(sent_at_raw)
+        elif isinstance(sent_at_raw, datetime):
+            sent_at = sent_at_raw
+        else:
+            return False
+
+        if sent_at.tzinfo is None:
+            sent_at = sent_at.replace(tzinfo=timezone.utc)
+
+        cooldown_expiry = sent_at + timedelta(hours=MARKETING_COOLDOWN_HOURS)
+        return datetime.now(timezone.utc) < cooldown_expiry
+    except (ValueError, TypeError):
+        return False
+
+
 def create_automation_event_for_qualification(customer_id, lead_state_doc=None, db=None, **kwargs):
     """Create a marketing automation event when a customer becomes newly qualified.
+
+    Respects cooldown policy: if a campaign was sent within MARKETING_COOLDOWN_HOURS,
+    no new event is created. This prevents repeated sends when a customer oscillates
+    around the qualification threshold.
 
     Args:
         customer_id: ObjectId or string customer identifier.
@@ -161,7 +227,6 @@ def create_automation_event_for_qualification(customer_id, lead_state_doc=None, 
     if db is None:
         return None
 
-
     transition = lead_state_doc.get("qualification_transition")
     is_newly = lead_state_doc.get("is_newly_qualified")
 
@@ -172,8 +237,14 @@ def create_automation_event_for_qualification(customer_id, lead_state_doc=None, 
     c_oid = _to_object_id(customer_id)
     query_id = c_oid if c_oid else customer_id
 
-    first_qual = lead_state_doc.get("first_qualified_at") or lead_state_doc.get("updated_at")
-    idempotency_key = f"{str(query_id)}_lead_qualified_{first_qual}"
+    # Check cooldown policy before creating event
+    if _is_within_cooldown(query_id, db):
+        return None
+
+    # Time-window idempotency key: uses last_qualified_at (updated each re-qualification)
+    # instead of first_qualified_at, allowing new events after cooldown expires
+    last_qual = lead_state_doc.get("last_qualified_at") or lead_state_doc.get("first_qualified_at") or lead_state_doc.get("updated_at")
+    idempotency_key = f"{str(query_id)}_lead_qualified_{last_qual}"
 
     events_col = db["marketing_automation_events"]
     ensure_marketing_automation_indexes(db)
@@ -193,6 +264,7 @@ def create_automation_event_for_qualification(customer_id, lead_state_doc=None, 
         "model_version": lead_state_doc.get("model_version"),
         "status": "pending",
         "idempotency_key": idempotency_key,
+        "cooldown_hours": MARKETING_COOLDOWN_HOURS,
         "created_at": now_iso,
         "processed_at": None,
     }
@@ -250,7 +322,7 @@ def process_marketing_automation_event(event_id, db, provider=None, policy=None)
 
     dispatched_communications = []
 
-    for channel in ["email", "sms", "whatsapp"]:
+    for channel in ["email", "whatsapp"]:
         info = eligibility[channel]
         is_eligible = info["eligible"]
         recipient = info["recipient"]

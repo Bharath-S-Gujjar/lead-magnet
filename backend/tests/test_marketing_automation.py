@@ -259,13 +259,10 @@ class MarketingAutomationTests(unittest.TestCase):
         self.assertEqual(res["provider"], "dry_run")
         self.assertTrue(res["provider_message_id"].startswith("dry-run-email-"))
 
-    # 10. Dry-run SMS provider works
-    def test_10_dry_run_sms_provider_works(self):
+    # 10. Dry-run SMS provider removed per Phase 17A spec
+    def test_10_dry_run_sms_provider_removed(self):
         provider = DryRunCommunicationProvider()
-        res = provider.send_sms("+15551234567", "Test SMS message")
-        self.assertTrue(res["success"])
-        self.assertEqual(res["provider"], "dry_run")
-        self.assertTrue(res["provider_message_id"].startswith("dry-run-sms-"))
+        self.assertFalse(hasattr(provider, "send_sms"))
 
     # 11. Dry-run WhatsApp provider works
     def test_11_dry_run_whatsapp_provider_works(self):
@@ -434,13 +431,13 @@ class MarketingAutomationTests(unittest.TestCase):
         event = self.events.find_one({"customer_id": customer_id})
 
         total_comms_before = self.comms.count_documents({"automation_event_id": event["_id"]})
-        self.assertEqual(total_comms_before, 3)  # email, sms, whatsapp records
+        self.assertEqual(total_comms_before, 2)  # email, whatsapp records
 
         process_marketing_automation_event(event["_id"], db=self.db)
         process_marketing_automation_event(event["_id"], db=self.db)
 
         total_comms_after = self.comms.count_documents({"automation_event_id": event["_id"]})
-        self.assertEqual(total_comms_after, 3)
+        self.assertEqual(total_comms_after, 2)
         self.assertEqual(self.comms.count_documents({"automation_event_id": event["_id"], "channel": "email"}), 1)
 
     # 18. Customer endpoint cannot inspect another customer's automation state

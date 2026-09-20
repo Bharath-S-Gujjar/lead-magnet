@@ -8,10 +8,15 @@ import { AdminNotificationsList } from './components/layout/AdminNotificationsLi
 import { LeadAnalyticsSummary } from './components/analytics/LeadAnalyticsSummary';
 import { GenderDistribution } from './components/analytics/GenderDistribution';
 import { MarketingActivityFeed } from './components/analytics/MarketingActivityFeed';
+import { FunnelAnalytics } from './components/analytics/FunnelAnalytics';
+import { RFMDistribution } from './components/analytics/RFMDistribution';
+import { RevenueAttribution } from './components/analytics/RevenueAttribution';
+import { LiveActivityFeed } from './components/analytics/LiveActivityFeed';
+import { WhatIfSimulator } from './components/analytics/WhatIfSimulator';
 import { CustomerTable } from './components/customers/CustomerTable';
 import { CustomerDetailDrawer } from './components/customers/CustomerDetailDrawer';
 import { getAdminIntelligenceLeads } from './services/api';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, BarChart3, Sliders, Zap, Layers } from 'lucide-react';
 
 function ProtectedAdminDashboard() {
   const { admin, isAdminAuthenticated } = useAdminAuth();
@@ -19,6 +24,7 @@ function ProtectedAdminDashboard() {
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'funnel_rfm', 'revenue', 'simulator'
 
   // Filtering & Pagination State
   const [qualificationFilter, setQualificationFilter] = useState('qualified');
@@ -99,30 +105,105 @@ function ProtectedAdminDashboard() {
         {/* 3. MAIN ANALYTICS CARDS */}
         <LeadAnalyticsSummary onRefresh={loadLeads} />
 
-        {/* 4. CUSTOMER LEAD DISTRIBUTION */}
-        <GenderDistribution />
+        {/* PHASE 17A: NAVIGATION TABS FOR DEEP INTELLIGENCE */}
+        <div style={{
+          display: 'flex',
+          gap: '12px',
+          margin: '24px 0 16px 0',
+          borderBottom: '1px solid var(--panel-border)',
+          paddingBottom: '12px',
+          overflowX: 'auto'
+        }}>
+          <button
+            onClick={() => setActiveTab('overview')}
+            className={`btn ${activeTab === 'overview' ? 'btn-primary' : 'btn-ghost'}`}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.88rem' }}
+          >
+            <Layers size={16} />
+            <span>Overview & Directory</span>
+          </button>
 
-        {/* 5. MARKETING AUTOMATION ACTIVITY FEED */}
-        <MarketingActivityFeed />
+          <button
+            onClick={() => setActiveTab('funnel_rfm')}
+            className={`btn ${activeTab === 'funnel_rfm' ? 'btn-primary' : 'btn-ghost'}`}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.88rem' }}
+          >
+            <BarChart3 size={16} />
+            <span>Funnel & RFM Intelligence</span>
+          </button>
 
-        {/* 6. CUSTOMER INTELLIGENCE DIRECTORY */}
-        <CustomerTable 
-          leadsData={leadsData}
-          isLoading={isLoading}
-          onSelectCustomer={handleSelectCustomer}
-          qualificationFilter={qualificationFilter}
-          setQualificationFilter={setQualificationFilter}
-          segmentFilter={segmentFilter}
-          setSegmentFilter={setSegmentFilter}
-          sortBy={sortBy}
-          setSortBy={setSortBy}
-          sortOrder={sortOrder}
-          setSortOrder={setSortOrder}
-          page={page}
-          setPage={setPage}
-          searchQuery={searchQuery}
-          onClearSearch={handleClearSearch}
-        />
+          <button
+            onClick={() => setActiveTab('revenue')}
+            className={`btn ${activeTab === 'revenue' ? 'btn-primary' : 'btn-ghost'}`}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.88rem' }}
+          >
+            <Zap size={16} />
+            <span>Revenue & Live Feed</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('simulator')}
+            className={`btn ${activeTab === 'simulator' ? 'btn-primary' : 'btn-ghost'}`}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.88rem' }}
+          >
+            <Sliders size={16} />
+            <span>What-If Simulator</span>
+          </button>
+        </div>
+
+        {/* TAB 1: OVERVIEW & DIRECTORY */}
+        {activeTab === 'overview' && (
+          <>
+            {/* CUSTOMER LEAD DISTRIBUTION */}
+            <GenderDistribution />
+
+            {/* MARKETING AUTOMATION ACTIVITY FEED */}
+            <MarketingActivityFeed />
+
+            {/* CUSTOMER INTELLIGENCE DIRECTORY */}
+            <CustomerTable 
+              leadsData={leadsData}
+              isLoading={isLoading}
+              onSelectCustomer={handleSelectCustomer}
+              qualificationFilter={qualificationFilter}
+              setQualificationFilter={setQualificationFilter}
+              segmentFilter={segmentFilter}
+              setSegmentFilter={setSegmentFilter}
+              sortBy={sortBy}
+              setSortBy={setSortBy}
+              sortOrder={sortOrder}
+              setSortOrder={setSortOrder}
+              page={page}
+              setPage={setPage}
+              searchQuery={searchQuery}
+              onClearSearch={handleClearSearch}
+            />
+          </>
+        )}
+
+        {/* TAB 2: FUNNEL & RFM INTELLIGENCE */}
+        {activeTab === 'funnel_rfm' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            <FunnelAnalytics />
+            <RFMDistribution />
+          </div>
+        )}
+
+        {/* TAB 3: REVENUE & LIVE FEED */}
+        {activeTab === 'revenue' && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+            <RevenueAttribution />
+            <LiveActivityFeed />
+          </div>
+        )}
+
+        {/* TAB 4: WHAT-IF SIMULATOR */}
+        {activeTab === 'simulator' && (
+          <div>
+            <WhatIfSimulator />
+          </div>
+        )}
+
       </main>
 
       {/* SLIDE-OUT CUSTOMER DETAIL DRAWER */}

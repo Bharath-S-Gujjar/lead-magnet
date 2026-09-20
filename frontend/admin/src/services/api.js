@@ -138,3 +138,91 @@ export async function getAdminNotifications({ token, read, page = 1, limit = 25 
   });
   return res.data;
 }
+
+// --- Phase 17A: New Intelligence APIs ---
+
+/**
+ * Fetch score history for a specific customer.
+ */
+export async function getScoreHistory(customerId, token, limit = 50) {
+  if (!customerId) throw new Error('Customer ID is required');
+  const params = new URLSearchParams({ limit: limit.toString() });
+  const res = await apiFetch(`/api/admin/intelligence/customers/${customerId}/score-history?${params.toString()}`, {
+    headers: authHeaders(token),
+  });
+  return res.data;
+}
+
+/**
+ * Fetch full Customer 360 view for a customer.
+ */
+export async function getCustomer360(customerId, token) {
+  if (!customerId) throw new Error('Customer ID is required');
+  const res = await apiFetch(`/api/admin/intelligence/customers/${customerId}/360`, {
+    headers: authHeaders(token),
+  });
+  return res.data;
+}
+
+/**
+ * Fetch model explainability for a customer's lead score.
+ */
+export async function getLeadExplanation(customerId, token) {
+  if (!customerId) throw new Error('Customer ID is required');
+  const res = await apiFetch(`/api/admin/intelligence/customers/${customerId}/explain`, {
+    headers: authHeaders(token),
+  });
+  return res.data;
+}
+
+/**
+ * Fetch purchase funnel analytics.
+ */
+export async function getFunnelAnalytics(token) {
+  const res = await apiFetch('/api/admin/intelligence/funnel', {
+    headers: authHeaders(token),
+  });
+  return res.data;
+}
+
+/**
+ * Fetch RFM segment distribution.
+ */
+export async function getRFMDistribution(token) {
+  const res = await apiFetch('/api/admin/intelligence/rfm', {
+    headers: authHeaders(token),
+  });
+  return res.data;
+}
+
+/**
+ * Fetch retention/inactivity overview.
+ */
+export async function getRetentionOverview(token) {
+  const res = await apiFetch('/api/admin/intelligence/retention', {
+    headers: authHeaders(token),
+  });
+  return res.data;
+}
+
+/**
+ * Fetch lead-to-revenue attribution metrics.
+ */
+export async function getRevenueAttribution(token) {
+  const res = await apiFetch('/api/admin/intelligence/revenue-attribution', {
+    headers: authHeaders(token),
+  });
+  return res.data;
+}
+
+/**
+ * Run what-if lead score simulation.
+ */
+export async function simulateLeadScore({ token, customer_id, feature_overrides } = {}) {
+  const res = await apiFetch('/api/admin/intelligence/simulate', {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify({ customer_id, feature_overrides }),
+  });
+  return res.data;
+}

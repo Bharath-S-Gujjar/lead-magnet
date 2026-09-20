@@ -36,6 +36,15 @@ from admin_intelligence_service import (
     get_marketing_activity,
     get_admin_notifications_list,
 )
+from lead_scoring_engine import rescore_customer
+from score_history_service import ensure_score_history_indexes, get_score_history
+from model_explainability_service import explain_lead_score
+from rfm_service import compute_rfm, get_rfm_distribution
+from funnel_analytics_service import get_funnel_analytics
+from retention_service import compute_retention_signals, get_retention_overview
+from product_affinity_service import compute_product_affinity
+from whatif_simulator_service import simulate_lead_score
+from revenue_attribution_service import compute_lead_revenue_attribution
 import certifi
 
 load_dotenv()
@@ -141,7 +150,7 @@ def ensure_product_indexes(products_collection):
 
 
 def bind_collections(client):
-    global db, profiles_collection, legacy_users_collection, products_collection, sessions_collection, events_collection, leads_collection, orders_collection, cart_collection, wishlist_collection, campaigns_collection, campaign_logs_collection, customer_features_collection, customer_lead_state_collection, marketing_automation_events_collection, marketing_communications_collection, admin_notifications_collection
+    global db, profiles_collection, legacy_users_collection, products_collection, sessions_collection, events_collection, leads_collection, orders_collection, cart_collection, wishlist_collection, campaigns_collection, campaign_logs_collection, customer_features_collection, customer_lead_state_collection, marketing_automation_events_collection, marketing_communications_collection, admin_notifications_collection, lead_score_history_collection
     db = client["leadmagnet"]
     profiles_collection = db["user_profiles"]
     legacy_users_collection = db["users"]
@@ -159,10 +168,12 @@ def bind_collections(client):
     marketing_automation_events_collection = db["marketing_automation_events"]
     marketing_communications_collection = db["marketing_communications"]
     admin_notifications_collection = db["admin_notifications"]
+    lead_score_history_collection = db["lead_score_history"]
     ensure_product_indexes(products_collection)
     ensure_customer_features_indexes(customer_features_collection)
     ensure_customer_lead_state_indexes(customer_lead_state_collection)
     ensure_marketing_automation_indexes(db)
+    ensure_score_history_indexes(db)
 
 
 mongo_client, MONGO_AVAILABLE = create_mongo_client()
@@ -1895,6 +1906,151 @@ def admin_intelligence_notifications_route():
         return jsonify({"success": False, "message": str(e)}), 500
 
 
+# --- Phase 17A: Product Intelligence APIs ---
+
+@app.route("/api/admin/intelligence/customers/<customer_id>/score-history", methods=["GET"])
+@admin_required
+def admin_intelligence_score_history_route(customer_id):
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable"}), 500
+    if not ObjectId.is_valid(customer_id):
+        return jsonify({"success": False, "message": "Invalid customer ID format"}), 400
+    try:
+        limit = int(request.args.get("limit", 50))
+        history = get_score_history(customer_id, db, limit=limit)
+        return jsonify({"success": True, "data": history})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/admin/intelligence/customers/<customer_id>/360", methods=["GET"])
+@admin_required
+def admin_intelligence_customer_360_route(customer_id):
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable"}), 500
+    if not ObjectId.is_valid(customer_id):
+        return jsonify({"success": False, "message": "Invalid customer ID format"}), 400
+    try:
+        detail = get_customer_intelligence_detail(db, customer_id)
+        if not detail:
+            return jsonify({"success": False, "message": "Customer not found"}), 404
+        return jsonify({"success": True, "data": detail})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/admin/intelligence/customers/<customer_id>/explain", methods=["GET"])
+@admin_required
+def admin_intelligence_explain_route(customer_id):
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable"}), 500
+    if not ObjectId.is_valid(customer_id):
+        return jsonify({"success": False, "message": "Invalid customer ID format"}), 400
+    try:
+        features = get_customer_features(customer_id, customer_features_collection)
+        if not features:
+            return jsonify({"success": False, "message": "Customer features not found"}), 404
+        explanation = explain_lead_score(features)
+        return jsonify({"success": True, "data": explanation})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/admin/intelligence/funnel", methods=["GET"])
+@admin_required
+def admin_intelligence_funnel_route():
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable"}), 500
+    try:
+        funnel = get_funnel_analytics(db)
+        return jsonify({"success": True, "data": funnel})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/admin/intelligence/rfm", methods=["GET"])
+@admin_required
+def admin_intelligence_rfm_route():
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable"}), 500
+    try:
+        rfm = get_rfm_distribution(db)
+        return jsonify({"success": True, "data": rfm})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/admin/intelligence/retention", methods=["GET"])
+@admin_required
+def admin_intelligence_retention_route():
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable"}), 500
+    try:
+        retention = get_retention_overview(db)
+        return jsonify({"success": True, "data": retention})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/admin/intelligence/revenue-attribution", methods=["GET"])
+@admin_required
+def admin_intelligence_revenue_attribution_route():
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable"}), 500
+    try:
+        attribution = compute_lead_revenue_attribution(db)
+        return jsonify({"success": True, "data": attribution})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/admin/intelligence/simulate", methods=["POST"])
+@admin_required
+def admin_intelligence_simulate_route():
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable"}), 500
+    try:
+        data = request.get_json(force=True) or {}
+        customer_id = data.get("customer_id")
+        feature_overrides = data.get("feature_overrides", {})
+
+        if not isinstance(feature_overrides, dict) or not feature_overrides:
+            return jsonify({"success": False, "message": "feature_overrides dict required"}), 400
+
+        result = simulate_lead_score(customer_id, feature_overrides, db)
+        return jsonify({"success": True, "data": result})
+    except ValueError as ve:
+        return jsonify({"success": False, "message": str(ve)}), 400
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+# --- SocketIO Real-Time Event Handlers ---
+
+@socketio.on("connect")
+def handle_socketio_connect():
+    """Acknowledge admin client SocketIO connection."""
+    pass
+
+
+@socketio.on("request_rescore")
+def handle_rescore_request(data):
+    """Admin-triggered manual rescore for a specific customer."""
+    customer_id = data.get("customer_id") if isinstance(data, dict) else None
+    if customer_id and MONGO_AVAILABLE:
+        try:
+            result = rescore_customer(customer_id, db, socketio=socketio)
+            if result:
+                socketio.emit("rescore_complete", {
+                    "customer_id": str(customer_id),
+                    "success": True,
+                })
+        except Exception:
+            socketio.emit("rescore_complete", {
+                "customer_id": str(customer_id),
+                "success": False,
+            })
+
 
 
 @app.route("/api/orders", methods=["POST"])
@@ -1956,6 +2112,23 @@ def create_order():
         event_result = events_collection.insert_one(event_doc)
         if session_id:
             update_profile_from_event(session_id, event_result.inserted_id)
+
+        # Trigger rescoring after purchase event
+        try:
+            rescore_customer(owner["user_id"], db, socketio=socketio)
+        except Exception:
+            pass
+
+        # Emit real-time order event
+        try:
+            socketio.emit("order_placed", {
+                "customer_id": str(owner["user_id"]),
+                "order_id": str(order_doc["_id"]),
+                "total_amount": order_doc["total_amount"],
+                "timestamp": str(now),
+            })
+        except Exception:
+            pass
 
         return jsonify({
             "success": True,

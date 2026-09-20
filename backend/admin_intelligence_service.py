@@ -10,6 +10,11 @@ import math
 from datetime import datetime, timezone
 from bson import ObjectId
 from customer_feature_service import _to_object_id
+from score_history_service import get_score_history
+from model_explainability_service import explain_lead_score
+from rfm_service import compute_rfm
+from product_affinity_service import compute_product_affinity
+from retention_service import compute_retention_signals
 
 
 SENSITIVE_PROFILE_FIELDS = {
@@ -238,6 +243,47 @@ def get_customer_intelligence_detail(db, customer_id):
     auto_events = list(events_col.find({"$or": [{"customer_id": actual_c_id}, {"customer_id": str(actual_c_id)}]}).sort("created_at", -1).limit(10))
     comms = list(comms_col.find({"$or": [{"customer_id": actual_c_id}, {"customer_id": str(actual_c_id)}]}).sort("created_at", -1).limit(10))
 
+    # --- Customer 360 Expansion ---
+
+    # Score history
+    score_history = []
+    try:
+        score_history = get_score_history(actual_c_id, db, limit=30)
+    except Exception:
+        pass
+
+    # RFM intelligence
+    rfm = {}
+    try:
+        rfm = compute_rfm(actual_c_id, db)
+    except Exception:
+        pass
+
+    # Product affinity
+    product_affinity = {}
+    try:
+        product_affinity = compute_product_affinity(actual_c_id, db)
+    except Exception:
+        pass
+
+    # Lead explanation
+    lead_explanation = {}
+    try:
+        if features:
+            lead_explanation = explain_lead_score(features)
+    except Exception:
+        pass
+
+    # Retention signals
+    retention = {}
+    try:
+        retention = compute_retention_signals(actual_c_id, db)
+    except Exception:
+        pass
+
+    # Customer journey timeline (merged events + orders + comms, sorted chronologically)
+    journey_timeline = _build_journey_timeline(actual_c_id, db)
+
     return {
         "customer": _sanitize_doc(profile),
         "behavior": _sanitize_doc(features) or {},
@@ -246,7 +292,13 @@ def get_customer_intelligence_detail(db, customer_id):
         "marketing": {
             "automation_events": [_sanitize_doc(e) for e in auto_events],
             "communications": [_sanitize_doc(c) for c in comms]
-        }
+        },
+        "score_history": score_history,
+        "rfm": rfm,
+        "product_affinity": product_affinity,
+        "lead_explanation": lead_explanation,
+        "retention": retention,
+        "journey_timeline": journey_timeline,
     }
 
 
@@ -420,3 +472,98 @@ def get_admin_notifications_list(db, read_status=None, page=1, limit=25):
         "total": total,
         "pages": pages
     }
+
+
+def _build_journey_timeline(customer_id, db, limit=30):
+    """Build a chronological customer journey timeline from events, orders, and marketing comms.
+
+    Returns:
+        list[dict]: Timeline entries sorted by timestamp, most recent first.
+    """
+    timeline = []
+
+    c_oid = _to_object_id(customer_id)
+    id_conditions = []
+    if c_oid:
+        id_conditions.append({"user_id": c_oid})
+        id_conditions.append({"user_id": str(c_oid)})
+    if isinstance(customer_id, str):
+        id_conditions.append({"anonymous_id": customer_id})
+
+    if not id_conditions:
+        return []
+
+    base_query = {"$or": id_conditions}
+
+    # Behavior events
+    try:
+        events = list(db["events"].find(base_query).sort("timestamp", -1).limit(limit))
+        for e in events:
+            ts = e.get("timestamp")
+            if isinstance(ts, datetime):
+                ts = ts.isoformat()
+            elif not isinstance(ts, str):
+                ts = str(ts) if ts else None
+            timeline.append({
+                "type": "event",
+                "event_type": e.get("event_type"),
+                "page": e.get("page"),
+                "timestamp": ts,
+            })
+    except Exception:
+        pass
+
+    # Orders
+    try:
+        order_query = {"$or": []}
+        if c_oid:
+            order_query["$or"].append({"user_id": c_oid})
+            order_query["$or"].append({"user_id": str(c_oid)})
+        if isinstance(customer_id, str):
+            order_query["$or"].append({"user_id": customer_id})
+
+        if order_query["$or"]:
+            orders = list(db["orders"].find(order_query).sort("created_at", -1).limit(10))
+            for o in orders:
+                ts = o.get("created_at")
+                if isinstance(ts, datetime):
+                    ts = ts.isoformat()
+                timeline.append({
+                    "type": "order",
+                    "order_id": str(o.get("_id", "")),
+                    "total_amount": o.get("total_amount"),
+                    "timestamp": ts if isinstance(ts, str) else str(ts) if ts else None,
+                })
+    except Exception:
+        pass
+
+    # Marketing comms
+    try:
+        comm_query = {"$or": []}
+        if c_oid:
+            comm_query["$or"].append({"customer_id": c_oid})
+            comm_query["$or"].append({"customer_id": str(c_oid)})
+        if isinstance(customer_id, str):
+            comm_query["$or"].append({"customer_id": customer_id})
+
+        if comm_query["$or"]:
+            comms = list(db["marketing_communications"].find(comm_query).sort("created_at", -1).limit(10))
+            for c in comms:
+                ts = c.get("sent_at") or c.get("created_at")
+                timeline.append({
+                    "type": "marketing",
+                    "channel": c.get("channel"),
+                    "status": c.get("status"),
+                    "timestamp": ts if isinstance(ts, str) else str(ts) if ts else None,
+                })
+    except Exception:
+        pass
+
+    # Sort by timestamp descending
+    def _sort_key(entry):
+        ts = entry.get("timestamp", "")
+        return ts if isinstance(ts, str) else ""
+
+    timeline.sort(key=_sort_key, reverse=True)
+
+    return timeline[:limit]

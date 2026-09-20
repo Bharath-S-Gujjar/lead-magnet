@@ -3,18 +3,31 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-import requests
+import unittest
+from app import app
 
-BASE = "http://127.0.0.1:5000"
 
-# Use a real session_id from your last test_session_start.py run
-session_id = "6a76061c63631989a03df54e"
+class SessionEventEndpointTests(unittest.TestCase):
+    def setUp(self):
+        self.client = app.test_client()
 
-r = requests.post(f"{BASE}/api/session/event", json={
-    "session_id": session_id,
-    "event_type": "page_view",
-    "page": "/pricing",
-    "metadata": {"scroll_depth": 40}
-})
-print(r.status_code)
-print(r.json())
+    def test_session_event(self):
+        # Start a session first to get a valid session_id
+        start_res = self.client.post(
+            "/api/session/start",
+            json={"visitor_id": "visitor_event_test"}
+        )
+        if start_res.status_code == 200:
+            session_id = start_res.get_json()["data"]["session_id"]
+            r = self.client.post("/api/session/event", json={
+                "session_id": session_id,
+                "event_type": "page_view",
+                "page": "/pricing",
+                "metadata": {"scroll_depth": 40}
+            })
+            self.assertEqual(r.status_code, 200)
+            self.assertTrue(r.get_json().get("success"))
+
+
+if __name__ == "__main__":
+    unittest.main()

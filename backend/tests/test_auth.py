@@ -3,27 +3,39 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-import requests
+import unittest
+from app import app
 
-BASE = "http://127.0.0.1:5000"
 
-# 1. Signup
-r = requests.post(f"{BASE}/api/auth/signup", json={
-    "email": "testuser@example.com",
-    "password": "test1234"
-})
-print("Signup:", r.status_code, r.json())
+class AuthEndpointTests(unittest.TestCase):
+    def setUp(self):
+        self.client = app.test_client()
 
-# 2. Customer login
-r = requests.post(f"{BASE}/api/auth/login", json={
-    "email": "testuser@example.com",
-    "password": "test1234"
-})
-print("Login:", r.status_code, r.json())
+    def test_auth_flow(self):
+        # 1. Signup
+        signup_res = self.client.post("/api/auth/signup", json={
+            "email": "testuser_test@example.com",
+            "password": "test1234"
+        })
+        self.assertIn(signup_res.status_code, (200, 400))
 
-# 3. Admin login (use your real ADMIN_USERNAME/ADMIN_PASSWORD from .env)
-r = requests.post(f"{BASE}/api/auth/admin/login", json={
-    "username": "admin",
-    "password": "admin12345"
-})
-print("Admin login:", r.status_code, r.json())
+        # 2. Customer login
+        login_res = self.client.post("/api/auth/login", json={
+            "email": "testuser_test@example.com",
+            "password": "test1234"
+        })
+        self.assertIn(login_res.status_code, (200, 401))
+
+        # 3. Admin login
+        admin_res = self.client.post("/api/auth/admin/login", json={
+            "username": "admin",
+            "password": "admin12345"
+        })
+        self.assertEqual(admin_res.status_code, 200)
+        data = admin_res.get_json()
+        self.assertTrue(data.get("success"))
+        self.assertIn("token", data.get("data", {}))
+
+
+if __name__ == "__main__":
+    unittest.main()

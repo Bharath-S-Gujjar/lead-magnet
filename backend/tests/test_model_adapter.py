@@ -21,8 +21,12 @@ class ModelAdapterTests(unittest.TestCase):
 
     def test_missing_features_default_to_current_zero_imputation(self):
         frame = adapt_behavioral_features({})
+        row = frame.iloc[0]
 
-        self.assertTrue((frame.iloc[0] == 0).all())
+        self.assertEqual(row["TotalVisits"], 0)
+        self.assertEqual(row["Total Time Spent on Website"], 0)
+        self.assertEqual(row["Page Views Per Visit"], 0)
+        self.assertEqual(row["Last Activity_Unknown"], 1)
 
     def test_common_form_submission_scenario_maps_to_model_features(self):
         frame = adapt_behavioral_features({

@@ -41,7 +41,7 @@ app_module.customer_lead_state_collection = app_module.db["customer_lead_state"]
 app_module.marketing_automation_events_collection = app_module.db["marketing_automation_events"]
 app_module.marketing_communications_collection = app_module.db["marketing_communications"]
 app_module.admin_notifications_collection = app_module.db["admin_notifications"]
-
+app_module.lead_score_history_collection = app_module.db["lead_score_history"]
 
 
 @pytest.fixture(autouse=True)

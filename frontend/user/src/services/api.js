@@ -275,3 +275,36 @@ export async function clearCartApi(userId, anonymousId) {
   }
   return payload.data || [];
 }
+
+export async function fetchWishlist(userId, anonymousId) {
+  const query = userId ? `user_id=${userId}` : `anonymous_id=${anonymousId}`;
+  const response = await fetch(`${API_BASE_URL}/api/wishlist?${query}`);
+  const payload = await parseJsonResponse(response);
+  return payload.data || [];
+}
+
+export async function addToWishlistApi(productId, userId, anonymousId, sessionId) {
+  const response = await fetch(`${API_BASE_URL}/api/wishlist`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ product_id: productId, user_id: userId, anonymous_id: anonymousId, session_id: sessionId })
+  });
+  const payload = await parseJsonResponse(response);
+  return payload.data || [];
+}
+
+export async function removeFromWishlistApi(productId, userId, anonymousId, sessionId) {
+  const query = userId ? `user_id=${userId}` : `anonymous_id=${anonymousId}`;
+  const response = await fetch(`${API_BASE_URL}/api/wishlist/${productId}?${query}&session_id=${sessionId || ''}`, {
+    method: 'DELETE'
+  });
+  const payload = await parseJsonResponse(response);
+  return payload.data || [];
+}
+
+export async function fetchRecommendations(userId, anonymousId, limit = 8) {
+  const query = userId ? `user_id=${userId}&limit=${limit}` : `anonymous_id=${anonymousId}&limit=${limit}`;
+  const response = await fetch(`${API_BASE_URL}/api/recommendations?${query}`);
+  const payload = await parseJsonResponse(response);
+  return payload.data || [];
+}

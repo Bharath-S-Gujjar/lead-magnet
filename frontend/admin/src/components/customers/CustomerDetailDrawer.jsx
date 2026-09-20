@@ -14,7 +14,12 @@ import {
   Flame,
   CheckCircle2,
   AlertCircle,
-  PackageCheck
+  PackageCheck,
+  Crown,
+  TrendingUp,
+  HelpCircle,
+  History,
+  Compass
 } from 'lucide-react';
 
 export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
@@ -59,6 +64,12 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
   const orders = detail?.orders || [];
   const autoEvents = detail?.marketing?.automation_events || [];
   const comms = detail?.marketing?.communications || [];
+  const scoreHistory = detail?.score_history || [];
+  const rfm = detail?.rfm || {};
+  const affinity = detail?.product_affinity || {};
+  const explanation = detail?.lead_explanation || {};
+  const retention = detail?.retention || {};
+  const journey = detail?.journey_timeline || [];
 
   const getChannelIcon = (ch) => {
     if (ch === 'email') return <Mail size={14} style={{ color: '#3b82f6' }} />;
@@ -76,7 +87,7 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
       />
 
       {/* Drawer Panel */}
-      <div className={`drawer-panel ${isOpen ? 'open' : ''}`} style={{ maxWidth: '640px', width: '100%', overflowY: 'auto' }}>
+      <div className={`drawer-panel ${isOpen ? 'open' : ''}`} style={{ maxWidth: '720px', width: '100%', overflowY: 'auto' }}>
         {/* Header */}
         <div style={{
           padding: '24px 32px',
@@ -85,7 +96,9 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
           justifyContent: 'space-between',
           alignItems: 'center',
           background: 'var(--panel-bg)',
-          sticky: 'top'
+          position: 'sticky',
+          top: 0,
+          zIndex: 10
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <div style={{
@@ -110,6 +123,12 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
                 <span>ID: {customerId}</span>
                 <span>•</span>
                 <span>{profile.email || 'No email registered'}</span>
+                {rfm.rfm_segment && (
+                  <>
+                    <span>•</span>
+                    <span style={{ color: '#8b5cf6', fontWeight: 700 }}>{rfm.rfm_segment}</span>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -123,7 +142,7 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
         <div style={{ padding: '32px' }}>
           {isLoading ? (
             <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)' }}>
-              Fetching real-time customer intelligence deep-dive...
+              Fetching real-time Customer 360 intelligence deep-dive...
             </div>
           ) : error ? (
             <div className="glass-card" style={{ padding: '20px', color: 'var(--accent-rose)', display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -133,11 +152,11 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
               
-              {/* SECTION 1: CUSTOMER PROFILE */}
+              {/* SECTION 1: CUSTOMER PROFILE & RFM SUMMARY */}
               <div>
                 <h3 className="heading-md" style={{ color: 'var(--text-primary)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <User size={18} style={{ color: 'var(--accent-indigo)' }} />
-                  <span>Canonical Customer Profile</span>
+                  <span>Canonical Customer 360 Profile</span>
                 </h3>
                 <div style={{
                   background: 'var(--table-header-bg)',
@@ -153,16 +172,16 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
                   <div><span style={{ color: 'var(--text-muted)' }}>Email:</span> <strong>{profile.email || 'N/A'}</strong></div>
                   <div><span style={{ color: 'var(--text-muted)' }}>Phone:</span> <strong>{profile.phone || 'N/A'}</strong></div>
                   <div><span style={{ color: 'var(--text-muted)' }}>Role:</span> <strong>{profile.role || 'user'}</strong></div>
-                  <div><span style={{ color: 'var(--text-muted)' }}>Created At:</span> <strong>{profile.created_at ? new Date(profile.created_at).toLocaleDateString() : 'N/A'}</strong></div>
-                  <div><span style={{ color: 'var(--text-muted)' }}>Last Active:</span> <strong>{profile.last_active_at ? new Date(profile.last_active_at).toLocaleString() : 'N/A'}</strong></div>
+                  <div><span style={{ color: 'var(--text-muted)' }}>RFM Segment:</span> <strong style={{ color: '#8b5cf6' }}>{rfm.rfm_segment || 'N/A'}</strong></div>
+                  <div><span style={{ color: 'var(--text-muted)' }}>Churn Risk:</span> <strong style={{ color: retention.churn_risk_level === 'High' ? '#f43f5e' : '#10b981' }}>{retention.churn_risk_level || 'Low'}</strong></div>
                 </div>
               </div>
 
-              {/* SECTION 2: LEAD STATE & SCORE */}
+              {/* SECTION 2: LEAD STATE & SCORE EXPLAINABILITY */}
               <div>
                 <h3 className="heading-md" style={{ color: 'var(--text-primary)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Target size={18} style={{ color: 'var(--accent-indigo)' }} />
-                  <span>Lead State & Qualification Metrics</span>
+                  <span>Lead Intelligence & Model Explainability</span>
                 </h3>
                 <div style={{
                   background: 'var(--panel-solid)',
@@ -192,7 +211,27 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
                     </div>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '0.82rem', borderTop: '1px solid var(--panel-border)', paddingTop: '12px' }}>
+                  {/* Top Driving Factors */}
+                  {explanation.top_driving_factors && explanation.top_driving_factors.length > 0 && (
+                    <div style={{ marginTop: '16px', borderTop: '1px solid var(--panel-border)', paddingTop: '14px' }}>
+                      <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <TrendingUp size={14} style={{ color: '#6366f1' }} />
+                        <span>Key Factors Driving Score</span>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {explanation.top_driving_factors.slice(0, 4).map((factor, fIdx) => (
+                          <div key={fIdx} style={{ fontSize: '0.8rem', display: 'flex', justifyContent: 'space-between', background: 'var(--table-header-bg)', padding: '6px 10px', borderRadius: '4px' }}>
+                            <span style={{ color: 'var(--text-secondary)' }}>{factor.description || factor.feature}</span>
+                            <span style={{ fontWeight: 700, color: factor.direction === 'positive' ? '#10b981' : '#f43f5e' }}>
+                              {factor.direction === 'positive' ? '+' : ''}{factor.weight}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '0.82rem', borderTop: '1px solid var(--panel-border)', paddingTop: '12px', marginTop: '14px' }}>
                     <div><span style={{ color: 'var(--text-muted)' }}>Lead Probability:</span> <strong>{lead.lead_probability ? `${(lead.lead_probability * 100).toFixed(2)}%` : 'N/A'}</strong></div>
                     <div><span style={{ color: 'var(--text-muted)' }}>Model Version:</span> <strong>{lead.model_version || 'N/A'}</strong></div>
                     <div><span style={{ color: 'var(--text-muted)' }}>First Qualified:</span> <strong>{lead.first_qualified_at ? new Date(lead.first_qualified_at).toLocaleString() : 'N/A'}</strong></div>
@@ -201,40 +240,88 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
                 </div>
               </div>
 
-              {/* SECTION 3: BEHAVIORAL FEATURE STORE */}
-              <div>
-                <h3 className="heading-md" style={{ color: 'var(--text-primary)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Activity size={18} style={{ color: 'var(--accent-indigo)' }} />
-                  <span>Behavioral Feature Aggregations</span>
-                </h3>
-                <div style={{
-                  background: 'var(--table-header-bg)',
-                  border: '1px solid var(--panel-border)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '16px 20px',
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 1fr',
-                  gap: '10px',
-                  fontSize: '0.85rem'
-                }}>
-                  <div><span style={{ color: 'var(--text-muted)' }}>Sessions Count:</span> <strong>{behavior.sessions_count || 0}</strong></div>
-                  <div><span style={{ color: 'var(--text-muted)' }}>Total Events:</span> <strong>{behavior.total_events || 0}</strong></div>
-                  <div><span style={{ color: 'var(--text-muted)' }}>Total Time Spent:</span> <strong>{behavior.total_time_spent ? `${Math.round(behavior.total_time_spent)}s` : '0s'}</strong></div>
-                  <div><span style={{ color: 'var(--text-muted)' }}>Page Views Count:</span> <strong>{behavior.page_views_count || 0}</strong></div>
-                  <div><span style={{ color: 'var(--text-muted)' }}>Products Viewed:</span> <strong>{behavior.products_viewed || 0}</strong></div>
-                  <div><span style={{ color: 'var(--text-muted)' }}>Unique Products Viewed:</span> <strong>{behavior.unique_products_viewed || 0}</strong></div>
-                  <div><span style={{ color: 'var(--text-muted)' }}>Product Interactions:</span> <strong>{behavior.product_interactions || 0}</strong></div>
-                  <div><span style={{ color: 'var(--text-muted)' }}>Search Count:</span> <strong>{behavior.search_count || 0}</strong></div>
-                  <div><span style={{ color: 'var(--text-muted)' }}>High Intent Page Visits:</span> <strong>{behavior.high_intent_page_visits || 0}</strong></div>
-                  <div><span style={{ color: 'var(--text-muted)' }}>Cart Items:</span> <strong>{behavior.cart_item_count || 0}</strong></div>
-                  <div><span style={{ color: 'var(--text-muted)' }}>Cart Value:</span> <strong>${behavior.cart_value || 0}</strong></div>
-                  <div><span style={{ color: 'var(--text-muted)' }}>Wishlist Items:</span> <strong>{behavior.wishlist_item_count || 0}</strong></div>
-                  <div><span style={{ color: 'var(--text-muted)' }}>Checkout Attempts:</span> <strong>{behavior.checkout_attempts || 0}</strong></div>
-                  <div><span style={{ color: 'var(--text-muted)' }}>Orders Count:</span> <strong>{behavior.orders_count || 0}</strong></div>
+              {/* SECTION 3: PRODUCT AFFINITY & RECOMMENDATIONS */}
+              {affinity.top_categories && (
+                <div>
+                  <h3 className="heading-md" style={{ color: 'var(--text-primary)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <ShoppingBag size={18} style={{ color: 'var(--accent-indigo)' }} />
+                    <span>Product Affinity & Next Best Action</span>
+                  </h3>
+                  <div style={{
+                    background: 'var(--table-header-bg)',
+                    border: '1px solid var(--panel-border)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '16px 20px',
+                    fontSize: '0.85rem'
+                  }}>
+                    <div style={{ marginBottom: '10px' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Top Categories Viewed: </span>
+                      <strong>{affinity.top_categories.join(', ') || 'None'}</strong>
+                    </div>
+                    {affinity.recommended_actions && (
+                      <div style={{ background: '#6366f115', borderLeft: '3px solid #6366f1', padding: '10px 14px', borderRadius: '4px' }}>
+                        <div style={{ fontWeight: 700, color: '#6366f1', fontSize: '0.8rem' }}>RECOMMENDED ACTION</div>
+                        <div style={{ marginTop: '2px', color: 'var(--text-primary)' }}>{affinity.recommended_actions[0]}</div>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
 
-              {/* SECTION 4: RECENT ORDERS */}
+              {/* SECTION 4: SCORE HISTORY & TRANSITIONS */}
+              {scoreHistory.length > 0 && (
+                <div>
+                  <h3 className="heading-md" style={{ color: 'var(--text-primary)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <History size={18} style={{ color: 'var(--accent-indigo)' }} />
+                    <span>Lead Score & Qualification History ({scoreHistory.length})</span>
+                  </h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '200px', overflowY: 'auto' }}>
+                    {scoreHistory.slice(0, 10).map((sh, idx) => (
+                      <div key={idx} style={{ padding: '8px 12px', background: 'var(--table-header-bg)', borderRadius: '6px', fontSize: '0.8rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <span style={{ fontWeight: 700, color: 'var(--accent-indigo)' }}>Score {sh.lead_score}</span>
+                          <span style={{ color: 'var(--text-muted)', marginLeft: '8px' }}>({(sh.lead_probability * 100).toFixed(1)}%)</span>
+                          {sh.trigger_event && <span style={{ color: 'var(--text-secondary)', marginLeft: '8px' }}>• {sh.trigger_event}</span>}
+                        </div>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                          {sh.created_at ? new Date(sh.created_at).toLocaleString() : ''}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* SECTION 5: CUSTOMER JOURNEY TIMELINE */}
+              {journey.length > 0 && (
+                <div>
+                  <h3 className="heading-md" style={{ color: 'var(--text-primary)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Compass size={18} style={{ color: 'var(--accent-indigo)' }} />
+                    <span>Customer Journey Timeline ({journey.length} events)</span>
+                  </h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderLeft: '2px solid var(--panel-border)', paddingLeft: '16px', marginLeft: '8px' }}>
+                    {journey.slice(0, 12).map((item, idx) => (
+                      <div key={idx} style={{ fontSize: '0.82rem', position: 'relative' }}>
+                        <div style={{
+                          position: 'absolute',
+                          left: '-21px',
+                          top: '4px',
+                          width: '8px',
+                          height: '8px',
+                          borderRadius: '50%',
+                          background: item.type === 'order' ? '#10b981' : item.type === 'lead_score_history' ? '#6366f1' : '#8b5cf6'
+                        }} />
+                        <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{item.title}</div>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                          {item.description} • {item.timestamp ? new Date(item.timestamp).toLocaleString() : ''}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* SECTION 6: RECENT ORDERS */}
               <div>
                 <h3 className="heading-md" style={{ color: 'var(--text-primary)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <ShoppingBag size={18} style={{ color: 'var(--accent-indigo)' }} />
@@ -262,7 +349,7 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
                 )}
               </div>
 
-              {/* SECTION 5: MARKETING DISPATCHES */}
+              {/* SECTION 7: MARKETING DISPATCHES */}
               <div>
                 <h3 className="heading-md" style={{ color: 'var(--text-primary)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <PackageCheck size={18} style={{ color: 'var(--accent-indigo)' }} />
