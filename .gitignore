@@ -1,3 +1,52 @@
-﻿venv/
-.venv/
+# Environment & Secrets
+.env
+.env.*
+.env.local
+.env.production
+!.env.example
+!.env.local.example
 backend/.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual Environments
+venv/
+.venv/
+ENV/
+env/
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+
+# Node & Frontend Build
+node_modules/
+dist/
+dist-ssr/
+build/
+*.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS & Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary & Migration Backups
+temp.txt
+data/inventory_raw.json
+data/catalog/backup/

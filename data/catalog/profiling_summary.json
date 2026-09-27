@@ -1,0 +1,221 @@
+{
+  "source_stats": {
+    "Kids": {
+      "source_rows": 94750,
+      "usable_rows": 94750,
+      "unusable_rows": 0,
+      "unique_products": 910,
+      "duplicates_removed": 93840
+    },
+    "Women": {
+      "source_rows": 210245,
+      "usable_rows": 210234,
+      "unusable_rows": 11,
+      "unique_products": 68088,
+      "duplicates_removed": 142146
+    },
+    "Men": {
+      "source_rows": 262006,
+      "usable_rows": 262005,
+      "unusable_rows": 1,
+      "unique_products": 51468,
+      "duplicates_removed": 210537
+    }
+  },
+  "total_source_rows": 567001,
+  "total_usable_rows": 566989,
+  "total_unusable_rows": 12,
+  "total_cleaned": 120466,
+  "total_duplicates_removed": 446523,
+  "missing_counts": {
+    "price_inr": 10141,
+    "discount_percent": 10141,
+    "rating": 50249,
+    "verified_buyers": 50249
+  },
+  "category_dist": {
+    "T-Shirts": 29770,
+    "Kurtas & Kurta Sets": 23375,
+    "Tops & Tunics": 15732,
+    "Shirts": 9509,
+    "Sweaters & Sweatshirts": 9426,
+    "Trousers & Pants": 6988,
+    "Jeans": 5556,
+    "Innerwear & Sleepwear": 5240,
+    "Skirts": 4936,
+    "Jackets & Coats": 4702,
+    "Shorts": 2987,
+    "Dresses & Jumpsuits": 1199,
+    "Other Clothing": 502,
+    "Track Pants & Joggers": 339,
+    "Ethnic Wear": 55,
+    "Leggings & Churidars": 48,
+    "Nightwear & Loungewear": 40,
+    "Footwear": 26,
+    "Co-ords & Clothing Sets": 22,
+    "Accessories": 13,
+    "Swimwear": 1
+  },
+  "gender_dist": {
+    "Kids": 910,
+    "Women": 68088,
+    "Men": 51468
+  },
+  "price_stats": {
+    "count": 110325,
+    "min": 123.0,
+    "max": 144000.0,
+    "mean": 1125.56,
+    "median": 839.0
+  },
+  "brand_count": 2773,
+  "top_brands": [
+    [
+      "Roadster",
+      2196
+    ],
+    [
+      "Trendyol",
+      1482
+    ],
+    [
+      "BAESD",
+      1337
+    ],
+    [
+      "DressBerry",
+      1281
+    ],
+    [
+      "KALINI",
+      1188
+    ],
+    [
+      "Tokyo Talkies",
+      1177
+    ],
+    [
+      "HERE&NOW",
+      1103
+    ],
+    [
+      "H&M",
+      1061
+    ],
+    [
+      "Anouk",
+      1039
+    ],
+    [
+      "Mast & Harbour",
+      978
+    ],
+    [
+      "Puma",
+      964
+    ],
+    [
+      "FOREVER 21",
+      930
+    ],
+    [
+      "max",
+      899
+    ],
+    [
+      "Sangria",
+      873
+    ],
+    [
+      "SHOWOFF",
+      837
+    ],
+    [
+      "MANGO",
+      766
+    ],
+    [
+      "V-Mart",
+      712
+    ],
+    [
+      "StyleCast",
+      699
+    ],
+    [
+      "SASSAFRAS",
+      652
+    ],
+    [
+      "LULU & SKY",
+      607
+    ]
+  ],
+  "rating_stats": {
+    "count": 70217,
+    "mean": 4.07,
+    "buckets": {
+      "4.5 - 5.0": 11798,
+      "4.0 - 4.4": 36740,
+      "3.5 - 3.9": 15349,
+      "3.0 - 3.4": 4515,
+      "Below 3.0": 1815
+    }
+  },
+  "schema": [
+    {
+      "field": "product_id",
+      "type": "string",
+      "nullable": false,
+      "description": "Deterministic SHA-256 identifier (prod_...)"
+    },
+    {
+      "field": "name",
+      "type": "string",
+      "nullable": false,
+      "description": "Cleaned product name"
+    },
+    {
+      "field": "brand",
+      "type": "string",
+      "nullable": false,
+      "description": "Manufacturer / Brand label"
+    },
+    {
+      "field": "gender",
+      "type": "string",
+      "nullable": false,
+      "description": "Target gender segment (Men, Women, Kids)"
+    },
+    {
+      "field": "category",
+      "type": "string",
+      "nullable": false,
+      "description": "Inferred apparel category taxonomy"
+    },
+    {
+      "field": "price_inr",
+      "type": "float",
+      "nullable": true,
+      "description": "Selling price in Indian Rupees (INR)"
+    },
+    {
+      "field": "discount_percent",
+      "type": "float",
+      "nullable": true,
+      "description": "Discount percentage (0-100)"
+    },
+    {
+      "field": "rating",
+      "type": "float",
+      "nullable": true,
+      "description": "Product average customer rating (1.0 - 5.0)"
+    },
+    {
+      "field": "verified_buyers",
+      "type": "integer",
+      "nullable": true,
+      "description": "Count of verified purchasers who reviewed"
+    }
+  ]
+}

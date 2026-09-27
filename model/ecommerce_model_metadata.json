@@ -4,6 +4,13 @@
   "calibration_status": "uncalibrated_synthetic",
   "training_date": "2026-09-19T11:17:51.313609+00:00",
   "created_at": "2026-09-19T11:17:51.313609+00:00",
+  "training_environment": {
+    "python": "3.14.4",
+    "pandas": "3.0.6",
+    "numpy": "2.5.3",
+    "scikit-learn": "1.9.1",
+    "xgboost": "3.4.1"
+  },
   "dataset_path": "data/ml/ecommerce_customer_behavior.csv",
   "total_samples": 6000,
   "train_samples": 4200,
