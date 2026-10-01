@@ -12,9 +12,16 @@ export const FilterPanel = ({
   setMaxPrice,
   minRating,
   setMinRating,
+  availableBrands = [],
   onReset
 }) => {
-  const brands = ["All Brands", "Levi's", "Zara", "H&M", "Allen Solly", "Van Heusen", "Wrogn", "Roadster", "Biba", "Fabindia", "U.S. Polo Assn.", "Pepe Jeans", "Max", "Pantaloons"];
+  const defaultBrands = [
+    "Roadster", "Trendyol", "BAESD", "DressBerry", "KALINI", "Tokyo Talkies",
+    "HERE&NOW", "H&M", "Anouk", "Mast & Harbour", "Puma", "FOREVER 21", "max",
+    "Sangria", "SHOWOFF", "MANGO", "V-Mart", "Levi's", "Zara", "Allen Solly", "Fabindia"
+  ];
+  const combinedBrands = ["All Brands", ...(availableBrands.length > 0 ? availableBrands : defaultBrands)];
+  const brands = Array.from(new Set(combinedBrands));
 
   return (
     <aside className="glass-card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>

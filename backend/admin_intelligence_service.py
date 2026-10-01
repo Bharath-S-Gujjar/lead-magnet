@@ -284,11 +284,30 @@ def get_customer_intelligence_detail(db, customer_id):
     # Customer journey timeline (merged events + orders + comms, sorted chronologically)
     journey_timeline = _build_journey_timeline(actual_c_id, db)
 
+    # Current cart items
+    cart = []
+    try:
+        cart_col = db["cart"]
+        cart_docs = list(cart_col.find({"$or": [{"user_id": actual_c_id}, {"user_id": str(actual_c_id)}]}))
+        for item in cart_docs:
+            cart.append({
+                "product_id": str(item.get("product_id", "")),
+                "name": item.get("name") or item.get("product_name", ""),
+                "price": item.get("price", 0),
+                "quantity": item.get("quantity", 1),
+                "image": item.get("image", ""),
+                "brand": item.get("brand", ""),
+                "category": item.get("category", ""),
+            })
+    except Exception:
+        pass
+
     return {
         "customer": _sanitize_doc(profile),
         "behavior": _sanitize_doc(features) or {},
         "lead": _sanitize_doc(lead_state) or {},
         "orders": [_sanitize_doc(o) for o in recent_orders],
+        "cart": cart,
         "marketing": {
             "automation_events": [_sanitize_doc(e) for e in auto_events],
             "communications": [_sanitize_doc(c) for c in comms]

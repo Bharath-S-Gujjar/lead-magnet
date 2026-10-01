@@ -1,27 +1,28 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Heart, ShoppingBag, Star, Truck, ShieldCheck, RefreshCw, ArrowLeft, Check } from 'lucide-react';
-import { CLOTHING_PRODUCTS } from '../data/clothingProducts';
+import { Heart, ShoppingBag, Star, Truck, ShieldCheck, RefreshCw, ArrowLeft, Shirt, Sparkles, AlertCircle, Loader2 } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useWishlist } from '../context/WishlistContext';
 import { useTracking } from '../hooks/useTracking';
-import { API_BASE_URL, parseJsonResponse, trackCustomerEvent } from '../services/api';
+import { fetchProductById, fetchProducts, trackCustomerEvent } from '../services/api';
+import { ProductCard } from '../components/ProductCard';
 
 function normalizeProduct(product) {
   return {
     ...product,
     id: product._id || product.id,
-    image: product.image || product.images?.[0] || 'https://via.placeholder.com/600x800?text=Clothing',
-    images: product.images || [product.image || 'https://via.placeholder.com/600x800?text=Clothing'],
+    image: product.image || product.images?.[0] || '',
+    images: product.images || (product.image ? [product.image] : []),
     rating: product.rating || 4.3,
     discount: product.discount || 0,
-    sizes: product.sizes || ['M', 'L', 'XL'],
-    colors: product.colors || ['Standard'],
-    fabric: product.fabric || 'Cotton Blend',
-    material: product.material || 'Premium Fabric',
-    fit: product.fit || 'Regular Fit',
-    washInstructions: product.washInstructions || 'Machine wash',
+    sizes: product.sizes || ['S', 'M', 'L', 'XL'],
+    colors: product.colors || ['Classic'],
+    fabric: product.fabric || '100% Premium Cotton',
+    material: product.material || 'Breathable Fabric',
+    fit: product.fit || 'Comfort Regular Fit',
+    washInstructions: product.washInstructions || 'Machine wash cold with like colors',
     price: Number(product.price || 0),
+    description: product.description || `Premium quality ${product.category || 'clothing'} designed by ${product.brand || 'Lead Magnet'} for modern everyday comfort and style.`
   };
 }
 
@@ -31,19 +32,59 @@ export const ProductDetails = () => {
   const { addToCart } = useCart();
   const { toggleWishlist, isInWishlist } = useWishlist();
 
-  const [product, setProduct] = useState(() => CLOTHING_PRODUCTS.find(p => p.id === id) || null);
+  const [product, setProduct] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [relatedProducts, setRelatedProducts] = useState([]);
+  const [imgFailed, setImgFailed] = useState(false);
+
+  const [selectedImage, setSelectedImage] = useState('');
+  const [selectedSize, setSelectedSize] = useState('M');
+  const [selectedColor, setSelectedColor] = useState('Classic');
+  const [quantity, setQuantity] = useState(1);
 
   useEffect(() => {
-    fetch(`${API_BASE_URL}/api/products/${id}`)
-      .then((response) => parseJsonResponse(response))
-      .then((payload) => {
-        if (payload.success && payload.data) {
-          setProduct(normalizeProduct(payload.data));
+    let active = true;
+    setLoading(true);
+    setError(null);
+    setImgFailed(false);
+
+    fetchProductById(id)
+      .then((data) => {
+        if (!active) return;
+        if (data) {
+          const norm = normalizeProduct(data);
+          setProduct(norm);
+          setSelectedImage(norm.image);
+          setSelectedSize(norm.sizes[0] || 'M');
+          setSelectedColor(norm.colors[0] || 'Classic');
+
+          // Fetch related products from same category or gender
+          if (norm.category) {
+            fetchProducts({ category: norm.category, limit: 4 })
+              .then((res) => {
+                if (active && res?.data) {
+                  const filtered = res.data.filter(p => (p._id || p.id) !== norm.id).slice(0, 4);
+                  setRelatedProducts(filtered);
+                }
+              })
+              .catch(() => {});
+          }
+        } else {
+          setError('Product not found in catalog.');
         }
       })
-      .catch(() => {
-        setProduct(CLOTHING_PRODUCTS.find(p => p.id === id) || CLOTHING_PRODUCTS[0]);
+      .catch((err) => {
+        if (!active) return;
+        setError(err.message || 'Unable to fetch product details.');
+      })
+      .finally(() => {
+        if (active) setLoading(false);
       });
+
+    return () => {
+      active = false;
+    };
   }, [id]);
 
   useEffect(() => {
@@ -65,45 +106,11 @@ export const ProductDetails = () => {
   // Silent Background Customer Telemetry Tracking
   useTracking(product);
 
-  const [selectedImage, setSelectedImage] = useState(product?.image);
-  const [selectedSize, setSelectedSize] = useState(product?.sizes ? product.sizes[0] : 'M');
-  const [selectedColor, setSelectedColor] = useState(product?.colors ? product.colors[0] : 'Standard');
-  const [quantity, setQuantity] = useState(1);
-
-  useEffect(() => {
-    if (!product) return;
-    setSelectedImage(product.image);
-    setSelectedColor(product.colors ? product.colors[0] : 'Standard');
-    setSelectedSize(product.sizes ? product.sizes[0] : 'M');
-    setQuantity(1);
-  }, [product]);
-
-  if (!product) {
-    return null;
-  }
-
-  const handleColorSelect = (col) => {
-    setSelectedColor(col);
-    if (product.colorImages && product.colorImages[col]) {
-      setSelectedImage(product.colorImages[col]);
-    }
-  };
-
-  const handleThumbnailClick = (img) => {
-    setSelectedImage(img);
-    if (product.colorImages) {
-      const matchedColor = Object.keys(product.colorImages).find(c => product.colorImages[c] === img);
-      if (matchedColor) {
-        setSelectedColor(matchedColor);
-      }
-    }
-  };
-
-  const isLiked = isInWishlist(product.id);
+  const isLiked = product ? isInWishlist(product.id) : false;
 
   const getActiveProduct = () => ({
     ...product,
-    image: selectedImage || product.image
+    image: selectedImage || product?.image
   });
 
   const handleBuyNow = () => {
@@ -111,8 +118,40 @@ export const ProductDetails = () => {
     navigate('/cart');
   };
 
+  const getFallbackGradient = () => {
+    const g = (product?.gender || '').toLowerCase();
+    if (g === 'women') return 'linear-gradient(135deg, #fce7f3 0%, #ede9fe 100%)';
+    if (g === 'kids') return 'linear-gradient(135deg, #fef3c7 0%, #e0e7ff 100%)';
+    return 'linear-gradient(135deg, #e0e7ff 0%, #f1f5f9 100%)';
+  };
+
+  if (loading) {
+    return (
+      <div className="glass-card" style={{ padding: '80px 24px', textAlign: 'center', margin: '40px auto', maxWidth: '600px' }}>
+        <Loader2 size={44} className="spin-animation" style={{ color: 'var(--accent-indigo)', marginBottom: '16px', animation: 'spin 1s linear infinite' }} />
+        <h3 className="heading-md" style={{ color: 'var(--text-primary)', marginBottom: '6px' }}>Loading Product Details...</h3>
+        <p className="text-subtle">Fetching authoritative specifications from MongoDB</p>
+      </div>
+    );
+  }
+
+  if (error || !product) {
+    return (
+      <div className="glass-card" style={{ padding: '60px 24px', textAlign: 'center', margin: '40px auto', maxWidth: '600px' }}>
+        <AlertCircle size={48} style={{ color: 'var(--accent-rose)', marginBottom: '16px' }} />
+        <h3 className="heading-lg" style={{ color: 'var(--text-primary)', marginBottom: '8px' }}>Product Not Found</h3>
+        <p className="text-subtle" style={{ marginBottom: '24px' }}>{error || "The requested clothing item could not be retrieved from the catalog."}</p>
+        <button onClick={() => navigate('/')} className="btn btn-primary">
+          <ArrowLeft size={16} /> Return to Clothing Catalog
+        </button>
+      </div>
+    );
+  }
+
+  const hasRealImage = selectedImage && !selectedImage.includes('placeholder.com') && !imgFailed;
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
       {/* Back Button */}
       <button 
         onClick={() => navigate('/')} 
@@ -124,31 +163,73 @@ export const ProductDetails = () => {
 
       {/* Main Details Card */}
       <div className="glass-card" style={{ padding: '36px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '48px', alignItems: 'start' }}>
-        {/* Left Side: Photo Gallery */}
+        {/* Left Side: Photo Gallery / Visual Representation */}
         <div>
           <div style={{
+            position: 'relative',
             width: '100%',
             height: '480px',
             borderRadius: 'var(--radius-lg)',
             overflow: 'hidden',
-            background: '#f1f5f9',
+            background: getFallbackGradient(),
             marginBottom: '16px',
-            boxShadow: 'var(--panel-shadow)'
+            boxShadow: 'var(--panel-shadow)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
           }}>
-            <img 
-              src={selectedImage || product.image} 
-              alt={product.name} 
-              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-            />
+            {hasRealImage ? (
+              <img 
+                src={selectedImage} 
+                alt={product.name} 
+                onError={() => setImgFailed(true)}
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              />
+            ) : (
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                textAlign: 'center',
+                padding: '24px',
+                width: '100%',
+                height: '100%'
+              }}>
+                <div style={{
+                  width: '96px',
+                  height: '96px',
+                  borderRadius: '50%',
+                  background: 'rgba(255, 255, 255, 0.85)',
+                  boxShadow: '0 8px 24px rgba(79, 70, 229, 0.12)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'var(--accent-indigo)',
+                  marginBottom: '16px'
+                }}>
+                  <Shirt size={48} strokeWidth={1.5} />
+                </div>
+                <span className="badge badge-indigo" style={{ marginBottom: '8px', fontSize: '0.82rem' }}>
+                  {product.category}
+                </span>
+                <span style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '0.04em' }}>
+                  {product.brand}
+                </span>
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                  Official Authentic Catalog Item
+                </span>
+              </div>
+            )}
           </div>
 
-          {/* Thumbnails */}
+          {/* Thumbnails if multiple images exist */}
           {product.images && product.images.length > 1 && (
             <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
               {product.images.map((img, idx) => (
                 <div 
                   key={idx}
-                  onClick={() => handleThumbnailClick(img)}
+                  onClick={() => { setSelectedImage(img); setImgFailed(false); }}
                   style={{
                     width: '80px',
                     height: '80px',
@@ -194,15 +275,15 @@ export const ProductDetails = () => {
             <span style={{ fontFamily: 'var(--font-heading)', fontSize: '2.2rem', fontWeight: 800, color: 'var(--text-primary)' }}>
               ₹{product.price.toLocaleString('en-IN')}
             </span>
-            {product.originalPrice && (
-              <span style={{ fontSize: '1.1rem', color: 'var(--text-muted)', textDecoration: 'line-through' }}>
-                ₹{product.originalPrice.toLocaleString('en-IN')}
-              </span>
-            )}
             {product.discount > 0 && (
-              <span className="badge badge-rose">
-                Save {product.discount}%
-              </span>
+              <>
+                <span style={{ fontSize: '1.1rem', color: 'var(--text-muted)', textDecoration: 'line-through' }}>
+                  ₹{Math.round(product.price * (1 + product.discount / 100)).toLocaleString('en-IN')}
+                </span>
+                <span className="badge badge-rose">
+                  Save {product.discount}%
+                </span>
+              </>
             )}
           </div>
 
@@ -246,7 +327,7 @@ export const ProductDetails = () => {
                 {product.colors.map(col => (
                   <button
                     key={col}
-                    onClick={() => handleColorSelect(col)}
+                    onClick={() => setSelectedColor(col)}
                     style={{
                       padding: '6px 14px',
                       borderRadius: 'var(--radius-full)',
@@ -262,13 +343,6 @@ export const ProductDetails = () => {
                       transition: 'all 0.2s ease'
                     }}
                   >
-                    {product.colorImages && product.colorImages[col] && (
-                      <img 
-                        src={product.colorImages[col]} 
-                        alt={col} 
-                        style={{ width: '20px', height: '20px', borderRadius: '50%', objectFit: 'cover', border: '1px solid rgba(0,0,0,0.1)' }} 
-                      />
-                    )}
                     <span>{col}</span>
                   </button>
                 ))}
@@ -354,6 +428,23 @@ export const ProductDetails = () => {
           </div>
         </div>
       </div>
+
+      {/* Related Products Section */}
+      {relatedProducts.length > 0 && (
+        <div style={{ marginTop: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '18px' }}>
+            <Sparkles size={20} style={{ color: 'var(--accent-indigo)' }} />
+            <h3 className="heading-md" style={{ color: 'var(--text-primary)' }}>
+              More from {product.category}
+            </h3>
+          </div>
+          <div className="grid-4" style={{ rowGap: '28px', columnGap: '24px' }}>
+            {relatedProducts.map(rel => (
+              <ProductCard key={rel._id || rel.id} product={normalizeProduct(rel)} />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

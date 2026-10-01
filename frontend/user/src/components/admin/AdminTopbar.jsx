@@ -1,17 +1,34 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, Bell, Shirt, Sun, Moon, ShoppingBag, LogOut, CheckCircle2, Mail, MessageSquare, UserPlus, Package } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 
+const ICON_MAP = { user: UserPlus, mail: Mail, sms: MessageSquare, order: Package };
+
+const FALLBACK_NOTIFICATIONS = [
+  { id: 1, type: 'user', text: 'We got 6 new registered clothing customers today!', time: 'Just now', unread: true },
+  { id: 2, type: 'mail', text: 'Automated sales campaign: 16 marketing emails sent to active leads', time: '10m ago', unread: true },
+  { id: 3, type: 'sms', text: 'SMS campaign: "20% OFF Clothing Offer" sent to 5 VIP shoppers', time: '25m ago', unread: true },
+  { id: 4, type: 'order', text: 'New Order Placed: ₹1,939 Cotton Dress order by e2etest@example.com', time: '1h ago', unread: false },
+];
+
 function NotificationBell({ notifications }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [items, setItems] = useState(() => notifications || [
-    { id: 1, type: 'user', icon: UserPlus, text: 'We got 6 new registered clothing customers today!', time: 'Just now', unread: true },
-    { id: 2, type: 'mail', icon: Mail, text: 'Automated sales campaign: 16 marketing emails sent to active leads', time: '10m ago', unread: true },
-    { id: 3, type: 'sms', icon: MessageSquare, text: 'SMS campaign: "20% OFF Clothing Offer" sent to 5 VIP shoppers', time: '25m ago', unread: true },
-    { id: 4, type: 'order', icon: Package, text: 'New Order Placed: ₹1,939 Cotton Dress order by e2etest@example.com', time: '1h ago', unread: false },
-  ]);
+  const [items, setItems] = useState(FALLBACK_NOTIFICATIONS);
+
+  // Sync live notifications from backend when they arrive
+  useEffect(() => {
+    if (Array.isArray(notifications) && notifications.length > 0) {
+      setItems(notifications.map((n, i) => ({
+        id: n.id || `notif-${i}`,
+        type: n.type || 'user',
+        text: n.text || '',
+        time: n.time || 'Recent',
+        unread: n.unread !== false,
+      })));
+    }
+  }, [notifications]);
 
   const unreadCount = items.filter(i => i.unread).length;
 
@@ -61,7 +78,7 @@ function NotificationBell({ notifications }) {
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '300px', overflowY: 'auto' }}>
             {items.map((item) => {
-              const Icon = item.icon || Bell;
+              const Icon = ICON_MAP[item.type] || Bell;
               return (
                 <div key={item.id} style={{
                   display: 'flex', gap: '12px', alignItems: 'flex-start',

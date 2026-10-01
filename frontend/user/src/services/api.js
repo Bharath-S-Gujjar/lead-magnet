@@ -3,6 +3,7 @@ export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.
 const ADMIN_SESSION_KEY = 'lead_magnet_admin_session';
 const CUSTOMER_SESSION_KEY = 'lead_magnet_customer_session';
 const ANONYMOUS_ID_KEY = 'lead_magnet_anonymous_id';
+const GUEST_SESSION_KEY = 'lead_magnet_guest_session_id';
 
 export function getAdminSession() {
   try {
@@ -33,6 +34,20 @@ export function getAnonymousId() {
     localStorage.setItem(ANONYMOUS_ID_KEY, anonymousId);
   }
   return anonymousId;
+}
+
+export function getActiveSessionId() {
+  const customer = getCustomerSession();
+  if (customer?.session_id) return customer.session_id;
+  return localStorage.getItem(GUEST_SESSION_KEY) || null;
+}
+
+export function setActiveSessionId(sessionId) {
+  if (sessionId) {
+    localStorage.setItem(GUEST_SESSION_KEY, sessionId);
+  } else {
+    localStorage.removeItem(GUEST_SESSION_KEY);
+  }
 }
 
 function customerAuthHeaders(userId) {
@@ -113,48 +128,80 @@ export function fetchAllOrders() {
   return apiGet('/api/orders');
 }
 
-export async function startCustomerSession(customer) {
+let sessionInitPromise = null;
+
+export async function ensureActiveSession() {
+  const currentSessionId = getActiveSessionId();
+  if (currentSessionId) return currentSessionId;
+
+  if (!sessionInitPromise) {
+    const customer = getCustomerSession();
+    sessionInitPromise = startCustomerSession(customer || {})
+      .then((data) => {
+        if (data?.session_id) {
+          setActiveSessionId(data.session_id);
+          return data.session_id;
+        }
+        return null;
+      })
+      .catch(() => null)
+      .finally(() => {
+        sessionInitPromise = null;
+      });
+  }
+  return sessionInitPromise;
+}
+
+export async function startCustomerSession(customer = {}) {
+  const visitorId = customer.email || getAnonymousId();
+  const anonymousId = customer.anonymous_id || getAnonymousId();
+
   const response = await fetch(`${API_BASE_URL}/api/session/start`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      visitor_id: customer.email,
-      anonymous_id: customer.anonymous_id || getAnonymousId(),
+      visitor_id: visitorId,
+      anonymous_id: anonymousId,
     }),
   });
   const payload = await parseJsonResponse(response);
   if (!response.ok || !payload.success) {
     throw new Error(payload.message || 'Unable to start customer session.');
   }
+  if (payload.data?.session_id) {
+    setActiveSessionId(payload.data.session_id);
+  }
   return payload.data;
 }
 
 export async function endCustomerSession() {
-  const customer = getCustomerSession();
-  if (!customer?.session_id) return;
+  const sessionId = getActiveSessionId();
+  if (!sessionId) return;
   try {
     await fetch(`${API_BASE_URL}/api/session/end`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session_id: customer.session_id }),
+      body: JSON.stringify({ session_id: sessionId }),
     });
   } catch (error) {
     // Logout should not be blocked by session close failures.
+  } finally {
+    setActiveSessionId(null);
   }
 }
 
 export async function trackCustomerEvent(eventType, details = {}) {
-  const customer = getCustomerSession();
-  if (!customer?.session_id) return;
-
   try {
+    const sessionId = await ensureActiveSession();
+    if (!sessionId) return;
+
     await fetch(`${API_BASE_URL}/api/session/event`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        session_id: customer.session_id,
+        session_id: sessionId,
         event_type: eventType,
-        page: details.page || window.location.hash.replace('#', '') || '/',
+        page: details.page || window.location.hash.replace('#', '') || window.location.pathname || '/',
         entity: details.entity || {},
         metadata: details.metadata || {},
         context: details.context || {},
@@ -165,11 +212,12 @@ export async function trackCustomerEvent(eventType, details = {}) {
   }
 }
 
-export async function createOrder(order) {
+export async function createOrder(order = {}) {
   const customerSession = getCustomerSession();
   if (!customerSession?.token) {
     throw new Error('Please log in before placing an order.');
   }
+  const sessionId = getActiveSessionId();
 
   const response = await fetch(`${API_BASE_URL}/api/orders`, {
     method: 'POST',
@@ -177,13 +225,67 @@ export async function createOrder(order) {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${customerSession.token}`,
     },
-    body: JSON.stringify(order),
+    body: JSON.stringify({
+      user_id: customerSession.user_id,
+      session_id: sessionId || customerSession.session_id,
+      ...order,
+    }),
   });
   const payload = await parseJsonResponse(response);
   if (!response.ok || !payload.success) {
     throw new Error(payload.message || 'Unable to place order.');
   }
   return payload.data;
+}
+
+export async function fetchProducts({
+  page = 1,
+  limit = 24,
+  gender,
+  category,
+  brand,
+  search,
+  min_rating,
+  max_price,
+} = {}) {
+  const params = new URLSearchParams();
+  if (page) params.append('page', page.toString());
+  if (limit) params.append('limit', limit.toString());
+  if (gender && gender !== 'all') params.append('gender', gender);
+  if (category && category !== 'all') params.append('category', category);
+  if (brand && brand !== 'all') params.append('brand', brand);
+  if (search && search.trim()) params.append('search', search.trim());
+  if (min_rating && Number(min_rating) > 0) params.append('min_rating', min_rating.toString());
+  if (max_price && Number(max_price) > 0 && Number(max_price) < 100000) params.append('max_price', max_price.toString());
+
+  const response = await fetch(`${API_BASE_URL}/api/products?${params.toString()}`);
+  const payload = await parseJsonResponse(response);
+  if (!response.ok || payload.success === false) {
+    throw new Error(payload.message || 'Unable to load products.');
+  }
+  return payload;
+}
+
+export async function fetchProductById(id) {
+  const response = await fetch(`${API_BASE_URL}/api/products/${id}`);
+  const payload = await parseJsonResponse(response);
+  if (!response.ok || payload.success === false) {
+    throw new Error(payload.message || 'Product not found');
+  }
+  return payload.data;
+}
+
+export async function fetchProductMeta() {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/products/meta`);
+    const payload = await parseJsonResponse(response);
+    if (response.ok && payload.success) {
+      return payload.data;
+    }
+  } catch (e) {
+    // Non-blocking
+  }
+  return null;
 }
 
 export async function fetchCustomerOrders(email) {
@@ -278,7 +380,9 @@ export async function clearCartApi(userId, anonymousId) {
 
 export async function fetchWishlist(userId, anonymousId) {
   const query = userId ? `user_id=${userId}` : `anonymous_id=${anonymousId}`;
-  const response = await fetch(`${API_BASE_URL}/api/wishlist?${query}`);
+  const response = await fetch(`${API_BASE_URL}/api/wishlist?${query}`, {
+    headers: customerAuthHeaders(userId),
+  });
   const payload = await parseJsonResponse(response);
   return payload.data || [];
 }
@@ -286,7 +390,7 @@ export async function fetchWishlist(userId, anonymousId) {
 export async function addToWishlistApi(productId, userId, anonymousId, sessionId) {
   const response = await fetch(`${API_BASE_URL}/api/wishlist`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...customerAuthHeaders(userId) },
     body: JSON.stringify({ product_id: productId, user_id: userId, anonymous_id: anonymousId, session_id: sessionId })
   });
   const payload = await parseJsonResponse(response);
@@ -296,7 +400,8 @@ export async function addToWishlistApi(productId, userId, anonymousId, sessionId
 export async function removeFromWishlistApi(productId, userId, anonymousId, sessionId) {
   const query = userId ? `user_id=${userId}` : `anonymous_id=${anonymousId}`;
   const response = await fetch(`${API_BASE_URL}/api/wishlist/${productId}?${query}&session_id=${sessionId || ''}`, {
-    method: 'DELETE'
+    method: 'DELETE',
+    headers: customerAuthHeaders(userId),
   });
   const payload = await parseJsonResponse(response);
   return payload.data || [];

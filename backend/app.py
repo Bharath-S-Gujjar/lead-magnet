@@ -9,8 +9,16 @@ import bcrypt
 import jwt
 import datetime
 import time
+import math
 from dotenv import load_dotenv
 from pymongo import MongoClient
+
+# Explicitly load backend/.env if present, with fallback to default load_dotenv
+dotenv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+if os.path.exists(dotenv_path):
+    load_dotenv(dotenv_path=dotenv_path, override=True)
+else:
+    load_dotenv()
 from action_recommendations import get_next_action
 from auth_middleware import token_required, admin_required
 from ecommerce_model_adapter import predict_customer_features
@@ -47,7 +55,7 @@ from whatif_simulator_service import simulate_lead_score
 from revenue_attribution_service import compute_lead_revenue_attribution
 import certifi
 
-load_dotenv()
+# Environment loaded
 
 app = Flask(__name__)
 
@@ -58,6 +66,8 @@ DEFAULT_ALLOWED_ORIGINS = [
     "http://127.0.0.1:5174",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3001",
 ]
 
 FRONTEND_URL = os.getenv("FRONTEND_URL")
@@ -138,15 +148,27 @@ def create_mongo_client():
 
 def ensure_product_indexes(products_collection):
     """Create the minimal indexes used by the existing product queries, safely idempotently."""
-    existing = {index["name"] for index in products_collection.list_indexes()}
-    for index_name, fields in [
-        ("category_1", [("category", 1)]),
-        ("name_1", [("name", 1)]),
-        ("brand_1", [("brand", 1)]),
-        ("gender_1", [("gender", 1)]),
-    ]:
-        if index_name not in existing:
-            products_collection.create_index(fields, name=index_name, background=True)
+    try:
+        existing = {index["name"] for index in products_collection.list_indexes()}
+        for index_name, fields, unique in [
+            ("category_1", [("category", 1)], False),
+            ("name_1", [("name", 1)], False),
+            ("brand_1", [("brand", 1)], False),
+            ("gender_1", [("gender", 1)], False),
+            ("price_1", [("price", 1)], False),
+            ("product_id_1", [("product_id", 1)], True),
+        ]:
+            if index_name not in existing:
+                try:
+                    kwargs = {"background": True}
+                    if unique:
+                        kwargs["unique"] = True
+                        kwargs["sparse"] = True
+                    products_collection.create_index(fields, name=index_name, **kwargs)
+                except Exception:
+                    pass
+    except Exception:
+        pass
 
 
 def bind_collections(client):
@@ -485,7 +507,7 @@ def login():
         return jsonify({"success": False, "message": "Database unavailable", "errors": []}), 500
 
     data = request.get_json(silent=True) or {}
-    email = data.get("email")
+    email = data.get("email") or data.get("identifier") or data.get("username")
     password = data.get("password")
     anonymous_id = data.get("anonymous_id") if "anonymous_id" in data else data.get("visitor_id")
 
@@ -495,16 +517,17 @@ def login():
         return jsonify({"success": False, "message": "Invalid anonymous identity", "errors": []}), 400
 
     try:
-        user = profiles_collection.find_one({"email": email})
+        user = profiles_collection.find_one({"$or": [{"email": email.strip()}, {"username": email.strip()}, {"phone": email.strip()}]})
         if not user or not user.get("password") or not bcrypt.checkpw(password.encode("utf-8"), user["password"]):
             return jsonify({"success": False, "message": "Invalid credentials", "errors": []}), 401
 
+        user_email = user.get("email") or email
         exp_time = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)
         expires_at_ts = int(time.time() * 1000) + (3600 * 1000)
         token = jwt.encode(
             {
                 "sub": str(user["_id"]),
-                "email": email,
+                "email": user_email,
                 "role": user["role"],
                 "exp": exp_time,
             },
@@ -530,7 +553,7 @@ def login():
             "message": "Login successful",
             "data": {
                 "token": token,
-                "email": email,
+                "email": user_email,
                 "role": user["role"],
                 "user_id": str(user["_id"]),
                 "expires_at": exp_time.isoformat(),
@@ -620,6 +643,17 @@ def track():
     })
 
     socketio.emit("lead_update", result)
+    # Also emit as customer_activity so the Live Feed shows browsing signals
+    try:
+        socketio.emit("customer_activity", {
+            "customer_id": result.get("visitor_id", ""),
+            "event": "lead_scored",
+            "segment": result.get("segment", ""),
+            "score": result.get("score", 0),
+            "timestamp": datetime.datetime.utcnow().isoformat(),
+        })
+    except Exception:
+        pass
 
     return jsonify(result)
 
@@ -630,31 +664,130 @@ def get_products():
         return jsonify({
             "success": False,
             "message": "Database unavailable",
-            "data": []
+            "data": [],
+            "pagination": {"page": 1, "limit": 24, "total": 0, "pages": 0}
         }), 500
 
     try:
+        page_arg = request.args.get("page", 1)
+        limit_arg = request.args.get("limit", 24)
         category = request.args.get("category")
-        query = {}
-        if category:
-            query["category"] = {"$regex": f"^{re.escape(category)}$", "$options": "i"}
+        gender = request.args.get("gender")
+        brand = request.args.get("brand")
+        search = request.args.get("search")
+        min_rating = request.args.get("min_rating")
+        max_price = request.args.get("max_price")
 
-        items = list(products_collection.find(query).sort("name", 1))
+        try:
+            page = max(1, int(page_arg))
+        except (ValueError, TypeError):
+            page = 1
+
+        try:
+            limit = max(1, min(int(limit_arg), 100))
+        except (ValueError, TypeError):
+            limit = 24
+
+        query = {}
+        if category and category.lower() != "all":
+            # Match exact or prefix (e.g. "Kurtas" -> "Kurtas & Kurta Sets")
+            query["category"] = {"$regex": f"^{re.escape(category)}(?:\\s*&.*)?$", "$options": "i"}
+        if gender and gender.lower() != "all":
+            query["gender"] = {"$regex": f"^{re.escape(gender)}$", "$options": "i"}
+        if brand and brand.lower() != "all":
+            query["brand"] = {"$regex": f"^{re.escape(brand)}$", "$options": "i"}
+        if min_rating:
+            try:
+                min_r = float(min_rating)
+                if min_r > 0:
+                    query["rating"] = {"$gte": min_r}
+            except (ValueError, TypeError):
+                pass
+        if max_price:
+            try:
+                max_p = float(max_price)
+                if max_p > 0:
+                    query["price"] = {"$lte": max_p}
+            except (ValueError, TypeError):
+                pass
+        if search and search.strip():
+            s = search.strip()
+            query["$or"] = [
+                {"name": {"$regex": re.escape(s), "$options": "i"}},
+                {"brand": {"$regex": re.escape(s), "$options": "i"}},
+                {"category": {"$regex": re.escape(s), "$options": "i"}},
+            ]
+
+        total = products_collection.count_documents(query)
+        pages = math.ceil(total / limit) if total > 0 else 1
+        skip = (page - 1) * limit
+
+        if total == 0:
+            return jsonify({
+                "success": True,
+                "data": [],
+                "pagination": {
+                    "page": page,
+                    "limit": limit,
+                    "total": 0,
+                    "pages": 0
+                }
+            })
+
+        cursor = products_collection.find(query).sort("_id", 1).skip(skip).limit(limit)
+        items = list(cursor)
 
         for item in items:
             item["_id"] = str(item["_id"])
+            if "id" not in item:
+                item["id"] = item["_id"]
 
         return jsonify({
             "success": True,
-            "data": items
+            "data": items,
+            "pagination": {
+                "page": page,
+                "limit": limit,
+                "total": total,
+                "pages": pages
+            }
         })
 
     except Exception as e:
         return jsonify({
             "success": False,
             "message": str(e),
-            "data": []
+            "data": [],
+            "pagination": {"page": 1, "limit": 24, "total": 0, "pages": 0}
         }), 400
+
+
+@app.route("/api/products/meta", methods=["GET"])
+def get_products_meta():
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable"}), 500
+
+    try:
+        categories = sorted([c for c in products_collection.distinct("category") if c])
+        genders = sorted([g for g in products_collection.distinct("gender") if g])
+        top_brands_pipeline = [
+            {"$group": {"_id": "$brand", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}},
+            {"$limit": 30}
+        ]
+        top_brands = [b["_id"] for b in products_collection.aggregate(top_brands_pipeline) if b.get("_id")]
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "categories": categories,
+                "genders": genders,
+                "brands": top_brands,
+                "total": products_collection.count_documents({})
+            }
+        })
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
 
 
 @app.route("/api/debug/users-count", methods=["GET"])
@@ -686,17 +819,19 @@ def get_product(product_id):
         return jsonify({"success": False, "message": "Database unavailable", "errors": []}), 500
 
     try:
-        if not ObjectId.is_valid(product_id):
-            return jsonify({"success": False, "message": "Product not found", "errors": []}), 404
-
-        item = products_collection.find_one({"_id": ObjectId(product_id)})
+        item = None
+        if ObjectId.is_valid(product_id):
+            item = products_collection.find_one({"_id": ObjectId(product_id)})
+        if not item:
+            item = products_collection.find_one({"product_id": str(product_id)})
         if not item:
             return jsonify({"success": False, "message": "Product not found", "errors": []}), 404
 
         item["_id"] = str(item["_id"])
+        if "id" not in item:
+            item["id"] = item["_id"]
         return jsonify({"success": True, "message": "Product fetched", "data": item})
     except Exception:
-        # Invalid ObjectId values are not server errors; no product can match them.
         return jsonify({"success": False, "message": "Product not found", "errors": []}), 404
 
 
@@ -781,6 +916,19 @@ def log_event():
         return jsonify({"success": False, "message": error.message, "errors": []}), error.status_code
 
     update_profile_from_event(data.get("session_id"), event_id)
+
+    # Emit live activity to admin dashboard
+    try:
+        evt_type = data.get("event_type", "page_view")
+        visitor = data.get("visitor_id") or data.get("user_id") or ""
+        socketio.emit("customer_activity", {
+            "customer_id": str(visitor),
+            "event": evt_type,
+            "page": data.get("page", ""),
+            "timestamp": datetime.datetime.utcnow().isoformat(),
+        })
+    except Exception:
+        pass
 
     return jsonify({"success": True, "message": "Event logged", "data": {"event_id": event_id}})
 
@@ -1792,20 +1940,6 @@ def admin_get_marketing_communications():
         return jsonify({"success": False, "message": str(e), "data": []}), 500
 
 
-@app.route("/api/admin/notifications", methods=["GET"])
-@admin_required
-def admin_get_notifications():
-    if not MONGO_AVAILABLE:
-        return jsonify({"success": False, "message": "Database unavailable", "data": []}), 500
-
-    try:
-        limit = int(request.args.get("limit", 100))
-        notifications = list(admin_notifications_collection.find({}).sort("created_at", -1).limit(limit))
-        return jsonify({"success": True, "data": [serialize_mongo_value(n) for n in notifications]})
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e), "data": []}), 500
-
-
 # --- Admin Intelligence APIs (Task 13) ---
 
 @app.route("/api/admin/intelligence/overview", methods=["GET"])
@@ -2040,6 +2174,22 @@ def admin_intelligence_simulate_route():
         return jsonify({"success": False, "message": str(e)}), 500
 
 
+@app.route("/api/admin/intelligence/customers/<customer_id>/product-affinity", methods=["GET"])
+@app.route("/api/admin/intelligence/product-affinity", methods=["GET"])
+@admin_required
+def admin_intelligence_product_affinity_route(customer_id=None):
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable"}), 500
+    target_id = customer_id or request.args.get("customer_id")
+    if not target_id:
+        return jsonify({"success": False, "message": "customer_id is required"}), 400
+    try:
+        affinity = compute_product_affinity(target_id, db)
+        return jsonify({"success": True, "data": affinity})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
 # --- SocketIO Real-Time Event Handlers ---
 
 @socketio.on("connect")
@@ -2164,8 +2314,28 @@ def get_orders():
         return jsonify({"success": False, "message": "Database unavailable", "data": []}), 500
 
     try:
-        if not request.headers.get("Authorization"):
+        authorization = request.headers.get("Authorization", "")
+        if not authorization:
             return jsonify({"success": False, "message": "Authorization token required", "errors": []}), 401
+
+        scheme, _, token = authorization.partition(" ")
+        if scheme.lower() != "bearer" or not token:
+            return jsonify({"success": False, "message": "Invalid authorization token", "errors": []}), 401
+
+        try:
+            claims = jwt.decode(token, app.config["JWT_SECRET"], algorithms=["HS256"])
+        except jwt.ExpiredSignatureError:
+            return jsonify({"success": False, "message": "Token has expired", "errors": []}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({"success": False, "message": "Invalid token", "errors": []}), 401
+
+        # Admin: return all orders (paginated)
+        if claims.get("role") == "admin":
+            limit = min(int(request.args.get("limit", 200)), 500)
+            all_orders = list(orders_collection.find({}).sort("created_at", -1).limit(limit))
+            return jsonify({"success": True, "data": [serialize_mongo_value(o) for o in all_orders]})
+
+        # Customer: return only own orders
         owner, error = resolve_persistence_identity(request.args.get("user_id"), None)
         if error:
             return error

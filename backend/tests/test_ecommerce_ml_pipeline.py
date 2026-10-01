@@ -12,8 +12,15 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 class EcommerceMLPipelineTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.dataset_path = os.path.join("data", "ml", "ecommerce_customer_behavior.csv")
-        cls.model_dir = "model"
+        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        cls.dataset_path = os.path.join(repo_root, "data", "ml", "ecommerce_customer_behavior.csv")
+        if not os.path.exists(cls.dataset_path):
+            cls.dataset_path = os.path.join("data", "ml", "ecommerce_customer_behavior.csv")
+
+        cls.model_dir = os.path.join(repo_root, "model")
+        if not os.path.exists(cls.model_dir):
+            cls.model_dir = "model"
+
         cls.model_path = os.path.join(cls.model_dir, "ecommerce_xgb_model.pkl")
         cls.scaler_path = os.path.join(cls.model_dir, "ecommerce_scaler.pkl")
         cls.cols_path = os.path.join(cls.model_dir, "ecommerce_feature_columns.pkl")

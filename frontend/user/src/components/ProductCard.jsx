@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Heart, ShoppingBag, Star } from 'lucide-react';
+import { Heart, ShoppingBag, Star, Shirt, Sparkles } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useWishlist } from '../context/WishlistContext';
 
@@ -8,6 +8,7 @@ export const ProductCard = ({ product }) => {
   const navigate = useNavigate();
   const { addToCart } = useCart();
   const { toggleWishlist, isInWishlist } = useWishlist();
+  const [imgFailed, setImgFailed] = useState(false);
 
   const isLiked = isInWishlist(product.id);
 
@@ -15,6 +16,16 @@ export const ProductCard = ({ product }) => {
     // Avoid triggering card navigation when clicking buttons
     if (e.target.closest('button')) return;
     navigate(`/product/${product.id}`);
+  };
+
+  const hasRealImage = product.image && !product.image.includes('placeholder.com') && !imgFailed;
+
+  // Curated gradient pairs based on gender and category
+  const getFallbackGradient = () => {
+    const g = (product.gender || '').toLowerCase();
+    if (g === 'women') return 'linear-gradient(135deg, #fce7f3 0%, #ede9fe 100%)';
+    if (g === 'kids') return 'linear-gradient(135deg, #fef3c7 0%, #e0e7ff 100%)';
+    return 'linear-gradient(135deg, #e0e7ff 0%, #f1f5f9 100%)';
   };
 
   return (
@@ -31,21 +42,57 @@ export const ProductCard = ({ product }) => {
       }}
     >
       {/* Product Image Box */}
-      <div style={{ position: 'relative', width: '100%', paddingTop: '120%', overflow: 'hidden', background: '#f1f5f9' }}>
-        <img 
-          src={product.image} 
-          alt={product.name} 
-          style={{
+      <div style={{ position: 'relative', width: '100%', paddingTop: '110%', overflow: 'hidden', background: getFallbackGradient() }}>
+        {hasRealImage ? (
+          <img 
+            src={product.image} 
+            alt={product.name} 
+            onError={() => setImgFailed(true)}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              transition: 'transform 0.4s ease'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.06)'}
+            onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1.0)'}
+          />
+        ) : (
+          <div style={{
             position: 'absolute',
             inset: 0,
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            transition: 'transform 0.4s ease'
-          }}
-          onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.06)'}
-          onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1.0)'}
-        />
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+            textAlign: 'center',
+          }}>
+            <div style={{
+              width: '54px',
+              height: '54px',
+              borderRadius: '50%',
+              background: 'rgba(255, 255, 255, 0.85)',
+              backdropFilter: 'blur(8px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'var(--accent-indigo)',
+              boxShadow: '0 4px 14px rgba(79, 70, 229, 0.15)',
+              marginBottom: '10px'
+            }}>
+              <Shirt size={28} />
+            </div>
+            <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--accent-indigo)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              {product.brand}
+            </span>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, marginTop: '2px' }}>
+              {product.category}
+            </span>
+          </div>
+        )}
 
         {/* Discount Badge */}
         {product.discount > 0 && (

@@ -1,28 +1,70 @@
 import React, { useMemo } from 'react';
-import { CLOTHING_PRODUCTS } from '../data/clothingProducts';
 
-export const CategorySection = ({ selectedGender, setSelectedGender, selectedCategory, setSelectedCategory }) => {
-  // Dynamically compute categories that contain items for selectedGender
+// Authoritative clothing categories matching MongoDB Atlas cleaned catalog
+const REAL_CATALOG_CATEGORIES = [
+  "All Categories",
+  "T-Shirts",
+  "Kurtas & Kurta Sets",
+  "Tops & Tunics",
+  "Shirts",
+  "Sweaters & Sweatshirts",
+  "Trousers & Pants",
+  "Jeans",
+  "Innerwear & Sleepwear",
+  "Skirts",
+  "Jackets & Coats",
+  "Shorts",
+  "Dresses & Jumpsuits"
+];
+
+// Gender-specific category sub-sets
+const GENDER_CATEGORIES = {
+  Men: [
+    "All Categories",
+    "T-Shirts",
+    "Shirts",
+    "Jeans",
+    "Sweaters & Sweatshirts",
+    "Trousers & Pants",
+    "Jackets & Coats",
+    "Shorts",
+    "Innerwear & Sleepwear"
+  ],
+  Women: [
+    "All Categories",
+    "Kurtas & Kurta Sets",
+    "Tops & Tunics",
+    "T-Shirts",
+    "Dresses & Jumpsuits",
+    "Skirts",
+    "Jeans",
+    "Trousers & Pants",
+    "Sweaters & Sweatshirts",
+    "Jackets & Coats"
+  ],
+  Kids: [
+    "All Categories",
+    "T-Shirts",
+    "Shirts",
+    "Jeans",
+    "Shorts",
+    "Dresses & Jumpsuits",
+    "Sweaters & Sweatshirts"
+  ]
+};
+
+export const CategorySection = ({ 
+  selectedGender = 'all', 
+  setSelectedGender, 
+  selectedCategory = 'all', 
+  setSelectedCategory,
+  totalItemsCount = 0 
+}) => {
   const categories = useMemo(() => {
-    let prods = CLOTHING_PRODUCTS;
-    if (selectedGender && selectedGender !== 'all') {
-      prods = prods.filter(p => p.gender.toLowerCase() === selectedGender.toLowerCase());
+    if (selectedGender && GENDER_CATEGORIES[selectedGender]) {
+      return GENDER_CATEGORIES[selectedGender];
     }
-    const catSet = new Set();
-    prods.forEach(p => catSet.add(p.category));
-    
-    // Order standard categories logically
-    const standardOrder = ["T-Shirts", "Shirts", "Jeans", "Hoodies", "Jackets", "Dresses", "Kurtas", "Sarees", "Trousers", "Kids Wear"];
-    const filteredCats = catSet.size > 0 ? standardOrder.filter(c => catSet.has(c)) : standardOrder;
-    
-    return ["All Categories", ...filteredCats];
-  }, [selectedGender]);
-
-  const totalItemsCount = useMemo(() => {
-    if (selectedGender && selectedGender !== 'all') {
-      return CLOTHING_PRODUCTS.filter(p => p.gender.toLowerCase() === selectedGender.toLowerCase()).length;
-    }
-    return CLOTHING_PRODUCTS.length;
+    return REAL_CATALOG_CATEGORIES;
   }, [selectedGender]);
 
   const sectionTitle = selectedGender && selectedGender !== 'all' 
@@ -45,7 +87,15 @@ export const CategorySection = ({ selectedGender, setSelectedGender, selectedCat
           return (
             <button
               key={g.value}
-              onClick={() => setSelectedGender && setSelectedGender(g.value)}
+              onClick={() => {
+                setSelectedGender && setSelectedGender(g.value);
+                // Reset category if switching gender and current category isn't in gender list
+                if (g.value !== 'all' && GENDER_CATEGORIES[g.value] && selectedCategory !== 'all') {
+                  if (!GENDER_CATEGORIES[g.value].includes(selectedCategory)) {
+                    setSelectedCategory && setSelectedCategory('all');
+                  }
+                }
+              }}
               style={{
                 padding: '9px 22px',
                 borderRadius: 'var(--radius-full)',
@@ -68,8 +118,8 @@ export const CategorySection = ({ selectedGender, setSelectedGender, selectedCat
       {/* Category Section Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <h3 className="heading-md" style={{ color: 'var(--text-primary)' }}>{sectionTitle}</h3>
-        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-          {totalItemsCount} Clothing Items Available
+        <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+          {totalItemsCount > 0 ? `${totalItemsCount.toLocaleString('en-IN')} Clothing Items Available` : 'Clothing Catalog'}
         </span>
       </div>
 
@@ -86,7 +136,7 @@ export const CategorySection = ({ selectedGender, setSelectedGender, selectedCat
           return (
             <button
               key={cat}
-              onClick={() => setSelectedCategory(cat === 'All Categories' ? 'all' : cat)}
+              onClick={() => setSelectedCategory && setSelectedCategory(cat === 'All Categories' ? 'all' : cat)}
               style={{
                 padding: '8px 18px',
                 borderRadius: 'var(--radius-full)',

@@ -65,7 +65,6 @@ class Phase17AIntelligenceTests(unittest.TestCase):
         self.db["sessions"].delete_many({})
         self.db["events"].delete_many({})
         self.db["orders"].delete_many({})
-        self.db["products"].delete_many({})
 
         app_module.app.config["TESTING"] = True
         self.client = app_module.app.test_client()

@@ -50,3 +50,6 @@ Thumbs.db
 temp.txt
 data/inventory_raw.json
 data/catalog/backup/
+data/catalog/raw/
+data/catalog/cleaned_clothing_catalog.json
+data/catalog/resume_operation_summary.json
