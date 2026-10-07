@@ -65,6 +65,14 @@ def compute_retention_signals(customer_id, db):
         elif days_since >= INACTIVITY_THRESHOLDS["low"]:
             inactivity_risk = "low"
 
+    risk_level_map = {
+        "none": "Low",
+        "low": "Low",
+        "medium": "Medium",
+        "high": "High",
+    }
+    churn_risk_level = risk_level_map.get(inactivity_risk, "Low")
+
     # Activity trend: compare recent 7 days vs prior 7 days
     activity_trend, engagement_trend = _compute_trends(customer_id, events_col)
 
@@ -77,6 +85,7 @@ def compute_retention_signals(customer_id, db):
         "engagement_trend": engagement_trend,
         "returning_customer": returning_customer,
         "inactivity_risk": inactivity_risk,
+        "churn_risk_level": churn_risk_level,
         "inactivity_risk_method": "heuristic_threshold",
         "inactivity_thresholds": INACTIVITY_THRESHOLDS,
     }
@@ -89,6 +98,7 @@ def _empty_signals():
         "engagement_trend": "unknown",
         "returning_customer": False,
         "inactivity_risk": "unknown",
+        "churn_risk_level": "Low",
         "inactivity_risk_method": "heuristic_threshold",
         "inactivity_thresholds": INACTIVITY_THRESHOLDS,
     }

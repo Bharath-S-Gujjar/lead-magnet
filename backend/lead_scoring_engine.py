@@ -105,6 +105,16 @@ def _emit_live_events(socketio, customer_id, prediction, lead_state):
                 "lead_segment": segment,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             })
+            socketio.emit("admin_notification", {
+                "id": f"notif_lead_{c_id_str}_{int(datetime.now(timezone.utc).timestamp())}",
+                "type": "lead_qualified",
+                "title": "New Hot Lead",
+                "message": f"Customer qualified · Score {score}",
+                "customer_id": c_id_str,
+                "metadata": {"lead_score": score, "lead_segment": segment},
+                "read": False,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            })
         elif transition == "qualified_to_not_qualified":
             socketio.emit("lead_disqualified", {
                 "customer_id": c_id_str,

@@ -2,65 +2,83 @@ import React, { useState, useEffect } from 'react';
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { getAdminCustomerIntelligence } from '../../services/api';
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell
 } from 'recharts';
 import {
   X, User, Activity, Target, ShoppingBag, Mail, Send, MessageSquare,
-  Clock, CheckCircle2, AlertCircle, PackageCheck, TrendingUp, History,
-  Compass, ShoppingCart, Eye, MousePointer, Heart
+  AlertCircle, PackageCheck, TrendingUp, History, Compass, ShoppingCart, Heart
 } from 'lucide-react';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const EVENT_COLORS = {
-  page_view:        '#6366f1',
-  product_view:     '#8b5cf6',
-  search:           '#3b82f6',
-  add_to_cart:      '#f59e0b',
-  add_to_wishlist:  '#f43f5e',
-  order_placed:     '#10b981',
-  lead_score_history: '#6366f1',
-  marketing:        '#06b6d4',
-  order:            '#10b981',
-  event:            '#8b5cf6',
+const EVENT_LABEL_MAP = {
+  page_view:        'Page View',
+  product_view:     'Product View',
+  product_click:    'Product Click',
+  search:           'Search',
+  filter_apply:     'Filter',
+  add_to_cart:      'Added to Cart',
+  remove_from_cart: 'Removed from Cart',
+  add_to_wishlist:  'Wishlist Add',
+  wishlist_add:     'Wishlist Add',
+  wishlist_remove:  'Wishlist Remove',
+  checkout_start:   'Checkout Start',
+  order_placed:     'Order Placed',
 };
-
-function getEventColor(item) {
-  return EVENT_COLORS[item?.event_type] || EVENT_COLORS[item?.type] || '#94a3b8';
-}
 
 function getJourneyLabel(item) {
   if (!item) return 'Activity';
-  if (item.type === 'order') return `Order ₹${(item.total_amount || 0).toLocaleString('en-IN')}`;
-  if (item.type === 'marketing') return `${item.channel || 'Email'} Campaign${item.status ? ` (${item.status})` : ''}`;
-  if (item.type === 'event' || item.event_type) {
-    const t = item.event_type || '';
-    const labelMap = {
-      page_view:        '👁 Page View',
-      product_view:     '🛍 Product Viewed',
-      search:           '🔍 Search',
-      add_to_cart:      '🛒 Added to Cart',
-      add_to_wishlist:  '❤ Added to Wishlist',
-      order_placed:     '✅ Order Placed',
-    };
-    const label = labelMap[t] || t.replace(/_/g, ' ');
-    return `${label}${item.page ? ` · ${item.page}` : ''}`;
+  if (item.type === 'order') {
+    return `Order ₹${(item.total_amount || 0).toLocaleString('en-IN')}`;
   }
-  return item.title || 'Activity';
+  if (item.type === 'marketing') {
+    return `${item.channel || 'Email'} Campaign${item.status ? ` (${item.status})` : ''}`;
+  }
+  // event type
+  const evtType = item.event_type || '';
+  const label = EVENT_LABEL_MAP[evtType] || evtType.replace(/_/g, ' ');
+  const page = item.page ? ` · ${item.page}` : '';
+  return `${label}${page}`;
 }
 
-function buildEventChart(journey) {
-  const counts = {};
-  journey.forEach(item => {
-    const key = item.event_type || item.type || 'other';
-    const label = {
-      page_view: 'Page View', product_view: 'Product View', search: 'Search',
-      add_to_cart: 'Cart', add_to_wishlist: 'Wishlist', order_placed: 'Order',
-      order: 'Order', marketing: 'Marketing', event: 'Other',
-    }[key] || key.replace(/_/g, ' ');
-    counts[label] = (counts[label] || 0) + 1;
-  });
-  return Object.entries(counts)
+function getEventColor(item) {
+  const colorMap = {
+    page_view:        '#6366f1',
+    product_view:     '#8b5cf6',
+    product_click:    '#a78bfa',
+    search:           '#3b82f6',
+    filter_apply:     '#60a5fa',
+    add_to_cart:      '#f59e0b',
+    remove_from_cart: '#94a3b8',
+    wishlist_add:     '#f43f5e',
+    add_to_wishlist:  '#f43f5e',
+    wishlist_remove:  '#94a3b8',
+    checkout_start:   '#f97316',
+    order_placed:     '#10b981',
+    order:            '#10b981',
+    marketing:        '#06b6d4',
+  };
+  return colorMap[item?.event_type] || colorMap[item?.type] || '#94a3b8';
+}
+
+function buildChartData(behaviorDistribution) {
+  if (!behaviorDistribution || typeof behaviorDistribution !== 'object') return [];
+  const labelMap = {
+    page_view: 'Page View', product_view: 'Product View', product_click: 'Product Click',
+    search: 'Search', filter_apply: 'Filter',
+    add_to_cart: 'Cart Add', remove_from_cart: 'Cart Remove',
+    wishlist_add: 'Wishlist', add_to_wishlist: 'Wishlist',
+    order_placed: 'Order', order: 'Order', checkout_start: 'Checkout',
+    marketing: 'Marketing',
+  };
+  // Merge synonyms
+  const merged = {};
+  for (const [key, val] of Object.entries(behaviorDistribution)) {
+    const label = labelMap[key] || key.replace(/_/g, ' ');
+    merged[label] = (merged[label] || 0) + val;
+  }
+  return Object.entries(merged)
+    .filter(([, v]) => v > 0)
     .sort((a, b) => b[1] - a[1])
     .map(([name, value]) => ({ name, value }));
 }
@@ -94,10 +112,10 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
   if (!isOpen) return null;
 
   const profile = detail?.customer || {};
-  const behavior = detail?.behavior || {};
   const lead = detail?.lead || {};
   const orders = detail?.orders || [];
   const cart = detail?.cart || [];
+  const wishlist = detail?.wishlist || [];
   const comms = detail?.marketing?.communications || [];
   const scoreHistory = detail?.score_history || [];
   const rfm = detail?.rfm || {};
@@ -105,7 +123,17 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
   const explanation = detail?.lead_explanation || {};
   const retention = detail?.retention || {};
   const journey = detail?.journey_timeline || [];
-  const chartData = buildEventChart(journey);
+
+  // Canonical behavior data — from behavior_summary (live events)
+  const bs = detail?.behavior_summary || {};
+  const bd = detail?.behavior_distribution || {};
+  const chartData = buildChartData(bd);
+
+  const totalRevenue = orders.reduce((s, o) => s + (o.total_amount || o.total || 0), 0);
+  const hasUnavailablePrice = cart.some(i => i.price == null);
+  const cartTotal = cart.reduce((s, i) => s + (i.subtotal != null ? i.subtotal : (i.price != null ? i.price * (i.quantity || 1) : 0)), 0);
+
+  const CHART_COLORS = ['#6366f1','#8b5cf6','#3b82f6','#f59e0b','#f43f5e','#10b981','#06b6d4','#a78bfa'];
 
   const getChannelIcon = (ch) => {
     if (ch === 'email') return <Mail size={14} style={{ color: '#3b82f6' }} />;
@@ -113,9 +141,6 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
     if (ch === 'whatsapp') return <MessageSquare size={14} style={{ color: '#25d366' }} />;
     return <Mail size={14} />;
   };
-
-  // Pill color for chart bars
-  const barColors = ['#6366f1','#8b5cf6','#3b82f6','#f59e0b','#f43f5e','#10b981','#06b6d4'];
 
   return (
     <>
@@ -179,7 +204,7 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
                   <div><span style={{ color: 'var(--text-muted)' }}>Phone:</span> <strong>{profile.phone || 'N/A'}</strong></div>
                   <div><span style={{ color: 'var(--text-muted)' }}>Role:</span> <strong>{profile.role || 'user'}</strong></div>
                   <div><span style={{ color: 'var(--text-muted)' }}>RFM Segment:</span> <strong style={{ color: '#8b5cf6' }}>{rfm.rfm_segment || 'N/A'}</strong></div>
-                  <div><span style={{ color: 'var(--text-muted)' }}>Churn Risk:</span> <strong style={{ color: retention.churn_risk_level === 'High' ? '#f43f5e' : '#10b981' }}>{retention.churn_risk_level || 'Low'}</strong></div>
+                  <div><span style={{ color: 'var(--text-muted)' }}>Churn Risk:</span> <strong style={{ color: (retention.churn_risk_level === 'High' || retention.inactivity_risk === 'high') ? '#f43f5e' : '#10b981' }}>{retention.churn_risk_level || (retention.inactivity_risk ? retention.inactivity_risk.charAt(0).toUpperCase() + retention.inactivity_risk.slice(1) : 'Low')}</strong></div>
                 </div>
               </div>
 
@@ -209,7 +234,6 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
                       </div>
                     </div>
                   </div>
-
                   {explanation.top_driving_factors?.length > 0 && (
                     <div style={{ marginTop: '16px', borderTop: '1px solid var(--panel-border)', paddingTop: '14px' }}>
                       <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -218,16 +242,15 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                         {explanation.top_driving_factors.slice(0, 4).map((factor, fIdx) => (
                           <div key={fIdx} style={{ fontSize: '0.8rem', display: 'flex', justifyContent: 'space-between', background: 'var(--table-header-bg)', padding: '6px 10px', borderRadius: '4px' }}>
-                            <span style={{ color: 'var(--text-secondary)' }}>{factor.description || factor.feature}</span>
+                            <span style={{ color: 'var(--text-secondary)' }}>{factor.description || factor.label || factor.feature}</span>
                             <span style={{ fontWeight: 700, color: factor.direction === 'positive' ? '#10b981' : '#f43f5e' }}>
-                              {factor.direction === 'positive' ? '+' : ''}{factor.weight}
+                              {factor.direction === 'positive' ? '+' : '-'}{factor.weight != null ? factor.weight : Math.abs(factor.contribution || 0)}
                             </span>
                           </div>
                         ))}
                       </div>
                     </div>
                   )}
-
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '0.82rem', borderTop: '1px solid var(--panel-border)', paddingTop: '12px', marginTop: '14px' }}>
                     <div><span style={{ color: 'var(--text-muted)' }}>Lead Probability:</span> <strong>{lead.lead_probability ? `${(lead.lead_probability * 100).toFixed(2)}%` : 'N/A'}</strong></div>
                     <div><span style={{ color: 'var(--text-muted)' }}>Model Version:</span> <strong>{lead.model_version || 'N/A'}</strong></div>
@@ -259,51 +282,61 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
               )}
 
               {/* ── SECTION 4: Behaviour Activity Graph ── */}
-              {journey.length > 0 && (
-                <div>
-                  <h3 className="heading-md" style={{ color: 'var(--text-primary)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Activity size={18} style={{ color: 'var(--accent-indigo)' }} /><span>Behaviour Activity Distribution</span>
-                  </h3>
-                  <div style={{ background: 'var(--table-header-bg)', border: '1px solid var(--panel-border)', borderRadius: 'var(--radius-md)', padding: '20px' }}>
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
-                      {[
-                        { label: 'Sessions', value: behavior.session_count || 0, color: '#6366f1' },
-                        { label: 'Page Views', value: behavior.page_view_count || 0, color: '#8b5cf6' },
-                        { label: 'Cart Adds', value: behavior.cart_add_count || 0, color: '#f59e0b' },
-                        { label: 'Wishlist Adds', value: behavior.wishlist_add_count || 0, color: '#f43f5e' },
-                        { label: 'Orders', value: orders.length, color: '#10b981' },
-                      ].map(stat => (
-                        <div key={stat.label} style={{
-                          flex: '1 1 80px', textAlign: 'center', padding: '10px 6px',
-                          background: `${stat.color}12`, borderRadius: 'var(--radius-md)',
-                          border: `1px solid ${stat.color}30`
-                        }}>
-                          <div style={{ fontSize: '1.3rem', fontWeight: 800, color: stat.color, fontFamily: 'var(--font-heading)' }}>{stat.value}</div>
-                          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '2px' }}>{stat.label}</div>
+              {/* Uses behavior_summary (SAME SOURCE as journey timeline) */}
+              <div>
+                <h3 className="heading-md" style={{ color: 'var(--text-primary)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Activity size={18} style={{ color: 'var(--accent-indigo)' }} /><span>Behaviour Activity Distribution</span>
+                </h3>
+                <div style={{ background: 'var(--table-header-bg)', border: '1px solid var(--panel-border)', borderRadius: 'var(--radius-md)', padding: '20px' }}>
+
+                  {/* KPI stat cards — all from behavior_summary (live events) */}
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '18px' }}>
+                    {[
+                      { label: 'Sessions',    value: bs.sessions_count       ?? 0,  color: '#6366f1' },
+                      { label: 'Page Views',  value: bs.page_views_count      ?? 0,  color: '#8b5cf6' },
+                      { label: 'Cart Adds',   value: bs.cart_adds_count       ?? 0,  color: '#f59e0b' },
+                      { label: 'Wishlist',    value: bs.wishlist_adds_count   ?? 0,  color: '#f43f5e' },
+                      { label: 'Orders',      value: bs.orders_count          ?? orders.length, color: '#10b981' },
+                      { label: 'Searches',    value: bs.searches_count        ?? 0,  color: '#3b82f6' },
+                    ].map(stat => (
+                      <div key={stat.label} style={{
+                        flex: '1 1 70px', textAlign: 'center', padding: '10px 6px',
+                        background: `${stat.color}12`, borderRadius: 'var(--radius-md)',
+                        border: `1px solid ${stat.color}30`
+                      }}>
+                        <div style={{ fontSize: '1.4rem', fontWeight: 800, color: stat.color, fontFamily: 'var(--font-heading)' }}>
+                          {stat.value}
                         </div>
-                      ))}
-                    </div>
-                    {chartData.length > 0 && (
-                      <ResponsiveContainer width="100%" height={140}>
-                        <BarChart data={chartData} margin={{ top: 4, right: 0, left: -20, bottom: 0 }}>
-                          <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
-                          <YAxis tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} allowDecimals={false} />
-                          <Tooltip
-                            contentStyle={{ background: 'var(--panel-solid)', border: '1px solid var(--panel-border)', borderRadius: 8, fontSize: 12 }}
-                            labelStyle={{ color: 'var(--text-primary)', fontWeight: 700 }}
-                            cursor={{ fill: 'rgba(99,102,241,0.08)' }}
-                          />
-                          <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                            {chartData.map((_, idx) => (
-                              <Cell key={`cell-${idx}`} fill={barColors[idx % barColors.length]} />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    )}
+                        <div style={{ fontSize: '0.67rem', color: 'var(--text-muted)', marginTop: '2px' }}>{stat.label}</div>
+                      </div>
+                    ))}
                   </div>
+
+                  {/* Bar chart from behavior_distribution (same events source) */}
+                  {chartData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={150}>
+                      <BarChart data={chartData} margin={{ top: 4, right: 0, left: -20, bottom: 0 }}>
+                        <XAxis dataKey="name" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+                        <YAxis tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                        <Tooltip
+                          contentStyle={{ background: 'var(--panel-solid)', border: '1px solid var(--panel-border)', borderRadius: 8, fontSize: 12 }}
+                          labelStyle={{ color: 'var(--text-primary)', fontWeight: 700 }}
+                          cursor={{ fill: 'rgba(99,102,241,0.08)' }}
+                        />
+                        <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                          {chartData.map((_, idx) => (
+                            <Cell key={`c-${idx}`} fill={CHART_COLORS[idx % CHART_COLORS.length]} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.82rem', padding: '12px 0' }}>
+                      No behavior events recorded yet.
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
 
               {/* ── SECTION 5: Customer Journey Timeline ── */}
               {journey.length > 0 && (
@@ -364,6 +397,11 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
                 <h3 className="heading-md" style={{ color: 'var(--text-primary)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <ShoppingBag size={18} style={{ color: 'var(--accent-indigo)' }} />
                   <span>Recent Orders ({orders.length})</span>
+                  {orders.length > 0 && (
+                    <span style={{ marginLeft: 'auto', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                      Total: <strong style={{ color: '#10b981' }}>₹{totalRevenue.toLocaleString('en-IN')}</strong>
+                    </span>
+                  )}
                 </h3>
                 {orders.length === 0 ? (
                   <div style={{ padding: '16px', background: 'var(--table-header-bg)', borderRadius: 'var(--radius-md)', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
@@ -374,7 +412,7 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
                     {orders.map((o, idx) => (
                       <div key={idx} style={{ padding: '12px 16px', background: 'var(--table-header-bg)', borderRadius: 'var(--radius-md)', fontSize: '0.85rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
-                          <div style={{ fontWeight: 700 }}>Order #{o._id || o.id}</div>
+                          <div style={{ fontWeight: 700 }}>Order #{String(o._id || o.id).slice(-8)}</div>
                           <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                             {o.items ? `${o.items.length} item${o.items.length !== 1 ? 's' : ''}` : ''} • {o.created_at ? new Date(o.created_at).toLocaleDateString('en-IN') : 'N/A'}
                           </div>
@@ -395,11 +433,20 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
               <div>
                 <h3 className="heading-md" style={{ color: 'var(--text-primary)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <ShoppingCart size={18} style={{ color: 'var(--accent-indigo)' }} />
-                  <span>Current Cart ({cart.length} items)</span>
+                  <span>Current Cart ({cart.length} item{cart.length !== 1 ? 's' : ''})</span>
+                  {cart.length > 0 && (
+                    <span style={{ marginLeft: 'auto', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                      Total: <strong style={{ color: '#f59e0b' }}>₹{cartTotal.toLocaleString('en-IN')}</strong>
+                      {hasUnavailablePrice && <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginLeft: '4px' }}>(partial)</span>}
+                    </span>
+                  )}
                 </h3>
                 {cart.length === 0 ? (
                   <div style={{ padding: '16px', background: 'var(--table-header-bg)', borderRadius: 'var(--radius-md)', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                    Cart is empty — no items saved yet.
+                    No active cart items found.
+                    <div style={{ fontSize: '0.75rem', marginTop: '4px', opacity: 0.7 }}>
+                      Cart events ({bs.cart_adds_count || 0} add_to_cart recorded) — items may have been purchased or removed.
+                    </div>
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -419,35 +466,103 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
                             </div>
                           )}
                           <div>
-                            <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{item.name || 'Product'}</div>
+                            <div style={{ fontWeight: 700, color: item.name === 'Product unavailable' ? 'var(--text-muted)' : 'var(--text-primary)' }}>
+                              {item.name || 'Product unavailable'}
+                            </div>
                             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                              {item.brand && <span>{item.brand} · </span>}
-                              Qty: {item.quantity || 1}
+                              {item.brand && <span>{item.brand}</span>}
+                              {item.category && <span> · {item.category}</span>}
+                              {item.gender && <span> · {item.gender}</span>}
+                              <span> · Qty: {item.quantity || 1}</span>
                             </div>
                           </div>
                         </div>
                         <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                          <div style={{ fontWeight: 800, color: '#f59e0b' }}>
-                            ₹{((item.price || 0) * (item.quantity || 1)).toLocaleString('en-IN')}
-                          </div>
-                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                            ₹{(item.price || 0).toLocaleString('en-IN')} each
-                          </div>
+                          {item.subtotal != null ? (
+                            <div style={{ fontWeight: 800, color: '#f59e0b' }}>
+                              ₹{item.subtotal.toLocaleString('en-IN')}
+                            </div>
+                          ) : (
+                            <div style={{ fontWeight: 700, color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+                              Subtotal unavailable
+                            </div>
+                          )}
+                          {item.price != null && item.price > 0 ? (
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                              ₹{(item.price).toLocaleString('en-IN')} each
+                            </div>
+                          ) : (
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                              Price unavailable
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))}
-                    <div style={{
-                      textAlign: 'right', fontSize: '0.88rem', fontWeight: 800,
-                      color: 'var(--text-primary)', padding: '8px 16px',
-                      borderTop: '1px solid var(--panel-border)', marginTop: '4px'
-                    }}>
-                      Cart Total: ₹{cart.reduce((s, i) => s + (i.price || 0) * (i.quantity || 1), 0).toLocaleString('en-IN')}
-                    </div>
                   </div>
                 )}
               </div>
 
-              {/* ── SECTION 9: Marketing Dispatches ── */}
+              {/* ── SECTION 9: Current Wishlist ── */}
+              <div>
+                <h3 className="heading-md" style={{ color: 'var(--text-primary)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Heart size={18} style={{ color: '#f43f5e' }} />
+                  <span>Current Wishlist ({wishlist.length} item{wishlist.length !== 1 ? 's' : ''})</span>
+                </h3>
+                {wishlist.length === 0 ? (
+                  <div style={{ padding: '16px', background: 'var(--table-header-bg)', borderRadius: 'var(--radius-md)', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                    No active wishlist items found.
+                    <div style={{ fontSize: '0.75rem', marginTop: '4px', opacity: 0.7 }}>
+                      Wishlist events ({bs.wishlist_adds_count || 0} recorded) — items may have been moved to cart or removed.
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {wishlist.map((item, idx) => (
+                      <div key={idx} style={{
+                        padding: '12px 16px', background: 'rgba(244, 63, 94, 0.06)',
+                        border: '1px solid rgba(244, 63, 94, 0.18)',
+                        borderRadius: 'var(--radius-md)', fontSize: '0.85rem',
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
+                          {item.image ? (
+                            <img src={item.image} alt={item.name} style={{ width: 44, height: 50, objectFit: 'cover', borderRadius: 6 }} />
+                          ) : (
+                            <div style={{ width: 44, height: 50, background: 'rgba(244,63,94,0.15)', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <Heart size={18} style={{ color: '#f43f5e' }} />
+                            </div>
+                          )}
+                          <div>
+                            <div style={{ fontWeight: 700, color: item.name === 'Product unavailable' ? 'var(--text-muted)' : 'var(--text-primary)' }}>
+                              {item.name || 'Product unavailable'}
+                            </div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                              {item.brand && <span>{item.brand}</span>}
+                              {item.category && <span> · {item.category}</span>}
+                              {item.gender && <span> · {item.gender}</span>}
+                              {item.added_at && <span> · Added {new Date(item.added_at).toLocaleDateString('en-IN')}</span>}
+                            </div>
+                          </div>
+                        </div>
+                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                          {item.price != null && item.price > 0 ? (
+                            <div style={{ fontWeight: 800, color: '#f43f5e' }}>
+                              ₹{item.price.toLocaleString('en-IN')}
+                            </div>
+                          ) : (
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                              Price unavailable
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* ── SECTION 10: Marketing Dispatches ── */}
               <div>
                 <h3 className="heading-md" style={{ color: 'var(--text-primary)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <PackageCheck size={18} style={{ color: 'var(--accent-indigo)' }} />

@@ -15,7 +15,7 @@ DEFAULT_CAMPAIGNS = [
     {
         "name": "Hot Lead VIP Offer",
         "trigger_type": "hot_lead",
-        "channel": "sms",
+        "channel": "whatsapp",
         "template": "Exclusive VIP Deal! Use code VIP25 for 25% OFF your order. Valid for the next 2 hours!",
         "active": True
     },
@@ -132,7 +132,7 @@ def evaluate_campaign_triggers(
                         "campaign_name": campaign["name"],
                         "trigger_type": t_type,
                         "recipient": recipient,
-                        "channel": campaign.get("channel", "sms"),
+                        "channel": campaign.get("channel", "whatsapp"),
                         "message": campaign.get("template", ""),
                         "status": "Sent",
                         "sent_at": now

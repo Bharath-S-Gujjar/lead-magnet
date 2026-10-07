@@ -139,6 +139,29 @@ export async function getAdminNotifications({ token, read, page = 1, limit = 25 
   return res.data;
 }
 
+/**
+ * Mark a single admin notification as read.
+ */
+export async function markNotificationRead(notificationId, token) {
+  if (!notificationId) throw new Error('Notification ID is required');
+  const res = await apiFetch(`/api/admin/intelligence/notifications/${notificationId}/read`, {
+    method: 'PATCH',
+    headers: authHeaders(token),
+  });
+  return res.data;
+}
+
+/**
+ * Mark all unread admin notifications as read.
+ */
+export async function markAllNotificationsRead(token) {
+  const res = await apiFetch('/api/admin/intelligence/notifications/mark-all-read', {
+    method: 'POST',
+    headers: authHeaders(token),
+  });
+  return res.data;
+}
+
 // --- Phase 17A: New Intelligence APIs ---
 
 /**
@@ -225,4 +248,15 @@ export async function simulateLeadScore({ token, customer_id, feature_overrides 
     body: JSON.stringify({ customer_id, feature_overrides }),
   });
   return res.data;
+}
+
+/**
+ * Fetch recent activity history for the live activity feed initial load.
+ */
+export async function getAdminRecentActivity(token, limit = 50) {
+  const params = new URLSearchParams({ limit: limit.toString() });
+  const res = await apiFetch(`/api/admin/intelligence/recent-activity?${params.toString()}`, {
+    headers: authHeaders(token),
+  });
+  return res.data || [];
 }

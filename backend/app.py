@@ -34,7 +34,15 @@ from recommendation_service import get_personalized_recommendations
 from marketing_service import get_all_campaigns, create_campaign, get_campaign_logs, evaluate_campaign_triggers
 from customer_feature_service import ensure_customer_features_indexes, aggregate_customer_features, upsert_customer_features, get_customer_features
 from customer_lead_state_service import ensure_customer_lead_state_indexes, get_customer_lead_state, sync_customer_lead_state
-from marketing_automation_service import ensure_marketing_automation_indexes, create_automation_event_for_qualification, process_marketing_automation_event
+from marketing_automation_service import (
+    ensure_marketing_automation_indexes,
+    create_automation_event_for_qualification,
+    process_marketing_automation_event,
+    trigger_registration_communication,
+    trigger_order_confirmation_communication,
+    trigger_cart_abandonment_communication,
+    trigger_wishlist_reminder_communication,
+)
 from admin_intelligence_service import (
     get_intelligence_overview,
     get_qualified_leads_list,
@@ -43,6 +51,9 @@ from admin_intelligence_service import (
     get_recent_leads,
     get_marketing_activity,
     get_admin_notifications_list,
+    create_admin_notification,
+    mark_notification_read,
+    mark_all_notifications_read,
 )
 from lead_scoring_engine import rescore_customer
 from score_history_service import ensure_score_history_indexes, get_score_history
@@ -70,18 +81,20 @@ DEFAULT_ALLOWED_ORIGINS = [
     "http://127.0.0.1:3001",
 ]
 
+IS_PROD_ENV = os.getenv("FLASK_ENV", "").lower() == "production" or os.getenv("ENV", "").lower() == "production"
 FRONTEND_URL = os.getenv("FRONTEND_URL")
 if FRONTEND_URL:
     ALLOWED_ORIGINS = [origin.strip() for origin in FRONTEND_URL.split(",") if origin.strip()]
-    for default_origin in DEFAULT_ALLOWED_ORIGINS:
-        if default_origin not in ALLOWED_ORIGINS:
-            ALLOWED_ORIGINS.append(default_origin)
+    if not IS_PROD_ENV:
+        for default_origin in DEFAULT_ALLOWED_ORIGINS:
+            if default_origin not in ALLOWED_ORIGINS:
+                ALLOWED_ORIGINS.append(default_origin)
 else:
-    IS_PROD_ENV = os.getenv("FLASK_ENV", "").lower() == "production" or os.getenv("ENV", "").lower() == "production"
-    ALLOWED_ORIGINS = DEFAULT_ALLOWED_ORIGINS if not IS_PROD_ENV else []
+    ALLOWED_ORIGINS = [] if IS_PROD_ENV else DEFAULT_ALLOWED_ORIGINS
 
-CORS(app, origins=ALLOWED_ORIGINS if ALLOWED_ORIGINS else DEFAULT_ALLOWED_ORIGINS)
-socketio = SocketIO(app, cors_allowed_origins=ALLOWED_ORIGINS if ALLOWED_ORIGINS else DEFAULT_ALLOWED_ORIGINS)
+cors_origins = ALLOWED_ORIGINS if (ALLOWED_ORIGINS or IS_PROD_ENV) else DEFAULT_ALLOWED_ORIGINS
+CORS(app, origins=cors_origins)
+socketio = SocketIO(app, cors_allowed_origins=cors_origins)
 
 
 @app.after_request
@@ -91,6 +104,21 @@ def add_security_headers(response):
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     return response
+
+
+@app.errorhandler(404)
+def handle_404(e):
+    return jsonify({"success": False, "message": "Resource not found", "errors": []}), 404
+
+
+@app.errorhandler(405)
+def handle_405(e):
+    return jsonify({"success": False, "message": "Method not allowed", "errors": []}), 405
+
+
+@app.errorhandler(500)
+def handle_500(e):
+    return jsonify({"success": False, "message": "Internal server error", "errors": []}), 500
 
 
 def create_mongo_client():
@@ -484,6 +512,26 @@ def signup():
             customer_features_collection,
             db,
         )
+
+        try:
+            name_display = full_name or email
+            create_admin_notification(
+                db,
+                notif_type="new_customer",
+                title="New Customer",
+                message=f"Customer registered: {name_display}",
+                customer_id=str(user_id),
+                metadata={"email": email, "full_name": full_name},
+                socketio=socketio
+            )
+        except Exception:
+            pass
+
+        try:
+            if not app.config.get("TESTING"):
+                trigger_registration_communication(str(user_id), db)
+        except Exception:
+            pass
 
         return jsonify({
             "success": True,
@@ -1475,58 +1523,19 @@ def get_profiles():
 @app.route("/api/admin/notifications", methods=["GET"])
 @admin_required
 def get_admin_notifications():
+    """Return real admin notifications from canonical admin_notifications."""
     if not MONGO_AVAILABLE:
         return jsonify({"success": False, "message": "Database unavailable", "data": []}), 500
 
     try:
-        notifications = []
-        
-        reg_count = profiles_collection.count_documents({"email": {"$exists": True, "$ne": None}})
-        if reg_count > 0:
-            latest_user = profiles_collection.find_one({"email": {"$exists": True, "$ne": None}}, sort=[("created_at", -1)])
-            user_name = latest_user.get("full_name") or latest_user.get("email") if latest_user else "User"
-            notifications.append({
-                "id": "notif-reg",
-                "type": "user",
-                "text": f"We got {reg_count} registered clothing customer{'s' if reg_count != 1 else ''}! Latest: {user_name}",
-                "time": "Just now",
-                "unread": True
-            })
-            
-        order_count = orders_collection.count_documents({})
-        if order_count > 0:
-            latest_order = orders_collection.find_one({}, sort=[("created_at", -1)])
-            amt = float(latest_order.get("total_amount", 0.0))
-            email = latest_order.get("customer_email", "Customer")
-            notifications.append({
-                "id": "notif-order",
-                "type": "order",
-                "text": f"New Order Placed: ₹{int(amt):,} order by {email}",
-                "time": "Recent",
-                "unread": True
-            })
-            
-        lead_count = leads_collection.count_documents({})
-        if lead_count > 0:
-            notifications.append({
-                "id": "notif-leads",
-                "type": "mail",
-                "text": f"Automated sales campaign: {lead_count} marketing emails dispatched to active prospects",
-                "time": "15m ago",
-                "unread": True
-            })
-            
-        session_count = sessions_collection.count_documents({})
-        if session_count > 0:
-            notifications.append({
-                "id": "notif-sms",
-                "type": "sms",
-                "text": f"SMS campaign: 'MAGNET20' discount coupon sent to {max(1, session_count)} shoppers",
-                "time": "30m ago",
-                "unread": False
-            })
+        read_param = request.args.get("read")
+        read_status = None
+        if read_param is not None:
+            read_status = read_param.lower() == "true"
+        page, limit = parse_pagination_params(default_page=1, default_limit=25, max_limit=100)
 
-        return jsonify({"success": True, "data": notifications})
+        res = get_admin_notifications_list(db, read_status=read_status, page=page, limit=limit)
+        return jsonify({"success": True, "data": res})
     except Exception as e:
         return jsonify({"success": False, "message": str(e), "data": []}), 500
 
@@ -2055,6 +2064,32 @@ def admin_intelligence_notifications_route():
         return jsonify({"success": False, "message": str(e)}), 500
 
 
+@app.route("/api/admin/intelligence/notifications/<notification_id>/read", methods=["PATCH", "PUT", "POST"])
+@app.route("/api/admin/notifications/<notification_id>/read", methods=["PATCH", "PUT", "POST"])
+@admin_required
+def mark_admin_notification_read_route(notification_id):
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable"}), 500
+    try:
+        res = mark_notification_read(db, notification_id)
+        return jsonify({"success": True, "data": res})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/admin/intelligence/notifications/mark-all-read", methods=["POST", "PUT"])
+@app.route("/api/admin/notifications/mark-all-read", methods=["POST", "PUT"])
+@admin_required
+def mark_all_admin_notifications_read_route():
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable"}), 500
+    try:
+        res = mark_all_notifications_read(db)
+        return jsonify({"success": True, "data": res})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
 # --- Phase 17A: Product Intelligence APIs ---
 
 @app.route("/api/admin/intelligence/customers/<customer_id>/score-history", methods=["GET"])
@@ -2190,7 +2225,91 @@ def admin_intelligence_product_affinity_route(customer_id=None):
         return jsonify({"success": False, "message": str(e)}), 500
 
 
-# --- SocketIO Real-Time Event Handlers ---
+@app.route("/api/admin/intelligence/recent-activity", methods=["GET"])
+@admin_required
+def admin_recent_activity_route():
+    """Return recent activity events for the live activity feed's initial history load."""
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable", "data": []}), 500
+    try:
+        limit = min(int(request.args.get("limit", 50)), 100)
+        history = []
+        profiles_col = db["user_profiles"]
+
+        def _get_name(uid):
+            if not uid:
+                return None
+            from customer_feature_service import _to_object_id as _toid
+            c_oid = _toid(uid)
+            p = profiles_col.find_one({"_id": c_oid}) if c_oid else None
+            if p:
+                return p.get("full_name") or p.get("username")
+            return None
+
+        # Recent behavior events
+        for evt in db["events"].find(
+            {"event_type": {"$exists": True}},
+            sort=[("timestamp", -1)]
+        ).limit(limit):
+            ts = evt.get("timestamp")
+            if isinstance(ts, datetime.datetime):
+                ts = ts.isoformat()
+            uid = evt.get("user_id")
+            history.append({
+                "type": evt.get("event_type", "page_view"),
+                "category": "behavior",
+                "customer_id": str(uid) if uid else None,
+                "customer_name": _get_name(uid),
+                "description": evt.get("page") or (evt.get("entity") or {}).get("name") or "",
+                "timestamp": ts,
+            })
+
+        # Recent orders
+        for order in db["orders"].find({}, sort=[("created_at", -1)]).limit(20):
+            uid = order.get("user_id")
+            ts = order.get("created_at")
+            if isinstance(ts, datetime.datetime):
+                ts = ts.isoformat()
+            amt = order.get("total_amount", 0)
+            history.append({
+                "type": "order_placed",
+                "category": "order",
+                "customer_id": str(uid) if uid else None,
+                "customer_name": _get_name(uid),
+                "description": f"\u20b9{amt:,.0f}",
+                "timestamp": ts,
+            })
+
+        # Recent qualified leads
+        for lead in db["customer_lead_state"].find(
+            {"qualification_status": "qualified"},
+            sort=[("first_qualified_at", -1)]
+        ).limit(10):
+            c_id = lead.get("customer_id")
+            ts = lead.get("first_qualified_at") or lead.get("updated_at")
+            if isinstance(ts, datetime.datetime):
+                ts = ts.isoformat()
+            history.append({
+                "type": "lead_qualified",
+                "category": "lead",
+                "customer_id": str(c_id) if c_id else None,
+                "customer_name": _get_name(c_id),
+                "description": f"Score: {lead.get('lead_score','?')} \u00b7 {lead.get('lead_segment','?')}",
+                "timestamp": ts,
+            })
+
+        # Sort all by timestamp desc
+        def _ts_key(x):
+            t = x.get("timestamp") or ""
+            return t if isinstance(t, str) else ""
+        history.sort(key=_ts_key, reverse=True)
+        history = history[:limit]
+
+        return jsonify({"success": True, "data": history})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e), "data": []}), 500
+
+
 
 @socketio.on("connect")
 def handle_socketio_connect():
@@ -2245,6 +2364,8 @@ def create_order():
             customer_name=customer.get("full_name") or customer.get("username"),
             shipping_address=data.get("shipping_address"),
             payment_method=data.get("payment_method", "Credit Card"),
+            items=data.get("items"),
+            product_ids=data.get("product_ids"),
         )
         now = order_doc["created_at"]
 
@@ -2292,6 +2413,22 @@ def create_order():
                 "total_amount": order_doc["total_amount"],
                 "timestamp": str(now),
             })
+            amt = float(order_doc.get("total_amount", 0))
+            create_admin_notification(
+                db,
+                notif_type="order_placed",
+                title="New Order Placed",
+                message=f"Order ₹{amt:,.0f} placed",
+                customer_id=str(owner["user_id"]),
+                metadata={"order_id": str(order_doc["_id"]), "total_amount": amt},
+                socketio=socketio,
+            )
+        except Exception:
+            pass
+
+        try:
+            if not app.config.get("TESTING"):
+                trigger_order_confirmation_communication(str(order_doc["_id"]), db)
         except Exception:
             pass
 
@@ -2369,6 +2506,7 @@ def get_order_detail(order_id):
 
 
 @app.route("/api/analytics/summary", methods=["GET"])
+@admin_required
 def analytics_summary():
     if not MONGO_AVAILABLE:
         return jsonify({"success": False, "message": "Database unavailable"}), 500
@@ -2393,6 +2531,7 @@ def analytics_summary():
 
 
 @app.route("/api/analytics/top-events", methods=["GET"])
+@admin_required
 def analytics_top_events():
     if not MONGO_AVAILABLE:
         return jsonify({"success": False, "message": "Database unavailable"}), 500

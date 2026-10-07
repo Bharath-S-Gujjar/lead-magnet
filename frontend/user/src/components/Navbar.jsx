@@ -87,7 +87,7 @@ export const Navbar = ({ searchQuery, setSearchQuery, selectedGender, setSelecte
           boxShadow: '0 2px 6px rgba(0,0,0,0.02)'
         }}>
           <Search size={18} style={{ color: 'var(--text-muted)' }} />
-          <input 
+          <input
             type="text"
             placeholder="Search shirts, hoodies, dresses, Levi's, Zara..."
             value={searchQuery || ''}
@@ -107,9 +107,9 @@ export const Navbar = ({ searchQuery, setSearchQuery, selectedGender, setSelecte
       {/* 3. Action Controls */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
         {/* Wishlist Link */}
-        <Link 
-          to="/wishlist" 
-          className="btn btn-secondary" 
+        <Link
+          to="/wishlist"
+          className="btn btn-secondary"
           style={{ padding: '9px 14px', borderRadius: 'var(--radius-full)', position: 'relative' }}
           title="Wishlist"
         >
@@ -130,9 +130,10 @@ export const Navbar = ({ searchQuery, setSearchQuery, selectedGender, setSelecte
         </Link>
 
         {/* Shopping Cart Link */}
-        <Link 
-          to="/cart" 
-          className="btn btn-primary" 
+        <Link
+          to="/cart"
+          // className="btn btn-primary" 
+          className="btn btn-secondary"
           style={{ padding: '9px 16px', borderRadius: 'var(--radius-full)', position: 'relative' }}
           title="Shopping Cart"
         >
@@ -153,9 +154,9 @@ export const Navbar = ({ searchQuery, setSearchQuery, selectedGender, setSelecte
         </Link>
 
         {/* Orders Link */}
-        <Link 
-          to="/orders" 
-          className="btn btn-secondary" 
+        <Link
+          to="/orders"
+          className="btn btn-secondary"
           style={{ padding: '9px 14px', borderRadius: 'var(--radius-full)' }}
           title="My Orders"
         >
@@ -164,7 +165,7 @@ export const Navbar = ({ searchQuery, setSearchQuery, selectedGender, setSelecte
         </Link>
 
         {/* Theme Toggle */}
-        <button 
+        <button
           onClick={toggleTheme}
           className="btn btn-ghost"
           style={{ padding: '9px', borderRadius: '50%' }}
@@ -177,8 +178,8 @@ export const Navbar = ({ searchQuery, setSearchQuery, selectedGender, setSelecte
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', paddingLeft: '8px', borderLeft: '1px solid var(--panel-border)' }}>
           {isLoggedIn ? (
             <>
-              <Link 
-                to="/account" 
+              <Link
+                to="/account"
                 style={{
                   display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 14px',
                   borderRadius: 'var(--radius-full)', background: 'rgba(79, 70, 229, 0.1)',
@@ -186,9 +187,9 @@ export const Navbar = ({ searchQuery, setSearchQuery, selectedGender, setSelecte
                 }}
                 title="View Profile & Settings"
               >
-                <img 
-                  src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(customer?.email || 'customer')}`} 
-                  alt="Customer Avatar" 
+                <img
+                  src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(customer?.email || 'customer')}`}
+                  alt="Customer Avatar"
                   style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#e2e8f0', border: '2px solid var(--accent-indigo)' }}
                 />
                 <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)' }}>

@@ -13,9 +13,22 @@ def _owner_query(user_id=None, anonymous_id=None):
     raise ValueError("Authenticated user_id is required")
 
 
-def _validated_cart_items(cart_collection, products_collection, user_id=None, anonymous_id=None):
+def _validated_cart_items(cart_collection, products_collection, user_id=None, anonymous_id=None, item_ids=None):
     owner_query = _owner_query(user_id, anonymous_id)
-    cart_items = list(cart_collection.find(owner_query))
+    query = dict(owner_query)
+    if item_ids:
+        parsed_ids = []
+        for iid in item_ids:
+            if isinstance(iid, dict):
+                iid = iid.get("product_id") or iid.get("id") or iid.get("_id")
+            if isinstance(iid, str) and ObjectId.is_valid(iid):
+                parsed_ids.append(ObjectId(iid))
+            elif isinstance(iid, ObjectId):
+                parsed_ids.append(iid)
+        if parsed_ids:
+            query["product_id"] = {"$in": parsed_ids}
+
+    cart_items = list(cart_collection.find(query))
     if not cart_items:
         raise ValueError("Cannot create order from an empty cart")
 
@@ -61,11 +74,14 @@ def create_order(
     customer_email=None,
     customer_name=None,
     shipping_address=None,
-    payment_method="Credit Card"
+    payment_method="Credit Card",
+    items=None,
+    product_ids=None,
 ):
-    """Create an order from current cart items, clear the cart, and return the order doc."""
+    """Create an order from current cart items, remove purchased items from the cart, and return the order doc."""
+    target_ids = product_ids or items
     owner_query, order_items = _validated_cart_items(
-        cart_collection, products_collection, user_id, anonymous_id
+        cart_collection, products_collection, user_id, anonymous_id, item_ids=target_ids
     )
     total_amount = sum(item["subtotal"] for item in order_items)
     u_id = ObjectId(user_id) if (user_id and isinstance(user_id, str)) else user_id
@@ -90,8 +106,16 @@ def create_order(
     result = orders_collection.insert_one(order_doc)
     order_doc["_id"] = result.inserted_id
 
-    # Clear user cart after placing order
-    clear_cart(cart_collection, **owner_query)
+    # Remove only purchased cart items from active cart state
+    purchased_product_ids = [
+        ObjectId(item["product_id"]) if isinstance(item["product_id"], str) and ObjectId.is_valid(item["product_id"]) else item["product_id"]
+        for item in order_items
+        if item.get("product_id")
+    ]
+    if purchased_product_ids:
+        cart_collection.delete_many({**owner_query, "product_id": {"$in": purchased_product_ids}})
+    else:
+        clear_cart(cart_collection, **owner_query)
 
     return order_doc
 

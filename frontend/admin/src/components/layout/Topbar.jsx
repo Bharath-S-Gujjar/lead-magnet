@@ -1,9 +1,10 @@
 import React from 'react';
-import { Search, Bell, Shirt, Sun, Moon, LogOut, Store } from 'lucide-react';
+import { Search, Shirt, Sun, Moon, LogOut, Store } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import { useAdminAuth } from '../../context/AdminAuthContext';
+import { NotificationBell } from './NotificationBell';
 
-export const Topbar = ({ searchQuery, setSearchQuery }) => {
+export const Topbar = ({ searchQuery, setSearchQuery, onSelectCustomer }) => {
   const { theme, toggleTheme } = useTheme();
   const { admin, adminLogout } = useAdminAuth();
 
@@ -121,20 +122,7 @@ export const Topbar = ({ searchQuery, setSearchQuery }) => {
         </button>
 
         {/* Notification Bell */}
-        <div style={{ position: 'relative' }}>
-          <button className="btn btn-secondary" style={{ padding: '9px', borderRadius: '50%' }}>
-            <Bell size={19} />
-            <span style={{
-              position: 'absolute',
-              top: '2px',
-              right: '2px',
-              width: '8px',
-              height: '8px',
-              background: 'var(--accent-rose)',
-              borderRadius: '50%'
-            }} />
-          </button>
-        </div>
+        <NotificationBell onSelectCustomer={onSelectCustomer} />
 
         {/* Admin Profile */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', paddingLeft: '8px', borderLeft: '1px solid var(--panel-border)' }}>

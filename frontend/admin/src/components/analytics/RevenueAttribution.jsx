@@ -30,7 +30,7 @@ export const RevenueAttribution = () => {
 
   if (!data) return null;
 
-  const cards = [
+  const attributionCards = [
     {
       label: 'Qualified Leads',
       value: data.total_qualified_leads || 0,
@@ -39,7 +39,7 @@ export const RevenueAttribution = () => {
       bg: 'rgba(99,102,241,0.12)',
     },
     {
-      label: 'Converted to Purchase',
+      label: 'Leads → Purchase',
       value: data.qualified_with_purchase || 0,
       suffix: ` (${data.qualified_to_purchase_conversion_rate || 0}%)`,
       icon: TrendingUp,
@@ -48,7 +48,7 @@ export const RevenueAttribution = () => {
     },
     {
       label: 'Attributed Revenue',
-      value: `₹${(data.attributed_revenue || 0).toLocaleString()}`,
+      value: `₹${(data.attributed_revenue || 0).toLocaleString('en-IN')}`,
       icon: DollarSign,
       color: '#f59e0b',
       bg: 'rgba(245,158,11,0.12)',
@@ -62,6 +62,8 @@ export const RevenueAttribution = () => {
     },
   ];
 
+  const hasZeroAttributed = !data.attributed_revenue && !data.attributed_orders;
+
   return (
     <div className="glass-card" style={{ padding: '24px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
@@ -69,8 +71,9 @@ export const RevenueAttribution = () => {
         <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 600 }}>Lead → Revenue Attribution</h3>
       </div>
 
+      {/* Attribution metric cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px', marginBottom: '12px' }}>
-        {cards.map(card => {
+        {attributionCards.map(card => {
           const IconComp = card.icon;
           return (
             <div key={card.label} style={{
@@ -92,6 +95,26 @@ export const RevenueAttribution = () => {
         })}
       </div>
 
+      {/* Zero attribution explanation */}
+      {hasZeroAttributed && (
+        <div style={{
+          margin: '12px 0',
+          padding: '12px 14px',
+          borderRadius: '8px',
+          background: 'rgba(99,102,241,0.07)',
+          border: '1px solid rgba(99,102,241,0.15)',
+          fontSize: '0.78rem',
+          color: 'var(--text-secondary)',
+          lineHeight: 1.5,
+        }}>
+          <div style={{ fontWeight: 700, color: '#6366f1', marginBottom: '4px' }}>ℹ️ No attributed revenue yet</div>
+          Attribution requires customers to have been qualified as a lead <strong>before</strong> placing an order.
+          Customers who ordered without first being qualified are counted in Total Customer Revenue below,
+          but their orders cannot be attributed to lead qualification.
+        </div>
+      )}
+
+      {/* Disclaimer */}
       {data.attribution_disclaimer && (
         <div style={{
           display: 'flex',

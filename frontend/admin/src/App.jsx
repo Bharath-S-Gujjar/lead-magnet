@@ -4,7 +4,6 @@ import { AdminAuthProvider, useAdminAuth } from './context/AdminAuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { AdminLogin } from './pages/AdminLogin';
 import { Topbar } from './components/layout/Topbar';
-import { AdminNotificationsList } from './components/layout/AdminNotificationsList';
 import { LeadAnalyticsSummary } from './components/analytics/LeadAnalyticsSummary';
 import { GenderDistribution } from './components/analytics/GenderDistribution';
 import { MarketingActivityFeed } from './components/analytics/MarketingActivityFeed';
@@ -87,6 +86,7 @@ function ProtectedAdminDashboard() {
       <Topbar 
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
+        onSelectCustomer={handleSelectCustomer}
       />
 
       {/* MAIN CONTENT BODY */}
@@ -99,10 +99,7 @@ function ProtectedAdminDashboard() {
           </div>
         )}
 
-        {/* 2. ADMIN NOTIFICATIONS */}
-        <AdminNotificationsList />
-
-        {/* 3. MAIN ANALYTICS CARDS */}
+        {/* 2. MAIN ANALYTICS CARDS */}
         <LeadAnalyticsSummary onRefresh={loadLeads} />
 
         {/* PHASE 17A: NAVIGATION TABS FOR DEEP INTELLIGENCE */}

@@ -69,6 +69,7 @@ def explain_lead_score(customer_features):
         return {
             "positive_contributors": [],
             "negative_contributors": [],
+            "top_driving_factors": [],
             "explanation_method": "deterministic_feature_contribution",
             "error": "No customer features available for explanation",
         }
@@ -82,6 +83,7 @@ def explain_lead_score(customer_features):
         return {
             "positive_contributors": [],
             "negative_contributors": [],
+            "top_driving_factors": [],
             "explanation_method": "deterministic_feature_contribution",
             "error": f"Could not load model artifacts: {e}",
         }
@@ -90,6 +92,7 @@ def explain_lead_score(customer_features):
         return {
             "positive_contributors": [],
             "negative_contributors": [],
+            "top_driving_factors": [],
             "explanation_method": "deterministic_feature_contribution",
             "error": "No feature importances available in model metadata",
         }
@@ -141,9 +144,9 @@ def explain_lead_score(customer_features):
         contributions.append({
             "feature": col,
             "label": label,
-            "value": round(val, 2),
-            "importance": round(importance, 4),
-            "contribution": round(contribution, 4),
+            "value": round(float(val), 2),
+            "importance": round(float(importance), 4),
+            "contribution": round(float(contribution), 4),
             "direction": "positive" if contribution > 0 else "negative",
         })
 
@@ -153,9 +156,23 @@ def explain_lead_score(customer_features):
     positive = [c for c in contributions if c["contribution"] > 0]
     negative = [c for c in contributions if c["contribution"] <= 0]
 
+    top_driving_factors = []
+    for c in contributions[:10]:
+        c_contrib = float(c["contribution"])
+        top_driving_factors.append({
+            "feature": c["feature"],
+            "description": c["label"],
+            "label": c["label"],
+            "value": float(c["value"]),
+            "contribution": c_contrib,
+            "weight": round(abs(c_contrib), 4),
+            "direction": c["direction"],
+        })
+
     return {
         "positive_contributors": positive[:10],
         "negative_contributors": negative[:10],
+        "top_driving_factors": top_driving_factors,
         "explanation_method": "deterministic_feature_contribution",
         "explanation_note": (
             "Contributions are computed from global feature importances weighted by "
