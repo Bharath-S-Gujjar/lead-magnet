@@ -18,7 +18,10 @@ export const ProductCard = ({ product }) => {
     navigate(`/product/${product.id}`);
   };
 
-  const hasRealImage = product.image && !product.image.includes('placeholder.com') && !imgFailed;
+  const prodImage = product.primary_image || product.image;
+  const prodTitle = product.title || product.name || 'Clothing Item';
+  const discountVal = product.discount_percent || product.discount || 0;
+  const hasRealImage = prodImage && !prodImage.includes('placeholder.com') && !imgFailed;
 
   // Curated gradient pairs based on gender and category
   const getFallbackGradient = () => {
@@ -45,8 +48,8 @@ export const ProductCard = ({ product }) => {
       <div style={{ position: 'relative', width: '100%', paddingTop: '110%', overflow: 'hidden', background: getFallbackGradient() }}>
         {hasRealImage ? (
           <img 
-            src={product.image} 
-            alt={product.name} 
+            src={prodImage} 
+            alt={prodTitle} 
             onError={() => setImgFailed(true)}
             style={{
               position: 'absolute',
@@ -95,7 +98,7 @@ export const ProductCard = ({ product }) => {
         )}
 
         {/* Discount Badge */}
-        {product.discount > 0 && (
+        {discountVal > 0 && (
           <div style={{
             position: 'absolute',
             top: '12px',
@@ -108,7 +111,7 @@ export const ProductCard = ({ product }) => {
             borderRadius: 'var(--radius-full)',
             boxShadow: '0 2px 8px rgba(244, 63, 94, 0.4)'
           }}>
-            {product.discount}% OFF
+            {discountVal}% OFF
           </div>
         )}
 
@@ -157,7 +160,7 @@ export const ProductCard = ({ product }) => {
 
           {/* Product Name */}
           <h4 style={{ fontSize: '0.98rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3, marginBottom: '8px', minHeight: '2.6em' }}>
-            {product.name}
+            {prodTitle}
           </h4>
 
           {/* Gender & Category Tags */}

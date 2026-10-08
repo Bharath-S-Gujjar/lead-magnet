@@ -83,11 +83,11 @@ def normalize_whatsapp_phone(phone_str):
     return digits, None
 
 
-def _build_html_body(plain_text, store_url=None, campaign_type=None):
+def _build_html_body(plain_text, store_url=None, campaign_type=None, image_url=None):
     """Generate a clean, minimal HTML email body from plain text.
 
     Uses a simple table layout. No hidden text, no tracking pixels,
-    no invisible links, no deceptive content.
+    no invisible links, no deceptive content. Supports optional product image.
     """
     # Escape HTML entities in the plain text
     safe_text = (
@@ -98,6 +98,12 @@ def _build_html_body(plain_text, store_url=None, campaign_type=None):
     )
     # Convert line breaks to HTML
     html_lines = safe_text.replace("\n\n", "</p><p>").replace("\n", "<br>")
+    img_html = (
+        f'<div style="text-align:center;margin:18px 0;">'
+        f'<img src="{image_url}" alt="Product" style="max-width:280px;height:auto;border-radius:6px;border:1px solid #e0e0e0;display:inline-block;">'
+        f'</div>'
+        if image_url else ""
+    )
 
     return (
         '<!DOCTYPE html>'
@@ -119,7 +125,7 @@ def _build_html_body(plain_text, store_url=None, campaign_type=None):
         '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" style="padding:16px;">'
         '<div class="wrap">'
         '<div class="hdr"><span>Lead Magnet</span></div>'
-        f'<div class="body"><p>{html_lines}</p></div>'
+        f'<div class="body">{img_html}<p>{html_lines}</p></div>'
         '<div class="footer">'
         'You are receiving this email because you have an account at Lead Magnet.'
         '</div>'
@@ -137,7 +143,7 @@ except ImportError:
 class CommunicationProvider:
     """Base abstract communication provider class."""
 
-    def send_email(self, recipient, subject, body, metadata=None):
+    def send_email(self, recipient, subject, body, metadata=None, html_body=None, **kwargs):
         raise NotImplementedError("send_email must be implemented by subclass")
 
     def send_whatsapp(self, recipient, body, metadata=None):
@@ -147,14 +153,20 @@ class CommunicationProvider:
 class DryRunCommunicationProvider(CommunicationProvider):
     """Local safe communication provider that records dry-run dispatches without network calls."""
 
-    def send_email(self, recipient, subject, body, metadata=None):
+    def send_email(self, recipient, subject, body, metadata=None, html_body=None, **kwargs):
         msg_id = f"dry-run-email-{uuid.uuid4().hex[:12]}"
+        img_url = metadata.get("primary_image") or metadata.get("image_url") if isinstance(metadata, dict) else None
+        effective_html = html_body if html_body else _build_html_body(body, image_url=img_url)
         return {
             "success": True,
             "provider": "dry_run",
             "provider_message_id": msg_id,
             "channel": "email",
             "recipient": recipient,
+            "subject": subject,
+            "body": body,
+            "html_body": effective_html,
+            "metadata": metadata or {},
             "dispatched_at": datetime.now(timezone.utc).isoformat(),
         }
 
@@ -176,7 +188,7 @@ class FailingCommunicationProvider(CommunicationProvider):
     def __init__(self, error_message="Simulated provider failure"):
         self.error_message = error_message
 
-    def send_email(self, recipient, subject, body, metadata=None):
+    def send_email(self, recipient, subject, body, metadata=None, html_body=None, **kwargs):
         return {
             "success": False,
             "provider": "failing_mock",
@@ -272,8 +284,11 @@ class GmailSMTPProvider(CommunicationProvider):
             # Plain-text part (first, so it is the fallback)
             msg.attach(MIMEText(body, "plain", "utf-8"))
 
-            # HTML part — use supplied html_body or generate from plain text
-            rendered_html = html_body if html_body else _build_html_body(body)
+            # HTML part — use supplied html_body or generate from plain text (with optional product image)
+            img_url = None
+            if isinstance(metadata, dict):
+                img_url = metadata.get("primary_image") or metadata.get("image_url") or metadata.get("product_image")
+            rendered_html = html_body if html_body else _build_html_body(body, image_url=img_url)
             msg.attach(MIMEText(rendered_html, "html", "utf-8"))
 
             with smtplib.SMTP(self.host, self.port, timeout=30) as server:

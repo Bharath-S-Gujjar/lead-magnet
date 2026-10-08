@@ -9,10 +9,15 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 function normalizeProduct(product) {
   return {
     ...product,
-    id: product._id || product.id,
-    image: product.image || product.images?.[0] || '',
+    id: product.product_id || product.id || product._id,
+    product_id: product.product_id || product.id || product._id,
+    name: product.title || product.name || '',
+    title: product.title || product.name || '',
+    image: product.primary_image || product.image || product.images?.[0] || '',
+    primary_image: product.primary_image || product.image || product.images?.[0] || '',
     rating: product.rating || 4.3,
-    discount: product.discount || 0,
+    discount: product.discount_percent || product.discount || 0,
+    originalPrice: product.mrp || product.price_before_discount || null,
     gender: product.gender || 'Unisex',
     category: product.category || 'Clothing',
     brand: product.brand || 'Lead Magnet',

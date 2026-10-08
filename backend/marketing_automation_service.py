@@ -507,6 +507,7 @@ def dispatch_communication(
     idempotency_key=None,
     provider=None,
     automation_event_id=None,
+    html_body=None,
 ):
     """Deterministically dispatch a single communication on a channel and log to marketing_communications.
 
@@ -603,7 +604,29 @@ def dispatch_communication(
 
     # 4. Dispatch
     if channel == "email":
-        res = provider.send_email(recipient, subject or "Lead Magnet", body, metadata=metadata)
+        img_url = None
+        if isinstance(metadata, dict):
+            img_url = metadata.get("primary_image") or metadata.get("image_url") or metadata.get("product_image")
+        rendered_html = html_body if html_body else (metadata.get("html_body") if isinstance(metadata, dict) else None)
+        if not rendered_html and img_url:
+            from communication_provider import _build_html_body
+            rendered_html = _build_html_body(body, image_url=img_url)
+
+        try:
+            res = provider.send_email(
+                recipient,
+                subject or "Lead Magnet",
+                body,
+                metadata=metadata,
+                html_body=rendered_html,
+            )
+        except TypeError:
+            res = provider.send_email(
+                recipient,
+                subject or "Lead Magnet",
+                body,
+                metadata=metadata,
+            )
     elif channel == "whatsapp":
         res = provider.send_whatsapp(recipient, body, metadata=metadata)
     else:
@@ -1223,3 +1246,45 @@ def trigger_opportunity_communication(
         opportunity_cooldown_hours=opportunity_cooldown_hours,
         current_time=current_time,
     )
+
+
+def trigger_product_price_drop_communication(
+    customer_id,
+    opportunity_or_key,
+    db,
+    provider=None,
+    policy=None,
+    enforce_cooldown=True,
+    current_time=None,
+):
+    """Trigger customer-facing email communication for a product_price_drop opportunity.
+
+    Classification: MARKETING
+        Triggered when an eligible price-drop opportunity is detected for an interested customer.
+        Subject to 24-hour promotional opportunity cooldown and unsubscribe preferences.
+        Reuses existing communication engine and Gmail SMTP provider.
+        Contains product name, current price, old price, discount info, product link, and image.
+        Customer-facing email NEVER exposes internal lead score, ML probability, or model metadata.
+
+    Args:
+        customer_id: ObjectId or string customer identifier.
+        opportunity_or_key: Opportunity doc, key string, or ObjectId.
+        db: PyMongo database object.
+        provider (CommunicationProvider, optional): Communication provider instance.
+        policy (dict, optional): Channel policy overrides.
+        enforce_cooldown (bool): Whether to enforce 24-hour opportunity cooldown.
+        current_time (datetime, optional): Reference time for cooldown/timestamps.
+
+    Returns:
+        dict: Result summary with status, communication record, and provider info.
+    """
+    from price_drop_opportunity_service import dispatch_price_drop_opportunity
+    return dispatch_price_drop_opportunity(
+        opportunity_or_key=opportunity_or_key,
+        db=db,
+        provider=provider,
+        policy=policy,
+        enforce_cooldown=enforce_cooldown,
+        current_time=current_time,
+    )
+

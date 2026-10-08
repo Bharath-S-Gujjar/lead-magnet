@@ -46,6 +46,7 @@ OPP_SIMILAR_PRODUCT_DISCOUNT = "similar_product_discount"
 OPP_CART_ABANDONMENT = "cart_abandonment"
 OPP_WISHLIST_INACTIVITY = "wishlist_inactivity"
 OPP_HOT_TO_WARM_REENGAGEMENT = "hot_to_warm_reengagement"
+OPP_PRODUCT_PRICE_DROP = "product_price_drop"
 
 ALL_OPPORTUNITY_TYPES = [
     OPP_CART_ITEM_DISCOUNT,
@@ -54,6 +55,7 @@ ALL_OPPORTUNITY_TYPES = [
     OPP_CART_ABANDONMENT,
     OPP_WISHLIST_INACTIVITY,
     OPP_HOT_TO_WARM_REENGAGEMENT,
+    OPP_PRODUCT_PRICE_DROP,
 ]
 
 
@@ -413,7 +415,11 @@ def find_similar_discounted_products(target_product, db, limit=3, exclude_produc
         cand_brand = (cand.get("brand") or "").casefold()
         brand_score = 1.5 if (cand_brand and cand_brand != target_brand) else 1.0
         discount_score = disc_info["discount_percent"] * 0.1
-        rating_score = float(cand.get("rating", 4.0))
+        cand_rating = cand.get("rating")
+        try:
+            rating_score = float(cand_rating) if cand_rating is not None else 4.0
+        except (ValueError, TypeError):
+            rating_score = 4.0
 
         total_score = brand_score + discount_score + rating_score
 
@@ -425,7 +431,7 @@ def find_similar_discounted_products(target_product, db, limit=3, exclude_produc
     return [item[1] for item in matching_discounted[:limit]]
 
 
-def _is_within_opportunity_cooldown(customer_id, db, cooldown_hours=OPPORTUNITY_COOLDOWN_HOURS):
+def _is_within_opportunity_cooldown(customer_id, db, cooldown_hours=OPPORTUNITY_COOLDOWN_HOURS, current_time=None):
     """Check if customer was sent any email within the opportunity cooldown period.
 
     Prevents multiple emails in rapid succession to the same customer.
@@ -463,7 +469,11 @@ def _is_within_opportunity_cooldown(customer_id, db, cooldown_hours=OPPORTUNITY_
     if sent_at.tzinfo is None:
         sent_at = sent_at.replace(tzinfo=timezone.utc)
 
-    return datetime.now(timezone.utc) < (sent_at + timedelta(hours=cooldown_hours))
+    now_dt = current_time or datetime.now(timezone.utc)
+    if now_dt.tzinfo is None:
+        now_dt = now_dt.replace(tzinfo=timezone.utc)
+
+    return now_dt < (sent_at + timedelta(hours=cooldown_hours))
 
 
 def detect_opportunities_for_customer(customer_id, db, lead_state_doc=None, current_time=None):
@@ -914,6 +924,59 @@ def build_opportunity_email_content(opportunity, customer_name, store_url):
             "Best regards,\n"
             "The Lead Magnet Team"
         )
+    elif opp_type == OPP_PRODUCT_PRICE_DROP:
+        prod_name = meta.get("product_title") or meta.get("product_name") or "an item you were interested in"
+        old_price = meta.get("old_price", 0)
+        curr_price = meta.get("new_price", 0)
+
+        def _fmt_price(val):
+            try:
+                f_val = float(val)
+                if f_val.is_integer():
+                    return f"₹{int(f_val)}"
+                return f"₹{f_val:,.2f}"
+            except (ValueError, TypeError):
+                return f"₹{val}"
+
+        old_str = _fmt_price(old_price)
+        curr_str = _fmt_price(curr_price)
+
+        interest_src = str(meta.get("interest_source", "cart")).lower()
+        if "wishlist" in interest_src and "cart" not in interest_src:
+            lead_line = f"Good news! The {prod_name} on your wishlist is now {curr_str}, down from {old_str}."
+            target_url = meta.get("product_url") or meta.get("url") or f"{store_url}/wishlist"
+        else:
+            lead_line = f"Good news! The {prod_name} in your cart is now {curr_str}, down from {old_str}."
+            target_url = meta.get("product_url") or meta.get("url") or f"{store_url}/cart"
+
+        disc_amt = meta.get("discount_amount")
+        if disc_amt is None and old_price and curr_price and old_price > curr_price:
+            disc_amt = round(old_price - curr_price, 2)
+        disc_pct = meta.get("discount_percentage") or meta.get("discount_percent")
+        if disc_pct is None and old_price and curr_price and old_price > curr_price:
+            disc_pct = int(round(((old_price - curr_price) / old_price) * 100))
+
+        discount_line = ""
+        if disc_amt and disc_pct:
+            discount_line = f"Save {_fmt_price(disc_amt)} ({disc_pct}% off)!"
+        elif disc_pct:
+            discount_line = f"Save {disc_pct}% off!"
+        elif disc_amt:
+            discount_line = f"Save {_fmt_price(disc_amt)}!"
+
+        subject = f"Price drop: {prod_name} is now down to {curr_str}!"
+
+        body_lines = [
+            f"Hi {name},\n",
+            lead_line,
+        ]
+        if discount_line:
+            body_lines.append(discount_line)
+        body_lines.extend([
+            f"View product:\n{target_url}\n",
+            "Best regards,\nThe Lead Magnet Team"
+        ])
+        body = "\n\n".join([line for line in body_lines if line.strip()])
     else:
         subject = "You might be interested in these collections — Lead Magnet"
         body = (
@@ -959,6 +1022,22 @@ def process_customer_opportunities(
 
     # 1. Detect Opportunities
     opportunities = detect_opportunities_for_customer(query_id, db, lead_state_doc=lead_state_doc, current_time=current_time)
+
+    opp_col = db["marketing_opportunities"]
+    try:
+        pending_pd = list(opp_col.find({
+            "customer_id": query_id,
+            "opportunity_type": OPP_PRODUCT_PRICE_DROP,
+            "opportunity_state": "detected",
+        }))
+        existing_keys = {o.get("opportunity_key") for o in opportunities}
+        for pd_opp in pending_pd:
+            if pd_opp.get("opportunity_key") not in existing_keys:
+                opportunities.append(pd_opp)
+                existing_keys.add(pd_opp.get("opportunity_key"))
+    except Exception:
+        pass
+
     if not opportunities:
         return {"detected_count": 0, "communicated": [], "skipped": []}
 
@@ -981,7 +1060,6 @@ def process_customer_opportunities(
     cust_name = (profile.get("full_name") or profile.get("username") or "there") if profile else "there"
     store_url = get_store_url()
 
-    opp_col = db["marketing_opportunities"]
     communicated = []
     skipped = []
 
@@ -1014,6 +1092,21 @@ def process_customer_opportunities(
         subject, body = build_opportunity_email_content(opp, cust_name, store_url)
         email_idempotency_key = f"{opp_key}:email"
 
+        opp_meta = opp.get("metadata") or {}
+        comm_meta = {
+            "opportunity_key": opp_key,
+            "opportunity_type": opp.get("opportunity_type"),
+            "product_id": str(opp.get("product_id") or ""),
+        }
+        if opp_meta.get("primary_image"):
+            comm_meta["primary_image"] = opp_meta.get("primary_image")
+        if opp_meta.get("product_url"):
+            comm_meta["product_url"] = opp_meta.get("product_url")
+        if opp_meta.get("old_price") is not None:
+            comm_meta["old_price"] = opp_meta.get("old_price")
+        if opp_meta.get("new_price") is not None:
+            comm_meta["new_price"] = opp_meta.get("new_price")
+
         # 4. Dispatch Email (Gmail SMTP / dry-run provider)
         comm_res = dispatch_communication(
             db,
@@ -1023,11 +1116,7 @@ def process_customer_opportunities(
             recipient=recipient_email,
             subject=subject,
             body=body,
-            metadata={
-                "opportunity_key": opp_key,
-                "opportunity_type": opp.get("opportunity_type"),
-                "product_id": str(opp.get("product_id") or ""),
-            },
+            metadata=comm_meta,
             idempotency_key=email_idempotency_key,
             provider=provider,
         )

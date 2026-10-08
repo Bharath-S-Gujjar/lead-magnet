@@ -1,7 +1,14 @@
-"""Wishlist service handling persistent wishlist operations in MongoDB."""
+"""Wishlist service handling persistent wishlist operations in MongoDB.
+
+Supports live Myntra string product IDs (e.g. 'myntra_28420390') as well as
+legacy ObjectId values where required by existing tests.
+"""
 
 from datetime import datetime, timezone
+from typing import Any, Optional
 from bson import ObjectId
+
+from product_lookup import resolve_product_doc
 
 
 def _build_query(user_id=None, anonymous_id=None):
@@ -12,48 +19,107 @@ def _build_query(user_id=None, anonymous_id=None):
     raise ValueError("Either user_id or anonymous_id must be provided")
 
 
+def _product_match_cond(product_id: Any, canonical_pid: Optional[str] = None):
+    """Build condition matching stored wishlist product_id in various valid formats."""
+    pids = []
+    if product_id is not None:
+        pids.append(product_id)
+        if isinstance(product_id, str):
+            if ObjectId.is_valid(product_id):
+                pids.append(ObjectId(product_id))
+        elif isinstance(product_id, ObjectId):
+            pids.append(str(product_id))
+
+    if canonical_pid:
+        pids.append(canonical_pid)
+        if ObjectId.is_valid(canonical_pid):
+            pids.append(ObjectId(canonical_pid))
+
+    unique_pids = []
+    seen = set()
+    for p in pids:
+        key = (type(p), str(p))
+        if key not in seen:
+            seen.add(key)
+            unique_pids.append(p)
+
+    if len(unique_pids) == 1:
+        return {"product_id": unique_pids[0]}
+    return {"product_id": {"$in": unique_pids}}
+
+
 def get_user_wishlist(wishlist_collection, products_collection, user_id=None, anonymous_id=None):
-    """Fetch wishlist items with populated product details."""
+    """Fetch wishlist items with populated Myntra product details."""
     query = _build_query(user_id, anonymous_id)
     wishlist_items = list(wishlist_collection.find(query))
 
     result = []
     for item in wishlist_items:
         p_id = item.get("product_id")
-        if isinstance(p_id, str):
-            p_id = ObjectId(p_id)
-        product = products_collection.find_one({"_id": p_id}) if p_id else None
+        product = resolve_product_doc(products_collection, p_id) if p_id else None
         if product:
+            resolved_pid = str(product.get("product_id") or p_id or product.get("_id"))
+            name = product.get("title") or product.get("name") or "Product"
+            primary_img = product.get("primary_image") or product.get("image")
+            if not primary_img and isinstance(product.get("images"), list) and product["images"]:
+                primary_img = product["images"][0]
+
+            price_val = product.get("price")
+            if price_val is None:
+                price_val = product.get("current_price", 0)
+
+            disc_val = product.get("discount_percent") or product.get("discount", 0)
+
+            created_at = item.get("created_at")
+            if isinstance(created_at, datetime):
+                created_at = created_at.isoformat()
+
             result.append({
                 "wishlist_item_id": str(item["_id"]),
-                "product_id": str(product["_id"]),
-                "name": product.get("name"),
-                "price": product.get("price", 0),
-                "image": product.get("image") or (product.get("images", [None])[0] if isinstance(product.get("images"), list) else None),
+                "product_id": resolved_pid,
+                "name": name,
+                "title": name,
+                "price": price_val,
+                "mrp": product.get("mrp") or product.get("price_before_discount"),
+                "discount": disc_val,
+                "discount_percent": disc_val,
+                "image": primary_img,
+                "primary_image": primary_img,
                 "category": product.get("category"),
                 "brand": product.get("brand"),
-                "added_at": item.get("created_at").isoformat() if isinstance(item.get("created_at"), datetime) else item.get("created_at"),
+                "url": product.get("url"),
+                "added_at": created_at,
             })
 
     return result
 
 
 def add_to_wishlist(wishlist_collection, products_collection, product_id, user_id=None, anonymous_id=None):
-    """Add a product to wishlist if not already present."""
-    query = _build_query(user_id, anonymous_id)
-    p_id = ObjectId(product_id) if isinstance(product_id, str) else product_id
+    """Add a product to wishlist if not already present.
 
-    product = products_collection.find_one({"_id": p_id})
+    Preserves exact Myntra product_id (e.g. 'myntra_28420390').
+    """
+    query = _build_query(user_id, anonymous_id)
+    product = resolve_product_doc(products_collection, product_id)
     if not product:
         raise ValueError("Product not found")
 
-    item_query = {**query, "product_id": p_id}
+    if isinstance(product_id, str) and (product_id.startswith("myntra_") or product.get("product_id")):
+        canonical_pid = product.get("product_id") or product_id
+    elif isinstance(product_id, ObjectId):
+        canonical_pid = product_id
+    elif isinstance(product_id, str) and ObjectId.is_valid(product_id):
+        canonical_pid = ObjectId(product_id)
+    else:
+        canonical_pid = product.get("product_id") or product_id
+
+    item_query = {**query, **_product_match_cond(product_id, canonical_pid)}
     existing = wishlist_collection.find_one(item_query)
 
     if not existing:
         doc = {
             **query,
-            "product_id": p_id,
+            "product_id": canonical_pid,
             "created_at": datetime.now(timezone.utc)
         }
         wishlist_collection.insert_one(doc)
@@ -64,8 +130,11 @@ def add_to_wishlist(wishlist_collection, products_collection, product_id, user_i
 def remove_from_wishlist(wishlist_collection, products_collection, product_id, user_id=None, anonymous_id=None):
     """Remove a product from wishlist."""
     query = _build_query(user_id, anonymous_id)
-    p_id = ObjectId(product_id) if isinstance(product_id, str) else product_id
-    wishlist_collection.delete_one({**query, "product_id": p_id})
+    product = resolve_product_doc(products_collection, product_id)
+    canonical_pid = product.get("product_id") if product else None
+    item_query = {**query, **_product_match_cond(product_id, canonical_pid)}
+
+    wishlist_collection.delete_one(item_query)
     return get_user_wishlist(wishlist_collection, products_collection, user_id, anonymous_id)
 
 
@@ -86,7 +155,8 @@ def merge_anonymous_wishlist(wishlist_collection, anonymous_id, user_id):
     merged_count = 0
     for item in anon_items:
         p_id = item["product_id"]
-        existing = wishlist_collection.find_one({"user_id": u_id, "product_id": p_id})
+        cond = _product_match_cond(p_id)
+        existing = wishlist_collection.find_one({"user_id": u_id, **cond})
         if existing:
             wishlist_collection.delete_one({"_id": item["_id"]})
         else:

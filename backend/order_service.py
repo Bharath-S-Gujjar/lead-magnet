@@ -1,8 +1,13 @@
-"""Order service handling completed customer orders in MongoDB."""
+"""Order service handling completed customer orders in MongoDB.
+
+Supports live Myntra string product IDs (e.g. 'myntra_28420390') and snapshots
+product prices at checkout time to prevent post-order drift.
+"""
 
 from datetime import datetime, timezone
 from bson import ObjectId
 from cart_service import clear_cart
+from product_lookup import resolve_product_doc
 
 
 def _owner_query(user_id=None, anonymous_id=None):
@@ -13,53 +18,51 @@ def _owner_query(user_id=None, anonymous_id=None):
     raise ValueError("Authenticated user_id is required")
 
 
-def _validated_cart_items(cart_collection, products_collection, user_id=None, anonymous_id=None, item_ids=None):
+def _validated_cart_items(cart_collection, products_collection, user_id=None, anonymous_id=None):
     owner_query = _owner_query(user_id, anonymous_id)
-    query = dict(owner_query)
-    if item_ids:
-        parsed_ids = []
-        for iid in item_ids:
-            if isinstance(iid, dict):
-                iid = iid.get("product_id") or iid.get("id") or iid.get("_id")
-            if isinstance(iid, str) and ObjectId.is_valid(iid):
-                parsed_ids.append(ObjectId(iid))
-            elif isinstance(iid, ObjectId):
-                parsed_ids.append(iid)
-        if parsed_ids:
-            query["product_id"] = {"$in": parsed_ids}
-
-    cart_items = list(cart_collection.find(query))
+    cart_items = list(cart_collection.find(owner_query))
     if not cart_items:
         raise ValueError("Cannot create order from an empty cart")
 
     order_items = []
     for cart_item in cart_items:
-        product_id = cart_item.get("product_id")
-        if isinstance(product_id, str):
-            if not ObjectId.is_valid(product_id):
-                raise ValueError("Cart contains an invalid product")
-            product_id = ObjectId(product_id)
-        if not isinstance(product_id, ObjectId):
+        raw_pid = cart_item.get("product_id")
+        if not raw_pid:
             raise ValueError("Cart contains an invalid product")
 
-        product = products_collection.find_one({"_id": product_id})
-        if not product or not isinstance(product.get("price"), (int, float)):
+        product = resolve_product_doc(products_collection, raw_pid)
+        if not product:
             raise ValueError("Cart contains an unavailable product")
+
+        price_val = product.get("price")
+        if price_val is None:
+            price_val = product.get("current_price")
+        if price_val is None or not isinstance(price_val, (int, float)):
+            raise ValueError("Cart contains an unavailable product")
+        price = price_val
 
         quantity = cart_item.get("quantity")
         if isinstance(quantity, bool) or not isinstance(quantity, int) or quantity <= 0:
             raise ValueError("Cart contains an invalid quantity")
 
-        price = product["price"]
+        canonical_pid = str(product.get("product_id") or raw_pid or product.get("_id"))
+        title = product.get("title") or product.get("name") or "Product"
+        primary_img = product.get("primary_image") or product.get("image")
+        if not primary_img and isinstance(product.get("images"), list) and product["images"]:
+            primary_img = product["images"][0]
+
         order_items.append({
-            "product_id": str(product_id),
-            "name": product.get("name"),
+            "product_id": canonical_pid,
+            "name": title,
+            "title": title,
             "price": price,
             "quantity": quantity,
-            "subtotal": price * quantity,
-            "image": product.get("image") or (product.get("images", [None])[0] if isinstance(product.get("images"), list) else None),
+            "subtotal": round(price * quantity, 2) if isinstance(price, float) else price * quantity,
+            "image": primary_img,
+            "primary_image": primary_img,
             "category": product.get("category"),
             "brand": product.get("brand"),
+            "url": product.get("url"),
         })
 
     return owner_query, order_items
@@ -75,13 +78,11 @@ def create_order(
     customer_name=None,
     shipping_address=None,
     payment_method="Credit Card",
-    items=None,
-    product_ids=None,
+    **kwargs,
 ):
-    """Create an order from current cart items, remove purchased items from the cart, and return the order doc."""
-    target_ids = product_ids or items
+    """Create an order from current cart items, clear the cart, and return the order doc."""
     owner_query, order_items = _validated_cart_items(
-        cart_collection, products_collection, user_id, anonymous_id, item_ids=target_ids
+        cart_collection, products_collection, user_id, anonymous_id
     )
     total_amount = sum(item["subtotal"] for item in order_items)
     u_id = ObjectId(user_id) if (user_id and isinstance(user_id, str)) else user_id
@@ -93,7 +94,7 @@ def create_order(
         "customer_email": customer_email,
         "customer_name": customer_name,
         "items": order_items,
-        "total_amount": total_amount,
+        "total_amount": round(total_amount, 2) if isinstance(total_amount, float) else total_amount,
         "shipping_address": shipping_address or {},
         "payment_method": payment_method,
         "payment_status": "Paid",
@@ -106,16 +107,8 @@ def create_order(
     result = orders_collection.insert_one(order_doc)
     order_doc["_id"] = result.inserted_id
 
-    # Remove only purchased cart items from active cart state
-    purchased_product_ids = [
-        ObjectId(item["product_id"]) if isinstance(item["product_id"], str) and ObjectId.is_valid(item["product_id"]) else item["product_id"]
-        for item in order_items
-        if item.get("product_id")
-    ]
-    if purchased_product_ids:
-        cart_collection.delete_many({**owner_query, "product_id": {"$in": purchased_product_ids}})
-    else:
-        clear_cart(cart_collection, **owner_query)
+    # Clear user cart after placing order
+    clear_cart(cart_collection, **owner_query)
 
     return order_doc
 

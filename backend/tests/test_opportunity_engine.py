@@ -162,6 +162,7 @@ class OpportunityEngineTests(unittest.TestCase):
         self.track("products", pid)
         doc = {
             "_id": pid,
+            "product_id": str(pid),
             "name": name,
             "category": category,
             "brand": brand,
@@ -640,7 +641,7 @@ class OpportunityEngineTests(unittest.TestCase):
     def test_22_opportunity_idempotency_key_prevents_duplicate_sends(self):
         cid = self._create_profile()
         self._create_lead_state(cid, prob=0.83, score=83, segment="Hot")
-        prod = self._create_product("Mufti Shirt", category="Shirts", price=1200, discount=15)
+        prod = self._create_product("Mufti Shirt", category="UniqueIdempotencyShirts", price=1200, discount=15)
         wl_id = ObjectId()
         self.track("wishlist", wl_id)
         self.db["wishlist"].insert_one({"_id": wl_id, "user_id": cid, "product_id": prod["_id"]})

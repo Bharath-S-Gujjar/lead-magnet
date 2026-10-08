@@ -26,7 +26,8 @@ from identity_service import generate_anonymous_id, resolve_anonymous_identity
 from lead_processing_service import process_session
 from behavior_event_service import BehaviorEventError, log_behavior_event
 from customer_profile_service import build_profile_update, apply_profile_update, get_customer_profile
-from seed_clothing_products import seed_clothing_products_if_empty
+from myntra_product_sync_service import ensure_myntra_product_indexes
+from product_lookup import resolve_product_doc, normalize_product_response
 from cart_service import get_user_cart, add_to_cart, update_cart_quantity, remove_from_cart, clear_cart
 from wishlist_service import get_user_wishlist, add_to_wishlist, remove_from_wishlist, clear_wishlist
 from order_service import create_order as create_order_from_cart, get_user_orders, get_order_by_id
@@ -175,11 +176,16 @@ def create_mongo_client():
 
 
 def ensure_product_indexes(products_collection):
-    """Create the minimal indexes used by the existing product queries, safely idempotently."""
+    """Create indexes used by product queries, safely and idempotently."""
+    try:
+        ensure_myntra_product_indexes(products_collection)
+    except Exception:
+        pass
     try:
         existing = {index["name"] for index in products_collection.list_indexes()}
         for index_name, fields, unique in [
             ("category_1", [("category", 1)], False),
+            ("title_1", [("title", 1)], False),
             ("name_1", [("name", 1)], False),
             ("brand_1", [("brand", 1)], False),
             ("gender_1", [("gender", 1)], False),
@@ -205,7 +211,7 @@ def bind_collections(client):
     db = client[db_name]
     profiles_collection = db["user_profiles"]
     legacy_users_collection = db["users"]
-    products_collection = db["products"]
+    products_collection = db["myntra_products"]
     sessions_collection = db["sessions"]
     events_collection = db["events"]
     leads_collection = db["leads"]
@@ -220,6 +226,7 @@ def bind_collections(client):
     marketing_communications_collection = db["marketing_communications"]
     admin_notifications_collection = db["admin_notifications"]
     lead_score_history_collection = db["lead_score_history"]
+    ensure_myntra_product_indexes(products_collection)
     ensure_product_indexes(products_collection)
     ensure_customer_features_indexes(customer_features_collection)
     ensure_customer_lead_state_indexes(customer_lead_state_collection)
@@ -344,11 +351,6 @@ def initialize_database():
         return
 
     migrate_users_to_profiles_once()
-    if os.getenv("AUTO_SEED_PRODUCTS", "false").lower() == "true":
-        try:
-            seed_clothing_products_if_empty(products_collection)
-        except Exception as e:
-            print(f"Warning: Automatic product seeding failed: {e}")
 
 
 @app.before_request
@@ -755,16 +757,24 @@ def get_products():
             try:
                 max_p = float(max_price)
                 if max_p > 0:
-                    query["price"] = {"$lte": max_p}
+                    query["$or"] = [
+                        {"price": {"$lte": max_p}},
+                        {"current_price": {"$lte": max_p}},
+                    ]
             except (ValueError, TypeError):
                 pass
         if search and search.strip():
             s = search.strip()
-            query["$or"] = [
+            search_cond = [
+                {"title": {"$regex": re.escape(s), "$options": "i"}},
                 {"name": {"$regex": re.escape(s), "$options": "i"}},
                 {"brand": {"$regex": re.escape(s), "$options": "i"}},
                 {"category": {"$regex": re.escape(s), "$options": "i"}},
             ]
+            if "$or" in query:
+                query["$and"] = [{"$or": query.pop("$or")}, {"$or": search_cond}]
+            else:
+                query["$or"] = search_cond
 
         total = products_collection.count_documents(query)
         pages = math.ceil(total / limit) if total > 0 else 1
@@ -783,12 +793,7 @@ def get_products():
             })
 
         cursor = products_collection.find(query).sort("_id", 1).skip(skip).limit(limit)
-        items = list(cursor)
-
-        for item in items:
-            item["_id"] = str(item["_id"])
-            if "id" not in item:
-                item["id"] = item["_id"]
+        items = [normalize_product_response(item) for item in cursor]
 
         return jsonify({
             "success": True,
@@ -867,18 +872,12 @@ def get_product(product_id):
         return jsonify({"success": False, "message": "Database unavailable", "errors": []}), 500
 
     try:
-        item = None
-        if ObjectId.is_valid(product_id):
-            item = products_collection.find_one({"_id": ObjectId(product_id)})
-        if not item:
-            item = products_collection.find_one({"product_id": str(product_id)})
+        item = resolve_product_doc(products_collection, product_id)
         if not item:
             return jsonify({"success": False, "message": "Product not found", "errors": []}), 404
 
-        item["_id"] = str(item["_id"])
-        if "id" not in item:
-            item["id"] = item["_id"]
-        return jsonify({"success": True, "message": "Product fetched", "data": item})
+        norm = normalize_product_response(item)
+        return jsonify({"success": True, "message": "Product fetched", "data": norm})
     except Exception:
         return jsonify({"success": False, "message": "Product not found", "errors": []}), 404
 
@@ -1571,12 +1570,14 @@ def add_to_cart_route():
         return error
     session_id = data.get("session_id")
 
-    if not product_id:
+    if not product_id or not str(product_id).strip():
         return jsonify({"success": False, "message": "product_id is required"}), 400
 
+    product_doc = resolve_product_doc(products_collection, product_id)
+    if not product_doc:
+        return jsonify({"success": False, "message": "Product not found", "errors": []}), 400
+
     try:
-        if not ObjectId.is_valid(product_id):
-            return jsonify({"success": False, "message": "Product not found", "errors": []}), 400
         quantity = int(data.get("quantity", 1))
     except (TypeError, ValueError):
         return jsonify({"success": False, "message": "quantity must be a positive integer"}), 400
@@ -1592,7 +1593,7 @@ def add_to_cart_route():
                     sessions_collection=sessions_collection,
                     session_id=session_id,
                     event_type="add_to_cart",
-                    entity={"type": "product", "id": product_id},
+                    entity={"type": "product", "id": str(product_id)},
                     metadata={"quantity": quantity},
                     **owner
                 )
@@ -1614,11 +1615,11 @@ def update_cart_route(product_id):
     if error:
         return error
 
+    product_doc = resolve_product_doc(products_collection, product_id)
+    if not product_doc:
+        return jsonify({"success": False, "message": "Product not found", "errors": []}), 400
+
     try:
-        if not ObjectId.is_valid(product_id):
-            return jsonify({"success": False, "message": "Product not found", "errors": []}), 400
-        if not products_collection.find_one({"_id": ObjectId(product_id)}, {"_id": 1}):
-            return jsonify({"success": False, "message": "Product not found", "errors": []}), 400
         quantity = int(data.get("quantity", 1))
     except (TypeError, ValueError):
         return jsonify({"success": False, "message": "quantity must be an integer"}), 400
@@ -1643,8 +1644,6 @@ def remove_from_cart_route(product_id):
         return error
 
     try:
-        if not ObjectId.is_valid(product_id):
-            return jsonify({"success": False, "message": "Product not found", "errors": []}), 400
         items = remove_from_cart(cart_collection, products_collection, product_id, **owner)
         if session_id:
             try:
@@ -1653,7 +1652,7 @@ def remove_from_cart_route(product_id):
                     sessions_collection=sessions_collection,
                     session_id=session_id,
                     event_type="remove_from_cart",
-                    entity={"type": "product", "id": product_id},
+                    entity={"type": "product", "id": str(product_id)},
                     **owner
                 )
             except Exception:
@@ -1714,12 +1713,14 @@ def add_to_wishlist_route():
         return error
     session_id = data.get("session_id")
 
-    if not product_id:
+    if not product_id or not str(product_id).strip():
         return jsonify({"success": False, "message": "product_id is required"}), 400
 
+    product_doc = resolve_product_doc(products_collection, product_id)
+    if not product_doc:
+        return jsonify({"success": False, "message": "Product not found", "errors": []}), 400
+
     try:
-        if not ObjectId.is_valid(product_id):
-            return jsonify({"success": False, "message": "Product not found", "errors": []}), 400
         items = add_to_wishlist(wishlist_collection, products_collection, product_id, **owner)
         if session_id:
             try:
@@ -1728,7 +1729,7 @@ def add_to_wishlist_route():
                     sessions_collection=sessions_collection,
                     session_id=session_id,
                     event_type="wishlist_add",
-                    entity={"type": "product", "id": product_id},
+                    entity={"type": "product", "id": str(product_id)},
                     **owner
                 )
             except Exception:
@@ -1752,8 +1753,6 @@ def remove_from_wishlist_route(product_id):
         return error
 
     try:
-        if not ObjectId.is_valid(product_id):
-            return jsonify({"success": False, "message": "Product not found", "errors": []}), 400
         items = remove_from_wishlist(wishlist_collection, products_collection, product_id, **owner)
         if session_id:
             try:
@@ -1762,7 +1761,7 @@ def remove_from_wishlist_route(product_id):
                     sessions_collection=sessions_collection,
                     session_id=session_id,
                     event_type="wishlist_remove",
-                    entity={"type": "product", "id": product_id},
+                    entity={"type": "product", "id": str(product_id)},
                     **owner
                 )
             except Exception:
@@ -2310,6 +2309,62 @@ def admin_recent_activity_route():
         return jsonify({"success": False, "message": str(e), "data": []}), 500
 
 
+@app.route("/api/admin/catalog/status", methods=["GET"])
+@admin_required
+def admin_catalog_status_route():
+    """Check catalog refresh status and whether a refresh is due."""
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable"}), 500
+    try:
+        from myntra_catalog_refresh_service import is_refresh_due, get_catalog_sync_metadata
+        metadata = get_catalog_sync_metadata(db)
+        due, reason, elapsed = is_refresh_due(db=db)
+        total_products = products_collection.count_documents({}) if products_collection is not None else 0
+        return jsonify({
+            "success": True,
+            "data": {
+                "refresh_due": due,
+                "reason": reason,
+                "elapsed_days": elapsed,
+                "total_products": total_products,
+                "last_refresh_metadata": metadata,
+            }
+        })
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/admin/catalog/refresh", methods=["POST"])
+@admin_required
+def admin_catalog_refresh_route():
+    """Controlled dynamic Myntra catalog refresh trigger with credit guardrails."""
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable"}), 500
+    try:
+        from myntra_catalog_refresh_service import run_catalog_refresh
+        body = request.get_json(silent=True) or {}
+        force = bool(body.get("force", request.args.get("force", "false").lower() == "true"))
+        max_calls = body.get("max_calls") or request.args.get("max_calls")
+        if max_calls is not None:
+            try:
+                max_calls = int(max_calls)
+            except ValueError:
+                max_calls = None
+
+        report = run_catalog_refresh(
+            force=force,
+            max_calls=max_calls,
+            db=db,
+            products_collection=products_collection,
+        )
+        return jsonify({"success": True, "data": report})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+
+
+
 
 @socketio.on("connect")
 def handle_socketio_connect():
@@ -2364,8 +2419,6 @@ def create_order():
             customer_name=customer.get("full_name") or customer.get("username"),
             shipping_address=data.get("shipping_address"),
             payment_method=data.get("payment_method", "Credit Card"),
-            items=data.get("items"),
-            product_ids=data.get("product_ids"),
         )
         now = order_doc["created_at"]
 

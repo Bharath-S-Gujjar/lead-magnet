@@ -8,13 +8,23 @@ import { fetchProductById, fetchProducts, trackCustomerEvent } from '../services
 import { ProductCard } from '../components/ProductCard';
 
 function normalizeProduct(product) {
+  const primaryImg = product.primary_image || product.image || product.images?.[0] || '';
+  const images = (Array.isArray(product.images) && product.images.length > 0)
+    ? product.images
+    : (primaryImg ? [primaryImg] : []);
+  const title = product.title || product.name || '';
   return {
     ...product,
-    id: product._id || product.id,
-    image: product.image || product.images?.[0] || '',
-    images: product.images || (product.image ? [product.image] : []),
+    id: product.product_id || product.id || product._id,
+    product_id: product.product_id || product.id || product._id,
+    name: title,
+    title: title,
+    image: primaryImg,
+    primary_image: primaryImg,
+    images: images,
     rating: product.rating || 4.3,
-    discount: product.discount || 0,
+    discount: product.discount_percent || product.discount || 0,
+    originalPrice: product.mrp || product.price_before_discount || null,
     sizes: product.sizes || ['S', 'M', 'L', 'XL'],
     colors: product.colors || ['Classic'],
     fabric: product.fabric || '100% Premium Cotton',
@@ -22,7 +32,7 @@ function normalizeProduct(product) {
     fit: product.fit || 'Comfort Regular Fit',
     washInstructions: product.washInstructions || 'Machine wash cold with like colors',
     price: Number(product.price || 0),
-    description: product.description || `Premium quality ${product.category || 'clothing'} designed by ${product.brand || 'Lead Magnet'} for modern everyday comfort and style.`
+    description: product.description || `${title} by ${product.brand || 'Myntra'} - authentic clothing.`
   };
 }
 
