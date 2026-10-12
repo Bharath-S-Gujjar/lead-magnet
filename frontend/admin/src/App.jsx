@@ -16,6 +16,7 @@ import { CustomerTable } from './components/customers/CustomerTable';
 import { CustomerDetailDrawer } from './components/customers/CustomerDetailDrawer';
 import { getAdminIntelligenceLeads } from './services/api';
 import { AlertCircle, BarChart3, Sliders, Zap, Layers } from 'lucide-react';
+import ParticleDrift from './components/ParticleDrift';
 
 function ProtectedAdminDashboard() {
   const { admin, isAdminAuthenticated } = useAdminAuth();
@@ -81,7 +82,32 @@ function ProtectedAdminDashboard() {
   };
 
   return (
-    <div className="app-layout">
+    <div className="app-layout" style={{ position: 'relative', width: '100%' }}>
+      {/* Particle Drift 2 Interactive WebGL Background */}
+      <div
+        className="particle-drift-background-container"
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100vw',
+          height: '100vh',
+          zIndex: 0,
+          pointerEvents: 'none',
+          overflow: 'hidden'
+        }}
+      >
+        <ParticleDrift
+          background="transparent"
+          baseColor="#A7A7A7"
+          accentColor="#CC5500"
+          density={120}
+          dotSize={3.5}
+          speed={20}
+          hover={200}
+        />
+      </div>
+
       {/* 1. TOP HEADER */}
       <Topbar 
         searchQuery={searchQuery}
@@ -90,7 +116,7 @@ function ProtectedAdminDashboard() {
       />
 
       {/* MAIN CONTENT BODY */}
-      <main className="content-body">
+      <main className="content-body" style={{ position: 'relative', zIndex: 1 }}>
         {/* Global Error Banner */}
         {error && (
           <div className="glass-card" style={{ padding: '16px 24px', marginBottom: '20px', color: 'var(--accent-rose)', display: 'flex', alignItems: 'center', gap: '10px' }} role="alert">
@@ -102,15 +128,20 @@ function ProtectedAdminDashboard() {
         {/* 2. MAIN ANALYTICS CARDS */}
         <LeadAnalyticsSummary onRefresh={loadLeads} />
 
-        {/* PHASE 17A: NAVIGATION TABS FOR DEEP INTELLIGENCE */}
-        <div style={{
-          display: 'flex',
-          gap: '12px',
-          margin: '24px 0 16px 0',
-          borderBottom: '1px solid var(--panel-border)',
-          paddingBottom: '12px',
-          overflowX: 'auto'
-        }}>
+        {/* NAVIGATION TABS FOR DEEP INTELLIGENCE */}
+        <nav
+          className="admin-nav-tabs"
+          aria-label="Dashboard Navigation Tabs"
+          style={{
+            display: 'flex',
+            gap: '12px',
+            margin: '32px 0 24px 0',
+            borderBottom: '1px solid var(--panel-border)',
+            paddingBottom: '14px',
+            overflowX: 'auto',
+            WebkitOverflowScrolling: 'touch'
+          }}
+        >
           <button
             onClick={() => setActiveTab('overview')}
             className={`btn ${activeTab === 'overview' ? 'btn-primary' : 'btn-ghost'}`}
@@ -146,11 +177,11 @@ function ProtectedAdminDashboard() {
             <Sliders size={16} />
             <span>What-If Simulator</span>
           </button>
-        </div>
+        </nav>
 
         {/* TAB 1: OVERVIEW & DIRECTORY */}
         {activeTab === 'overview' && (
-          <>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             {/* CUSTOMER LEAD DISTRIBUTION */}
             <GenderDistribution />
 
@@ -175,7 +206,7 @@ function ProtectedAdminDashboard() {
               searchQuery={searchQuery}
               onClearSearch={handleClearSearch}
             />
-          </>
+          </div>
         )}
 
         {/* TAB 2: FUNNEL & RFM INTELLIGENCE */}
@@ -188,7 +219,7 @@ function ProtectedAdminDashboard() {
 
         {/* TAB 3: REVENUE & LIVE FEED */}
         {activeTab === 'revenue' && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+          <div className="grid-2">
             <RevenueAttribution />
             <LiveActivityFeed />
           </div>
@@ -209,7 +240,7 @@ function ProtectedAdminDashboard() {
         isOpen={isDrawerOpen}
         onClose={() => {
           setIsDrawerOpen(false);
-          setSelectedCustomerId(null);
+          setTimeout(() => setSelectedCustomerId(null), 450);
         }}
       />
     </div>

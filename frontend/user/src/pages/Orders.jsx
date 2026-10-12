@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Package, CheckCircle, ShoppingBag, ArrowLeft } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
 import { fetchCustomerOrders, getCustomerSession, trackCustomerEvent } from '../services/api';
+import { getOptimizedImageUrl } from '../utils/imageOptimizer';
 
 export const Orders = () => {
   const navigate = useNavigate();
@@ -29,44 +29,51 @@ export const Orders = () => {
 
   if (!orders || orders.length === 0) {
     return (
-      <div className="glass-card" style={{ padding: '60px 24px', textAlign: 'center', maxWidth: '600px', margin: '40px auto' }}>
-        <Package size={54} style={{ color: 'var(--text-muted)', marginBottom: '16px' }} />
-        <h3 className="heading-lg" style={{ color: 'var(--text-primary)', marginBottom: '8px' }}>Your Orders is Empty</h3>
-        <p className="text-subtle" style={{ marginBottom: '24px' }}>Looks like you haven't placed any clothing orders yet.</p>
+      <div className="product-card" style={{ padding: '48px 24px', textAlign: 'center', maxWidth: '540px', margin: '40px auto' }}>
+        <h3 style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px' }}>
+          Your Orders List is Empty
+        </h3>
+        <p style={{ color: 'var(--text-secondary)', marginBottom: '20px', fontSize: '0.9rem' }}>
+          Looks like you have not placed any clothing orders yet.
+        </p>
         <Link to="/" className="btn btn-primary">
-          <ArrowLeft size={16} /> Explore Clothing Collection
+          Explore Clothing Collection
         </Link>
       </div>
     );
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       <div>
-        <h2 className="heading-xl" style={{ color: 'var(--text-primary)' }}>
+        <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-primary)' }}>
           My Clothing Orders & Purchases
         </h2>
-        <p className="text-subtle">Review your order history, track shipments, and easily reorder your favorite clothing items.</p>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', marginTop: '4px' }}>
+          Review your order history, track shipments, and reorder items.
+        </p>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
         {orders.map(order => {
           const firstItem = order.items?.[0];
           const totalQuantity = order.items?.reduce((sum, item) => sum + (item.quantity || 1), 0) || 1;
 
           return (
-            <div key={order._id} className="glass-card" style={{ padding: '24px', display: 'flex', alignItems: 'center', gap: '24px' }}>
+            <div key={order._id} className="product-card" style={{ padding: '18px', display: 'flex', alignItems: 'center', gap: '20px' }}>
               {firstItem?.image && (
-                <img 
-                  src={firstItem.image} 
-                  alt={firstItem.name || 'Order Item'} 
-                  style={{ width: '90px', height: '110px', borderRadius: 'var(--radius-md)', objectFit: 'cover' }}
+                <img
+                  src={getOptimizedImageUrl(firstItem.image, 200, 70)}
+                  alt={firstItem.name || 'Order Item'}
+                  loading="lazy"
+                  decoding="async"
+                  style={{ width: '80px', height: '95px', borderRadius: 'var(--radius-sm, 4px)', objectFit: 'cover' }}
                 />
               )}
 
               <div style={{ flex: 1 }}>
-                <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginBottom: '6px' }}>
-                  <span className="badge badge-indigo">
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '4px' }}>
+                  <span className="badge badge-primary">
                     {order._id}
                   </span>
                   <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
@@ -74,40 +81,55 @@ export const Orders = () => {
                   </span>
                 </div>
 
-                <h4 style={{ fontWeight: 700, fontSize: '1.05rem', color: 'var(--text-primary)', marginBottom: '4px' }}>
+                <h4 style={{ fontWeight: 600, fontSize: '0.98rem', color: 'var(--text-primary)', marginBottom: '4px' }}>
                   {firstItem?.name || 'Clothing Item'}
                 </h4>
                 <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-                  Brand: <strong>{firstItem?.brand || 'Lead Magnet'}</strong> • Qty: {totalQuantity}
+                  Brand: <strong>{firstItem?.brand || 'Lead Magnet'}</strong> - Qty: {totalQuantity}
                 </span>
               </div>
 
               <div style={{ textAlign: 'right' }}>
-                <div style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  fontSize: '0.82rem',
-                  fontWeight: 700,
-                  color: '#10b981',
-                  marginBottom: '8px'
-                }}>
-                  <CheckCircle size={15} /> {order.status || 'placed'}
+                <div style={{ marginBottom: '6px' }}>
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    background: (order.status === 'delivered')
+                      ? 'var(--color-primary-light, rgba(156, 175, 136, 0.15))'
+                      : (order.status === 'shipped')
+                      ? 'var(--color-secondary-light, rgba(167, 167, 167, 0.18))'
+                      : 'var(--color-tertiary-light, rgba(204, 85, 0, 0.12))',
+                    color: (order.status === 'delivered')
+                      ? 'var(--color-primary-dark, #6f805e)'
+                      : (order.status === 'shipped')
+                      ? 'var(--text-primary)'
+                      : 'var(--color-tertiary, #CC5500)',
+                    border: `1px solid ${(order.status === 'delivered') ? 'var(--color-primary, #9CAF88)' : (order.status === 'shipped') ? 'var(--color-secondary, #A7A7A7)' : 'rgba(204, 85, 0, 0.3)'}`
+                  }}>
+                    ● {order.status || 'placed'}
+                  </span>
                 </div>
-                <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '1.2rem', color: 'var(--text-primary)' }}>
+                <div style={{ fontWeight: 700, fontSize: '1.15rem', color: 'var(--text-primary)' }}>
                   ₹{(order.total_amount || 0).toLocaleString('en-IN')}
                 </div>
               </div>
 
-              {firstItem && (
-                <button 
-                  onClick={() => handleBuyAgain({ ...firstItem, id: firstItem.product_id })}
-                  className="btn btn-primary"
-                  style={{ padding: '10px 18px', fontSize: '0.85rem' }}
+              <div>
+                <button
+                  onClick={() => handleBuyAgain(firstItem)}
+                  className="btn btn-secondary"
+                  style={{ padding: '8px 16px', fontSize: '0.82rem' }}
                 >
-                  <ShoppingBag size={16} /> Buy Again
+                  Buy Again
                 </button>
-              )}
+              </div>
             </div>
           );
         })}
@@ -115,3 +137,5 @@ export const Orders = () => {
     </div>
   );
 };
+
+export default Orders;

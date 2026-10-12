@@ -1,194 +1,260 @@
-import React, { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Sparkles, ShoppingBag } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { getOptimizedImageUrl } from '../utils/imageOptimizer';
 
 const SLIDES = [
   {
     id: 1,
     badge: "NEW ARRIVALS 2026",
+    badgeColor: "var(--color-primary, #9CAF88)",
+    badgeTextColor: "#1a2016",
     title: "Summer Linen & Denim Collection",
     subtitle: "Discover lightweight organic linen blazers, relaxed tees, and vintage denim.",
     cta: "Shop Summer Collection",
+    ctaClass: "btn btn-primary",
     image: "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?w=1200&auto=format&fit=crop&q=80",
-    gradient: "linear-gradient(135deg, rgba(79, 70, 229, 0.85) 0%, rgba(59, 130, 246, 0.85) 100%)"
   },
   {
     id: 2,
-    badge: "LIMITED OFFER — FLAT 40% OFF",
+    badge: "LIMITED OFFER · FLAT 40% OFF",
+    badgeColor: "var(--color-tertiary, #CC5500)",
+    badgeTextColor: "#ffffff",
     title: "Heavyweight Hoodies & Streetwear",
     subtitle: "Uncompromising 450 GSM French terry cotton hoodies from Zara & H&M.",
-    cta: "Claim 40% Offer",
+    cta: "Claim 40% Discount",
+    ctaClass: "btn btn-tertiary",
     image: "https://images.unsplash.com/photo-1556905055-8f358a7a47b2?w=1200&auto=format&fit=crop&q=80",
-    gradient: "linear-gradient(135deg, rgba(244, 63, 94, 0.85) 0%, rgba(139, 92, 246, 0.85) 100%)"
   },
   {
     id: 3,
-    badge: "ETHNIC LUXURY",
+    badge: "ETHNIC LUXURY & HERITAGE",
+    badgeColor: "var(--color-secondary, #A7A7A7)",
+    badgeTextColor: "#1a1a1a",
     title: "Handloom Kurta & Silk Saree Fest",
     subtitle: "Authentic Chanderi silk sarees & handwoven Khadi kurtas by Biba & Fabindia.",
     cta: "Explore Ethnic Wear",
+    ctaClass: "btn btn-secondary",
     image: "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=1200&auto=format&fit=crop&q=80",
-    gradient: "linear-gradient(135deg, rgba(16, 185, 129, 0.85) 0%, rgba(79, 70, 229, 0.85) 100%)"
   }
 ];
 
 export const HeroBanner = () => {
   const [currentSlide, setCurrentSlide] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
   const navigate = useNavigate();
+  const timerRef = useRef(null);
+
+  const startTimer = () => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      setCurrentSlide(prev => (prev + 1) % SLIDES.length);
+    }, 6000);
+  };
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentSlide(prev => (prev + 1) % SLIDES.length);
-    }, 5500);
-    return () => clearInterval(timer);
-  }, []);
+    if (!isPaused) {
+      startTimer();
+    }
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [isPaused]);
 
-  const slide = SLIDES[currentSlide];
+  const handlePrev = (e) => {
+    e.stopPropagation();
+    setCurrentSlide(prev => (prev === 0 ? SLIDES.length - 1 : prev - 1));
+  };
+
+  const handleNext = (e) => {
+    e.stopPropagation();
+    setCurrentSlide(prev => (prev + 1) % SLIDES.length);
+  };
 
   return (
-    <section className="glass-card" style={{
-      position: 'relative',
-      height: '360px',
-      overflow: 'hidden',
-      borderRadius: 'var(--radius-xl)',
-      boxShadow: 'var(--panel-shadow-hover)'
-    }}>
-      {/* Background Image */}
-      <img 
-        src={slide.image} 
-        alt={slide.title} 
+    <section
+      onMouseEnter={() => setIsPaused(true)}
+      onMouseLeave={() => setIsPaused(false)}
+      className="product-card"
+      style={{
+        position: 'relative',
+        minHeight: '260px',
+        maxHeight: '360px',
+        height: 'clamp(260px, 35vw, 340px)',
+        overflow: 'hidden',
+        borderRadius: 'var(--radius-md, 6px)',
+        border: '1px solid var(--panel-border)',
+        userSelect: 'none',
+      }}
+    >
+      {/* Sliding Carousel Track for Smooth Transition */}
+      <div
         style={{
-          position: 'absolute',
-          inset: 0,
+          display: 'flex',
           width: '100%',
           height: '100%',
-          objectFit: 'cover',
-          transition: 'opacity 0.6s ease'
+          transform: `translateX(-${currentSlide * 100}%)`,
+          transition: 'transform 0.55s cubic-bezier(0.16, 1, 0.3, 1)',
         }}
-      />
-
-      {/* Gradient Overlay */}
-      <div style={{
-        position: 'absolute',
-        inset: 0,
-        background: slide.gradient,
-        backdropFilter: 'blur(3px)',
-        display: 'flex',
-        alignItems: 'center',
-        padding: '48px 60px',
-        color: 'white'
-      }}>
-        <div style={{ maxWidth: '640px', animation: 'fadeIn 0.4s ease' }}>
-          <div style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '8px',
-            background: 'rgba(255, 255, 255, 0.25)',
-            padding: '6px 14px',
-            borderRadius: 'var(--radius-full)',
-            fontSize: '0.78rem',
-            fontWeight: 800,
-            marginBottom: '14px',
-            letterSpacing: '0.05em'
-          }}>
-            <Sparkles size={14} /> {slide.badge}
-          </div>
-
-          <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2.4rem', fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.1, marginBottom: '10px' }}>
-            {slide.title}
-          </h2>
-
-          <p style={{ fontSize: '1rem', opacity: 0.95, lineHeight: 1.5, marginBottom: '24px' }}>
-            {slide.subtitle}
-          </p>
-
-          <button 
-            onClick={() => navigate('/')}
-            className="btn"
+      >
+        {SLIDES.map((slide) => (
+          <div
+            key={slide.id}
             style={{
-              background: 'white',
-              color: 'var(--accent-indigo)',
-              fontWeight: 800,
-              padding: '12px 24px',
-              borderRadius: 'var(--radius-full)',
-              boxShadow: '0 8px 20px rgba(0,0,0,0.15)'
+              minWidth: '100%',
+              width: '100%',
+              height: '100%',
+              position: 'relative',
+              flexShrink: 0,
             }}
           >
-            <ShoppingBag size={18} /> {slide.cta}
-          </button>
-        </div>
+            {/* Slide Background Image */}
+            <img
+              src={getOptimizedImageUrl(slide.image, 1000, 75)}
+              alt={slide.title}
+              loading={slide.id === 1 ? 'eager' : 'lazy'}
+              decoding="async"
+              style={{
+                position: 'absolute',
+                inset: 0,
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+              }}
+            />
+
+            {/* Matte Dark Gradient Overlay */}
+            <div style={{
+              position: 'absolute',
+              inset: 0,
+              background: 'linear-gradient(90deg, rgba(24, 27, 23, 0.94) 0%, rgba(24, 27, 23, 0.78) 50%, rgba(24, 27, 23, 0.35) 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              padding: 'clamp(20px, 4vw, 40px) clamp(64px, 7vw, 92px)',
+              color: '#ffffff',
+            }}>
+              <div style={{ maxWidth: '540px', zIndex: 2 }}>
+                <div style={{
+                  display: 'inline-block',
+                  background: slide.badgeColor || 'var(--color-primary, #9CAF88)',
+                  color: slide.badgeTextColor || '#1a2016',
+                  padding: '4px 10px',
+                  borderRadius: 'var(--radius-xs, 2px)',
+                  fontSize: 'clamp(0.68rem, 1.8vw, 0.75rem)',
+                  fontWeight: 700,
+                  marginBottom: '10px',
+                  letterSpacing: '0.05em',
+                  textTransform: 'uppercase',
+                }}>
+                  {slide.badge}
+                </div>
+
+                <h2 style={{
+                  fontSize: 'clamp(1.25rem, 3vw, 1.9rem)',
+                  fontWeight: 700,
+                  lineHeight: 1.2,
+                  marginBottom: '8px',
+                  color: '#ffffff',
+                  textShadow: '0 1px 2px rgba(0,0,0,0.3)',
+                }}>
+                  {slide.title}
+                </h2>
+
+                <p style={{
+                  fontSize: 'clamp(0.8rem, 1.8vw, 0.9rem)',
+                  opacity: 0.9,
+                  lineHeight: 1.45,
+                  marginBottom: '16px',
+                  color: '#e5ebe2',
+                  maxWidth: '460px',
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                }}>
+                  {slide.subtitle}
+                </p>
+
+                <button
+                  onClick={() => navigate('/')}
+                  className={slide.ctaClass || 'btn btn-primary'}
+                  style={{
+                    fontWeight: 700,
+                    padding: '9px 20px',
+                    fontSize: 'clamp(0.8rem, 1.8vw, 0.88rem)'
+                  }}
+                >
+                  {slide.cta}
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
 
-      {/* Navigation Arrows */}
-      <button 
-        onClick={() => setCurrentSlide(prev => (prev === 0 ? SLIDES.length - 1 : prev - 1))}
-        style={{
-          position: 'absolute',
-          left: '20px',
-          top: '50%',
-          transform: 'translateY(-50%)',
-          background: 'rgba(255, 255, 255, 0.3)',
-          backdropFilter: 'blur(8px)',
-          border: 'none',
-          color: 'white',
-          width: '40px',
-          height: '40px',
-          borderRadius: '50%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          cursor: 'pointer',
-          zIndex: 10
-        }}
-      >
-        <ChevronLeft size={24} />
-      </button>
+      {/* Perfectly Centered Previous Navigation Button (Left) */}
+      <div className="carousel-btn-prev">
+        <button
+          className="button carousel-prev"
+          onClick={handlePrev}
+          aria-label="Previous Slide"
+          title="Previous Slide"
+        >
+          <div className="button-box">
+            {/* Arrow pointing Left */}
+            <svg className="button-elem" viewBox="0 0 46 40">
+              <path d="M0 20.038c0-.7.3-1.5.8-2.1l16-17c1.1-1 3.2-1.4 4.4-.3 1.2 1.1 1.2 3.3 0 4.4L9.9 17H43c1.7 0 3 1.3 3 3s-1.3 3-3 3H9.9l11.3 11.9c1.2 1.1 1.2 3.3 0 4.4-1.2 1.1-3.3.8-4.4-.3l-16-17C.3 21.5 0 20.9 0 20z" />
+            </svg>
+            <svg className="button-elem" viewBox="0 0 46 40">
+              <path d="M0 20.038c0-.7.3-1.5.8-2.1l16-17c1.1-1 3.2-1.4 4.4-.3 1.2 1.1 1.2 3.3 0 4.4L9.9 17H43c1.7 0 3 1.3 3 3s-1.3 3-3 3H9.9l11.3 11.9c1.2 1.1 1.2 3.3 0 4.4-1.2 1.1-3.3.8-4.4-.3l-16-17C.3 21.5 0 20.9 0 20z" />
+            </svg>
+          </div>
+        </button>
+      </div>
 
-      <button 
-        onClick={() => setCurrentSlide(prev => (prev + 1) % SLIDES.length)}
-        style={{
-          position: 'absolute',
-          right: '20px',
-          top: '50%',
-          transform: 'translateY(-50%)',
-          background: 'rgba(255, 255, 255, 0.3)',
-          backdropFilter: 'blur(8px)',
-          border: 'none',
-          color: 'white',
-          width: '40px',
-          height: '40px',
-          borderRadius: '50%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          cursor: 'pointer',
-          zIndex: 10
-        }}
-      >
-        <ChevronRight size={24} />
-      </button>
+      {/* Perfectly Centered Next Navigation Button (Right) */}
+      <div className="carousel-btn-next">
+        <button
+          className="button carousel-next"
+          onClick={handleNext}
+          aria-label="Next Slide"
+          title="Next Slide"
+        >
+          <div className="button-box">
+            {/* Arrow pointing Right */}
+            <svg className="button-elem" viewBox="0 0 46 40">
+              <path d="M46 20.038c0-.7-.3-1.5-.8-2.1l-16-17c-1.1-1-3.2-1.4-4.4-.3-1.2 1.1-1.2 3.3 0 4.4l11.3 11.9H3c-1.7 0-3 1.3-3 3s1.3 3 3 3h33.1L24.8 35c-1.2 1.1-1.2 3.3 0 4.4 1.2 1.1 3.3.8 4.4-.3l16-17c.5-.5.8-1.1.8-2.062z" />
+            </svg>
+            <svg className="button-elem" viewBox="0 0 46 40">
+              <path d="M46 20.038c0-.7-.3-1.5-.8-2.1l-16-17c-1.1-1-3.2-1.4-4.4-.3-1.2 1.1-1.2 3.3 0 4.4l11.3 11.9H3c-1.7 0-3 1.3-3 3s1.3 3 3 3h33.1L24.8 35c-1.2 1.1-1.2 3.3 0 4.4 1.2 1.1 3.3.8 4.4-.3l16-17c.5-.5.8-1.1.8-2.062z" />
+            </svg>
+          </div>
+        </button>
+      </div>
 
-      {/* Pagination Dots */}
+      {/* Pagination Dot Indicators */}
       <div style={{
         position: 'absolute',
-        bottom: '20px',
+        bottom: '12px',
         left: '50%',
         transform: 'translateX(-50%)',
         display: 'flex',
-        gap: '8px',
-        zIndex: 10
+        gap: '6px',
+        zIndex: 10,
       }}>
         {SLIDES.map((_, i) => (
-          <div 
+          <button
             key={i}
             onClick={() => setCurrentSlide(i)}
+            aria-label={`Go to slide ${i + 1}`}
             style={{
-              width: i === currentSlide ? '24px' : '8px',
-              height: '8px',
-              borderRadius: '4px',
-              background: i === currentSlide ? 'white' : 'rgba(255, 255, 255, 0.4)',
+              width: i === currentSlide ? '22px' : '6px',
+              height: '4px',
+              borderRadius: '2px',
+              background: i === currentSlide ? 'var(--color-primary, #9CAF88)' : 'rgba(255, 255, 255, 0.45)',
+              border: 'none',
+              padding: 0,
               cursor: 'pointer',
-              transition: 'all 0.3s ease'
+              transition: 'all 0.25s ease',
             }}
           />
         ))}
@@ -196,3 +262,5 @@ export const HeroBanner = () => {
     </section>
   );
 };
+
+export default HeroBanner;

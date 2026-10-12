@@ -45,7 +45,7 @@ export const CustomerTable = ({
   };
 
   return (
-    <section className="glass-card" style={{ padding: '32px', transition: 'all 0.3s ease' }}>
+    <section className="glass-card dashboard-card" style={{ transition: 'all 0.3s ease' }}>
       {/* Header & Controls Bar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
         <div>

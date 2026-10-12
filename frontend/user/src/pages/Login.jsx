@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { UserLoginButton } from '../components/UserLoginButton';
 import '../styles/auth.css';
 
 function Login() {
@@ -58,7 +59,7 @@ function Login() {
 
   return (
     <div className="auth-shell">
-      <div className="auth-card glass-panel">
+      <div className="auth-card">
         <div className="auth-card-header">
           <p className="eyebrow">Lead Magnet Store</p>
           <h2>{isAdminMode ? 'Admin Login' : 'User Login'}</h2>
@@ -95,9 +96,12 @@ function Login() {
             />
           </label>
           {error ? <div className="error-text">{error}</div> : null}
-          <button className="btn" type="submit" disabled={!isCustomerValid}>
-            {isAdminMode ? 'Admin Sign In' : 'Sign In'}
-          </button>
+          <UserLoginButton
+            label={isAdminMode ? 'Admin Sign In' : 'Sign In'}
+            onClick={handleCustomerSubmit}
+            disabled={!isCustomerValid}
+            style={{ width: '100%', marginTop: '8px' }}
+          />
         </form>
 
         <div className="auth-links">

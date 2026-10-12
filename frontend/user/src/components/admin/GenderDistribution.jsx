@@ -1,25 +1,24 @@
 import React, { useState } from 'react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
-import { Check, Users } from 'lucide-react';
 
 const DEMO_BRACKETS = [
-  'Male 18–24',
-  'Male 25–34',
+  'Male 18-24',
+  'Male 25-34',
   'Male 35+',
-  'Female 18–24',
-  'Female 25–34',
+  'Female 18-24',
+  'Female 25-34',
   'Female 35+',
   'Other/Unknown',
 ];
 
 const DEMO_COLORS = [
-  '#3b82f6', // Male 18-24 (blue)
-  '#2563eb', // Male 25-34 (darker blue)
-  '#1d4ed8', // Male 35+ (deep blue)
-  '#ec4899', // Female 18-24 (pink)
-  '#db2777', // Female 25-34 (darker pink)
-  '#be185d', // Female 35+ (deep pink)
-  '#94a3b8', // Other/Unknown (slate)
+  '#9CAF88', // Sage green (Primary)
+  '#849770', // Sage green deep
+  '#6f805e', // Sage green dark
+  '#CC5500', // Burnt orange (Tertiary)
+  '#b34b00', // Burnt orange deep
+  '#e06b1a', // Burnt orange vibrant
+  '#A7A7A7', // Slate silver (Secondary)
 ];
 
 export const GenderDistribution = ({ eventAnalytics, overview, customers = [] }) => {
@@ -27,11 +26,11 @@ export const GenderDistribution = ({ eventAnalytics, overview, customers = [] })
 
   // Group real user_profiles by age + gender from MongoDB
   const counts = {
-    'Male 18–24': 0,
-    'Male 25–34': 0,
+    'Male 18-24': 0,
+    'Male 25-34': 0,
     'Male 35+': 0,
-    'Female 18–24': 0,
-    'Female 25–34': 0,
+    'Female 18-24': 0,
+    'Female 25-34': 0,
     'Female 35+': 0,
     'Other/Unknown': 0,
   };
@@ -44,13 +43,13 @@ export const GenderDistribution = ({ eventAnalytics, overview, customers = [] })
     if (!gender || isNaN(age)) {
       counts['Other/Unknown'] += 1;
     } else if (gender === 'Male') {
-      if (age >= 18 && age <= 24) counts['Male 18–24'] += 1;
-      else if (age >= 25 && age <= 34) counts['Male 25–34'] += 1;
+      if (age >= 18 && age <= 24) counts['Male 18-24'] += 1;
+      else if (age >= 25 && age <= 34) counts['Male 25-34'] += 1;
       else if (age >= 35) counts['Male 35+'] += 1;
       else counts['Other/Unknown'] += 1;
     } else if (gender === 'Female') {
-      if (age >= 18 && age <= 24) counts['Female 18–24'] += 1;
-      else if (age >= 25 && age <= 34) counts['Female 25–34'] += 1;
+      if (age >= 18 && age <= 24) counts['Female 18-24'] += 1;
+      else if (age >= 25 && age <= 34) counts['Female 25-34'] += 1;
       else if (age >= 35) counts['Female 35+'] += 1;
       else counts['Other/Unknown'] += 1;
     }
@@ -70,7 +69,6 @@ export const GenderDistribution = ({ eventAnalytics, overview, customers = [] })
   });
 
   const totalCustomers = overview?.total_customers || customers.length || 0;
-  const totalLeads = overview?.total_leads || 0;
 
   const demographics = chartData.map((item) => ({
     name: item.name,
@@ -81,27 +79,38 @@ export const GenderDistribution = ({ eventAnalytics, overview, customers = [] })
   }));
 
   return (
-    <div className="glass-card" style={{ padding: '24px 28px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <div>
-          <h3 className="heading-lg" style={{ color: 'var(--text-primary)' }}>Customer Demographic Distribution</h3>
-          <p className="text-subtle">Real customer age & gender breakdown from MongoDB user profiles</p>
+    <div className="product-card" style={{ padding: '28px 32px', background: 'var(--panel-solid)' }}>
+      {/* Centered Header */}
+      <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+          <span className="badge badge-primary" style={{ fontSize: '0.72rem' }}>
+            DEMOGRAPHICS
+          </span>
+          <span className="badge badge-tertiary" style={{ fontSize: '0.72rem' }}>
+            AI SEGMENTATION
+          </span>
         </div>
+        <h3 className="heading-lg" style={{ color: 'var(--text-primary)', margin: '0 0 6px 0' }}>
+          Customer Demographic Distribution
+        </h3>
+        <p className="text-subtle" style={{ margin: 0 }}>
+          Real customer age and gender breakdown from user profiles
+        </p>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', flexWrap: 'wrap', gap: '48px' }}>
-        <div style={{ width: '220px', height: '220px', position: 'relative', flexShrink: 0 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '28px' }}>
+        {/* Centered Chart */}
+        <div style={{ width: '240px', height: '240px', position: 'relative', margin: '0 auto' }}>
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
                 data={chartData}
                 cx="50%"
                 cy="50%"
-                innerRadius={62}
-                outerRadius={88}
+                innerRadius={68}
+                outerRadius={96}
                 paddingAngle={4}
                 dataKey="value"
-                animationDuration={1000}
                 stroke="none"
               >
                 {chartData.map((entry, index) => (
@@ -112,8 +121,7 @@ export const GenderDistribution = ({ eventAnalytics, overview, customers = [] })
                 contentStyle={{
                   background: 'var(--panel-solid)',
                   border: '1px solid var(--panel-border)',
-                  borderRadius: 'var(--radius-md)',
-                  boxShadow: 'var(--panel-shadow)',
+                  borderRadius: '4px',
                   fontSize: '0.85rem'
                 }}
                 formatter={(value, name) => [`${value} Customers (${chartData.find(c => c.name === name)?.pct})`, name]}
@@ -133,26 +141,29 @@ export const GenderDistribution = ({ eventAnalytics, overview, customers = [] })
             alignItems: 'center',
             justifyContent: 'center'
           }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: '2px', lineHeight: 1 }}>
-              <span style={{ fontFamily: 'var(--font-heading)', fontSize: '1.9rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
-                {totalCustomers.toLocaleString('en-IN')}
-              </span>
+            <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--color-tertiary, #CC5500)', lineHeight: 1 }}>
+              {totalCustomers.toLocaleString('en-IN')}
             </div>
             <div style={{
-              fontSize: '0.75rem',
+              fontSize: '0.72rem',
               fontWeight: 700,
-              color: 'var(--accent-indigo)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
+              color: 'var(--color-primary-dark, #6f805e)',
               marginTop: '4px'
             }}>
-              <Users size={13} strokeWidth={3} /> Registered Shoppers
+              Shoppers
             </div>
           </div>
         </div>
 
-        <div style={{ width: '440px', maxWidth: '100%', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        {/* Centered Demographic Grid */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+          gap: '12px',
+          width: '100%',
+          maxWidth: '820px',
+          margin: '0 auto'
+        }}>
           {demographics.map((demo) => {
             const isHovered = hoveredCategory === demo.name;
             return (
@@ -161,38 +172,41 @@ export const GenderDistribution = ({ eventAnalytics, overview, customers = [] })
                 onMouseEnter={() => setHoveredCategory(demo.name)}
                 onMouseLeave={() => setHoveredCategory(null)}
                 style={{
-                  background: isHovered ? 'rgba(79, 70, 229, 0.04)' : 'var(--table-header-bg)',
-                  border: isHovered ? '1px solid var(--accent-indigo)' : '1px solid var(--panel-border)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '10px 14px',
-                  transition: 'all 0.2s ease',
-                  cursor: 'pointer'
+                  background: isHovered ? 'var(--table-row-hover)' : 'var(--table-header-bg)',
+                  border: isHovered ? `1px solid ${demo.color}` : '1px solid var(--panel-border)',
+                  borderRadius: 'var(--radius-sm, 4px)',
+                  padding: '12px 14px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease'
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: demo.color }} />
-                    <span style={{ fontWeight: 700, fontSize: '0.86rem', color: 'var(--text-primary)' }}>{demo.name}</span>
+                    <span style={{ width: '8px', height: '8px', borderRadius: '2px', background: demo.color }} />
+                    <span style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--text-primary)' }}>{demo.name}</span>
                   </div>
-                  <div style={{ fontSize: '0.84rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                    {demo.customerCount} Customers <span style={{ color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.76rem' }}>({demo.pct})</span>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 800, color: demo.color }}>
+                    {demo.pct}
                   </div>
                 </div>
 
                 <div style={{
                   width: '100%',
-                  height: '6px',
-                  background: 'rgba(148, 163, 184, 0.16)',
-                  borderRadius: 'var(--radius-full)',
+                  height: '5px',
+                  background: 'rgba(167, 167, 167, 0.2)',
+                  borderRadius: '2px',
                   overflow: 'hidden'
                 }}>
                   <div style={{
                     width: demo.pct,
                     height: '100%',
                     background: demo.color,
-                    borderRadius: 'var(--radius-full)',
-                    transition: 'width 0.8s cubic-bezier(0.16, 1, 0.3, 1)'
+                    borderRadius: '2px'
                   }} />
+                </div>
+
+                <div style={{ marginTop: '4px', fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                  {demo.customerCount} Active Profile{demo.customerCount === 1 ? '' : 's'}
                 </div>
               </div>
             );
@@ -202,3 +216,5 @@ export const GenderDistribution = ({ eventAnalytics, overview, customers = [] })
     </div>
   );
 };
+
+export default GenderDistribution;

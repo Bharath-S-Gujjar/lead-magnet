@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { io } from 'socket.io-client';
 import { useAdminAuth } from '../../context/AdminAuthContext';
-import { getAdminRecentActivity, API_BASE_URL as API_BASE } from '../../services/api';
+import { getAdminRecentActivity } from '../../services/api';
 import {
   Activity, Wifi, WifiOff, Loader, ShoppingCart, Search, Eye, Heart,
   ShoppingBag, User, Target, Mail, AlertCircle, RefreshCw, TrendingUp
 } from 'lucide-react';
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
 const MAX_FEED_SIZE = 50;
 
 // ─── Icon + label helpers ─────────────────────────────────────────────────────
@@ -181,7 +182,7 @@ export const LiveActivityFeed = () => {
   const connColor = connected ? '#10b981' : '#94a3b8';
 
   return (
-    <div className="panel" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: '400px' }}>
+    <div className="glass-card dashboard-card" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: '400px' }}>
 
       {/* Header */}
       <div style={{

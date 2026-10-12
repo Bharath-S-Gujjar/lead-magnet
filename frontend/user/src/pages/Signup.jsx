@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { NavPillButton } from '../components/NavPillButton';
 import '../styles/auth.css';
 
 function Signup() {
@@ -104,7 +105,7 @@ function Signup() {
 
   return (
     <div className="auth-shell">
-      <div className="auth-card glass-panel">
+      <div className="auth-card">
         <div className="auth-card-header">
           <p className="eyebrow">Lead Magnet Store</p>
           <h2>Create User Account</h2>
@@ -205,9 +206,12 @@ function Signup() {
           {errors.confirmPassword ? <div className="error-text">{errors.confirmPassword}</div> : null}
 
           {message ? <div className="error-text">{message}</div> : null}
-          <button className="btn" type="submit">
-            Register Account
-          </button>
+          <NavPillButton
+            variant="register"
+            label="Register Account"
+            onClick={handleSubmit}
+            style={{ width: '100%', marginTop: '12px' }}
+          />
         </form>
 
         <div className="auth-links">

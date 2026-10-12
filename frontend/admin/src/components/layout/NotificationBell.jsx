@@ -2,7 +2,9 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Bell, Flame, User, ShoppingBag, CheckCheck, X, Sparkles, ExternalLink } from 'lucide-react';
 import { io } from 'socket.io-client';
 import { useAdminAuth } from '../../context/AdminAuthContext';
-import { getAdminNotifications, markNotificationRead, markAllNotificationsRead, API_BASE_URL as API_BASE } from '../../services/api';
+import { getAdminNotifications, markNotificationRead, markAllNotificationsRead } from '../../services/api';
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
 
 function formatRelativeTime(ts) {
   if (!ts) return 'Just now';

@@ -7,6 +7,7 @@ import { WishlistProvider } from './context/WishlistContext';
 import { UserTrackingProvider } from './context/UserTrackingContext';
 
 import { Navbar } from './components/Navbar';
+import ParticleDrift from './components/ParticleDrift';
 import { UserDashboard } from './pages/UserDashboard';
 import { ProductDetails } from './pages/ProductDetails';
 import { Cart } from './pages/Cart';
@@ -51,7 +52,32 @@ export function App() {
           <WishlistProvider>
             <UserTrackingProvider>
               <Router>
-                <div className="app-container">
+                <div className="app-container" style={{ position: 'relative', minHeight: '100vh' }}>
+                  {/* Global Animated Particle Drift Background */}
+                  <div
+                    className="particle-drift-background-container"
+                    style={{
+                      position: 'fixed',
+                      top: 0,
+                      left: 0,
+                      width: '100vw',
+                      height: '100vh',
+                      zIndex: 0,
+                      pointerEvents: 'none',
+                      overflow: 'hidden'
+                    }}
+                  >
+                    <ParticleDrift
+                      background="transparent"
+                      baseColor="#A7A7A7"
+                      accentColor="#CC5500"
+                      density={120}
+                      dotSize={3.5}
+                      speed={20}
+                      hover={200}
+                    />
+                  </div>
+
                   <Navbar 
                     searchQuery={searchQuery}
                     setSearchQuery={setSearchQuery}
@@ -59,7 +85,7 @@ export function App() {
                     setSelectedGender={setSelectedGender}
                   />
 
-                  <main className="content-body">
+                  <main className="content-body" style={{ position: 'relative', zIndex: 1 }}>
                     <Routes>
                       <Route 
                         path="/" 

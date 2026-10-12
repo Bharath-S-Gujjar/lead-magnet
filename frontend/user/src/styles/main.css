@@ -1,59 +1,82 @@
 /* ==========================================================================
-   LEAD MAGNET — USER CLOTHING PORTAL STYLESHEET (GLASSMORPHISM SAAS SYSTEM)
+   LEAD MAGNET - FRONTEND DESIGN SYSTEM & RESPONSIVE LAYOUT
+   Palette: Primary (#9CAF88), Secondary (#A7A7A7), Tertiary (#CC5500)
    ========================================================================== */
 
 :root {
-  /* Color Palette — Premium SaaS Light Mode (Default) */
-  --bg-app: #f8fafc;
-  --bg-gradient: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
-  --panel-bg: rgba(255, 255, 255, 0.85);
+  /* Brand Theme Colors */
+  --color-primary: #9CAF88;
+  --color-primary-hover: #889b74;
+  --color-primary-dark: #6f805e;
+  --color-primary-light: rgba(156, 175, 136, 0.15);
+
+  --color-secondary: #A7A7A7;
+  --color-secondary-hover: #919191;
+  --color-secondary-light: rgba(167, 167, 167, 0.15);
+
+  --color-tertiary: #CC5500;
+  --color-tertiary-hover: #b34b00;
+  --color-tertiary-light: rgba(204, 85, 0, 0.15);
+
+  /* Light Theme - Matte Off-White System */
+  --bg-app: #f4f5f2;
+  --bg-gradient: none;
+  --panel-bg: #ffffff;
   --panel-solid: #ffffff;
-  --panel-border: #e2e8f0;
-  --panel-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.03), 0 2px 6px -1px rgba(0, 0, 0, 0.02);
-  --panel-shadow-hover: 0 12px 30px -4px rgba(0, 0, 0, 0.08);
+  --panel-border: #d8ded4;
+  --panel-border-subtle: #e5ebe2;
+  --panel-shadow: none;
+  --panel-shadow-hover: none;
 
   /* Typography Colors */
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-muted: #94a3b8;
+  --text-primary: #1c221a;
+  --text-secondary: #535c50;
+  --text-muted: #889283;
 
-  /* Accents */
-  --accent-indigo: #4f46e5;
-  --accent-indigo-gradient: linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%);
-  --accent-blue: #3b82f6;
-  --accent-emerald: #10b981;
-  --accent-rose: #f43f5e;
-  --accent-amber: #f59e0b;
+  /* Accent Mappings */
+  --accent-primary: #9CAF88;
+  --accent-secondary: #A7A7A7;
+  --accent-tertiary: #CC5500;
+  --accent-indigo: #9CAF88;
+  --accent-indigo-hover: #889b74;
+  --accent-blue: #9CAF88;
+  --accent-emerald: #9CAF88;
+  --accent-rose: #CC5500;
+  --accent-amber: #CC5500;
 
-  --table-header-bg: #f8fafc;
-  --table-row-hover: #f1f5f9;
+  --table-header-bg: #ecefe9;
+  --table-row-hover: #eef1ec;
 
-  --radius-sm: 8px;
-  --radius-md: 14px;
-  --radius-lg: 18px;
-  --radius-full: 9999px;
+  /* Clean Minimal Radii */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 6px;
+  --radius-full: 4px;
 
-  --font-main: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-heading: 'Outfit', 'Inter', sans-serif;
+  /* System Typography */
+  --font-main: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-heading: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 
-  --backdrop-blur: blur(14px);
+  --backdrop-blur: none;
 }
 
 [data-theme="dark"] {
-  --bg-app: #0b0f19;
-  --bg-gradient: linear-gradient(180deg, #0b0f19 0%, #0f172a 100%);
-  --panel-bg: rgba(15, 23, 42, 0.85);
-  --panel-solid: #0f172a;
-  --panel-border: rgba(255, 255, 255, 0.08);
-  --panel-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.4);
-  --panel-shadow-hover: 0 12px 30px -4px rgba(0, 0, 0, 0.6);
+  --bg-app: #181b17;
+  --bg-gradient: none;
+  --panel-bg: #212520;
+  --panel-solid: #212520;
+  --panel-border: #323830;
+  --panel-border-subtle: #292f27;
+  --panel-shadow: none;
+  --panel-shadow-hover: none;
 
-  --text-primary: #f8fafc;
-  --text-secondary: #cbd5e1;
-  --text-muted: #64748b;
+  --text-primary: #e9ece7;
+  --text-secondary: #a2aba0;
+  --text-muted: #727b6f;
 
-  --table-header-bg: rgba(30, 41, 59, 0.6);
-  --table-row-hover: rgba(30, 41, 59, 0.8);
+  --table-header-bg: #262b24;
+  --table-row-hover: #2b312a;
 }
 
 /* Reset */
@@ -66,10 +89,10 @@
 body {
   font-family: var(--font-main);
   background: var(--bg-app);
-  background-image: var(--bg-gradient);
   color: var(--text-primary);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
 }
 
 a {
@@ -90,8 +113,8 @@ button, input, select, textarea {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.3);
-  border-radius: var(--radius-full);
+  background: var(--panel-border);
+  border-radius: var(--radius-sm);
 }
 
 /* Layout Container */
@@ -99,131 +122,725 @@ button, input, select, textarea {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  position: relative;
 }
 
-.content-body {
+/* Global Interactive Particle Background */
+.particle-drift-background-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.main-content {
+  flex: 1;
   max-width: 1400px;
-  margin: 0 auto;
   width: 100%;
-  padding: 32px 40px 60px;
-  display: flex;
-  flex-direction: column;
-  gap: 32px;
+  margin: 0 auto;
+  padding: 24px;
 }
 
-/* Glassmorphism Card */
-.glass-card {
-  background: var(--panel-bg);
-  backdrop-filter: var(--backdrop-blur);
-  -webkit-backdrop-filter: var(--backdrop-blur);
+/* Card & Panels */
+.product-card,
+.card-panel,
+.glass-card,
+.glass-panel {
+  background: var(--panel-solid);
   border: 1px solid var(--panel-border);
-  box-shadow: var(--panel-shadow);
-  border-radius: var(--radius-lg);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  border-radius: var(--radius-md);
+  box-shadow: none;
 }
 
-.glass-card:hover {
-  box-shadow: var(--panel-shadow-hover);
-}
-
-/* Typography */
-.heading-xl {
-  font-family: var(--font-heading);
-  font-size: 2rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
-
-.heading-lg {
-  font-family: var(--font-heading);
-  font-size: 1.4rem;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-}
-
-.heading-md {
-  font-family: var(--font-heading);
-  font-size: 1.1rem;
+/* ==========================================================================
+   BUTTON SYSTEM - From Uiverse.io by cssbuttons-io
+   Includes: Default, Hover (with expanding pulse ::after), Focus, Pressed (Active),
+   Loading, and Disabled states.
+   ========================================================================== */
+.btn {
+  position: relative;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  text-decoration: none;
+  padding: 0.75em 1.8em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  border-radius: 6em;
+  transition: all 0.2s;
+  border: none;
+  font-family: inherit;
   font-weight: 600;
+  color: #1a1a1a;
+  background-color: #ffffff;
+  outline: none;
+  user-select: none;
+  z-index: 1;
 }
 
-.text-subtle {
-  color: var(--text-secondary);
-  font-size: 0.875rem;
+.btn:hover:not(:disabled):not(.is-loading) {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+}
+
+.btn:active:not(:disabled):not(.is-loading) {
+  transform: translateY(-1px);
+  box-shadow: 0 5px 10px rgba(0, 0, 0, 0.2);
+}
+
+.btn::after {
+  content: "";
+  display: inline-block;
+  height: 100%;
+  width: 100%;
+  border-radius: 6em;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: -1;
+  transition: all 0.4s;
+  background-color: #ffffff;
+}
+
+.btn:hover:not(:disabled):not(.is-loading)::after {
+  transform: scaleX(1.4) scaleY(1.6);
+  opacity: 0;
+}
+
+/* Primary Variant (#9CAF88) */
+.btn-primary {
+  background-color: var(--color-primary, #9CAF88);
+  color: #1a2016;
+}
+
+.btn-primary::after {
+  background-color: var(--color-primary, #9CAF88);
+}
+
+.btn-primary:hover:not(:disabled):not(.is-loading) {
+  background-color: var(--color-primary, #9CAF88);
+  color: #1a2016;
+  box-shadow: 0 10px 20px rgba(156, 175, 136, 0.45);
+}
+
+/* Secondary Variant (#A7A7A7) */
+.btn-secondary {
+  background-color: var(--color-secondary, #A7A7A7);
+  color: #1a1a1a;
+}
+
+.btn-secondary::after {
+  background-color: var(--color-secondary, #A7A7A7);
+}
+
+.btn-secondary:hover:not(:disabled):not(.is-loading) {
+  background-color: var(--color-secondary, #A7A7A7);
+  color: #1a1a1a;
+  box-shadow: 0 10px 20px rgba(167, 167, 167, 0.45);
+}
+
+/* Tertiary Variant (#CC5500) */
+.btn-tertiary {
+  background-color: var(--color-tertiary, #CC5500);
+  color: #ffffff;
+}
+
+.btn-tertiary::after {
+  background-color: var(--color-tertiary, #CC5500);
+}
+
+.btn-tertiary:hover:not(:disabled):not(.is-loading) {
+  background-color: var(--color-tertiary, #CC5500);
+  color: #ffffff;
+  box-shadow: 0 10px 20px rgba(204, 85, 0, 0.45);
+}
+
+/* Ghost / Outline Variant */
+.btn-ghost {
+  background-color: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--panel-border);
+}
+
+.btn-ghost::after {
+  background-color: var(--panel-border);
+}
+
+.btn-ghost:hover:not(:disabled):not(.is-loading) {
+  background-color: var(--table-row-hover);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.12);
+}
+
+/* Focus State */
+.btn:focus-visible,
+.button:focus-visible,
+.user-profile:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Loading State */
+.btn.is-loading,
+.btn[aria-busy="true"] {
+  position: relative;
+  cursor: wait !important;
+  pointer-events: none !important;
+  color: transparent !important;
+}
+
+.btn.is-loading::before,
+.btn[aria-busy="true"]::before {
+  content: "";
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  top: 50%;
+  left: 50%;
+  margin-top: -9px;
+  margin-left: -9px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: btnSpin 0.7s linear infinite;
+  color: var(--text-primary);
+  z-index: 2;
+}
+
+.btn-primary.is-loading::before,
+.btn-tertiary.is-loading::before {
+  color: #ffffff;
+}
+
+@keyframes btnSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* Disabled State */
+.btn:disabled,
+.btn[disabled],
+.btn.is-disabled,
+.button:disabled,
+.button[disabled],
+.user-profile:disabled,
+.animated-button:disabled {
+  opacity: 0.45 !important;
+  cursor: not-allowed !important;
+  pointer-events: none !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.btn:disabled::after,
+.btn[disabled]::after,
+.btn.is-disabled::after {
+  display: none !important;
+}
+
+/* ==========================================================================
+   ANIMATED BUTTON - From Uiverse.io by gharsh11032000 (Add to Cart)
+   ========================================================================== */
+.animated-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 10px 24px;
+  border: 2px solid transparent;
+  font-size: 0.82rem;
+  background-color: transparent;
+  border-radius: 100px;
+  font-weight: 700;
+  color: var(--color-primary, #9CAF88);
+  box-shadow: 0 0 0 2px var(--color-primary, #9CAF88);
+  cursor: pointer;
+  overflow: hidden;
+  transition: all 0.6s cubic-bezier(0.23, 1, 0.32, 1);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  user-select: none;
+  width: 100%;
+  box-sizing: border-box;
+  text-decoration: none;
+  outline: none;
+}
+
+.animated-button svg {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  fill: var(--color-primary, #9CAF88);
+  z-index: 9;
+  transition: all 0.8s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.animated-button .arr-1 {
+  right: 14px;
+}
+
+.animated-button .arr-2 {
+  left: -25%;
+}
+
+.animated-button .circle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 20px;
+  height: 20px;
+  background-color: var(--color-primary, #9CAF88);
+  border-radius: 50%;
+  opacity: 0;
+  transition: all 0.8s cubic-bezier(0.23, 1, 0.32, 1);
+  z-index: 0;
+}
+
+.animated-button .text {
+  position: relative;
+  z-index: 1;
+  transform: translateX(-10px);
+  transition: all 0.8s cubic-bezier(0.23, 1, 0.32, 1);
+  white-space: nowrap;
+}
+
+.animated-button:hover:not(:disabled) {
+  box-shadow: 0 0 0 10px transparent;
+  color: #1a2016;
+  border-radius: 8px;
+}
+
+.animated-button:hover:not(:disabled) .arr-1 {
+  right: -25%;
+}
+
+.animated-button:hover:not(:disabled) .arr-2 {
+  left: 14px;
+}
+
+.animated-button:hover:not(:disabled) .text {
+  transform: translateX(10px);
+}
+
+.animated-button:hover:not(:disabled) svg {
+  fill: #1a2016;
+}
+
+.animated-button:active:not(:disabled) {
+  transform: scale(0.96);
+  box-shadow: 0 0 0 4px var(--color-primary, #9CAF88);
+}
+
+.animated-button:hover:not(:disabled) .circle {
+  width: 320px;
+  height: 320px;
+  opacity: 1;
+}
+
+.animated-button:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* ==========================================================================
+   CAROUSEL SLIDING ARROW BUTTONS (Compact & Transparent)
+   ========================================================================== */
+.carousel-btn-prev,
+.carousel-btn-next {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+}
+
+.carousel-btn-prev {
+  left: 20px;
+}
+
+.carousel-btn-next {
+  right: 20px;
+}
+
+.button {
+  display: block;
+  position: relative;
+  width: 36px;
+  height: 36px;
+  margin: 0;
+  overflow: hidden;
+  outline: none;
+  background: transparent !important;
+  background-color: transparent !important;
+  cursor: pointer;
+  border: 0;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.button:before,
+.button:after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  inset: 2px;
+  background: transparent !important;
+}
+
+.button:before {
+  border: 2px solid rgba(255, 255, 255, 0.75);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.button:after {
+  border: 2px solid var(--color-primary, #9CAF88);
+  transform: scale(1.2);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  opacity: 0;
+}
+
+.button:hover:before,
+.button:focus:before {
+  opacity: 0;
+  transform: scale(0.8);
+}
+
+.button:hover:after,
+.button:focus:after {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.button-box {
+  display: flex;
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  align-items: center;
+  pointer-events: none;
+}
+
+.button-elem {
+  display: block;
+  width: 14px;
+  height: 14px;
+  margin: 0 11px;
+  fill: #ffffff;
+  flex-shrink: 0;
+}
+
+.button:hover .button-box,
+.button:focus .button-box {
+  transition: 0.3s cubic-bezier(0.165, 0.84, 0.44, 1);
+  transform: translateX(-36px);
+}
+
+.button:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+/* ==========================================================================
+   SEARCH BAR - From Uiverse.io by boryanakrasteva
+   ========================================================================== */
+.input-container {
+  width: 100%;
+  max-width: 460px;
+  position: relative;
+}
+
+.input-container .icon {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-primary);
+  pointer-events: none;
+  transition: transform 0.2s ease;
+}
+
+.input-container .input {
+  width: 100%;
+  height: 38px;
+  padding: 8px 36px 8px 12px;
+  transition: .2s linear;
+  border: 2px solid var(--text-primary);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  background: transparent;
+  color: var(--text-primary);
+  border-radius: 4px;
+}
+
+[data-theme="dark"] .input-container .input {
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.input-container .input:focus {
+  outline: none;
+  border: 1.5px solid var(--color-primary, #9CAF88);
+  box-shadow: -3px -3px 0px var(--color-primary, #9CAF88);
+}
+
+.input-container:hover > .icon {
+  animation: anim 1s linear infinite;
+}
+
+@keyframes anim {
+  0%,
+  100% {
+    transform: translateY(-50%) scale(1);
+  }
+
+  50% {
+    transform: translateY(-50%) scale(1.15);
+  }
+}
+
+/* ==========================================================================
+   UIVERSE.IO USER PROFILE BUTTONS (Compact & Completely Transparent)
+   ========================================================================== */
+.user-profile {
+  width: auto;
+  min-width: unset;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: transparent !important;
+  background-color: transparent !important;
+  border: 1.5px solid rgba(46, 142, 255, 0.4);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  outline: none;
+  user-select: none;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+.user-profile:hover,
+.user-profile:focus {
+  background: transparent !important;
+  background-color: rgba(46, 142, 255, 0.08) !important;
+  border-color: #2e8eff;
+  box-shadow: 0 0 8px rgba(46, 142, 255, 0.35);
+  outline: none;
+}
+
+.user-profile-inner {
+  width: 100%;
+  height: 100%;
+  border-radius: 4px;
+  background: transparent !important;
+  background-color: transparent !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-primary);
+  font-weight: 600;
+  box-sizing: border-box;
+  padding: 0;
+}
+
+.user-profile-inner svg {
+  width: 16px;
+  height: 16px;
+  max-width: 16px;
+  max-height: 16px;
+  fill: currentColor;
+  display: block;
+  flex-shrink: 0;
+}
+
+.user-profile-inner img:not(.user-profile-avatar) {
+  width: 16px;
+  height: 16px;
+  max-width: 16px;
+  max-height: 16px;
+  display: block;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+[data-theme="dark"] .user-profile-inner img:not(.user-profile-avatar) {
+  filter: brightness(0) invert(1);
+}
+
+.user-profile p,
+.user-profile-label {
+  margin: 0;
+  padding: 0;
+  line-height: 1;
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+/* Specific Variant Styles - Compact & Transparent */
+/* 1. Login */
+.user-profile.user-profile-login {
+  border-color: rgba(46, 142, 255, 0.45);
+}
+.user-profile.user-profile-login:hover,
+.user-profile.user-profile-login:focus {
+  background-color: rgba(46, 142, 255, 0.08) !important;
+  border-color: #2e8eff;
+  box-shadow: 0 0 8px rgba(46, 142, 255, 0.35);
+}
+.user-profile.user-profile-login .user-profile-inner svg {
+  fill: #2e8eff;
+}
+
+/* 2. Register */
+.user-profile.user-profile-register {
+  border-color: rgba(156, 175, 136, 0.55);
+}
+.user-profile.user-profile-register:hover,
+.user-profile.user-profile-register:focus {
+  background-color: rgba(156, 175, 136, 0.08) !important;
+  border-color: #9CAF88;
+  box-shadow: 0 0 8px rgba(156, 175, 136, 0.35);
+}
+.user-profile.user-profile-register .user-profile-inner svg {
+  fill: #9CAF88;
+}
+
+/* 3. Orders (Brown) */
+.user-profile.user-profile-orders {
+  border-color: rgba(139, 90, 43, 0.55);
+}
+.user-profile.user-profile-orders:hover,
+.user-profile.user-profile-orders:focus {
+  background-color: rgba(139, 90, 43, 0.08) !important;
+  border-color: #8B5A2B;
+  box-shadow: 0 0 8px rgba(139, 90, 43, 0.35);
+}
+
+/* 4. Cart */
+.user-profile.user-profile-cart {
+  border-color: rgba(156, 175, 136, 0.55);
+}
+.user-profile.user-profile-cart:hover,
+.user-profile.user-profile-cart:focus {
+  background-color: rgba(156, 175, 136, 0.08) !important;
+  border-color: #9CAF88;
+  box-shadow: 0 0 8px rgba(156, 175, 136, 0.35);
+}
+
+/* 5. Wishlist */
+.user-profile.user-profile-wishlist {
+  border-color: rgba(204, 85, 0, 0.55);
+}
+.user-profile.user-profile-wishlist:hover,
+.user-profile.user-profile-wishlist:focus {
+  background-color: rgba(204, 85, 0, 0.08) !important;
+  border-color: #CC5500;
+  box-shadow: 0 0 8px rgba(204, 85, 0, 0.35);
+}
+.user-profile.user-profile-wishlist .user-profile-inner svg {
+  fill: #CC5500;
+}
+
+/* 6. Dark Mode Toggle */
+.user-profile.user-profile-theme {
+  width: 36px;
+  padding: 0;
+  border-color: rgba(234, 179, 8, 0.55);
+}
+.user-profile.user-profile-theme:hover,
+.user-profile.user-profile-theme:focus {
+  background-color: rgba(234, 179, 8, 0.08) !important;
+  border-color: #eab308;
+  box-shadow: 0 0 8px rgba(234, 179, 8, 0.35);
+}
+
+/* Account & Logout */
+.user-profile.user-profile-account {
+  border-color: rgba(156, 175, 136, 0.55);
+}
+.user-profile.user-profile-account:hover,
+.user-profile.user-profile-account:focus {
+  background-color: rgba(156, 175, 136, 0.08) !important;
+  border-color: #9CAF88;
+  box-shadow: 0 0 8px rgba(156, 175, 136, 0.35);
+}
+
+.user-profile.user-profile-logout {
+  border-color: rgba(204, 85, 0, 0.55);
+}
+.user-profile.user-profile-logout:hover,
+.user-profile.user-profile-logout:focus {
+  background-color: rgba(204, 85, 0, 0.08) !important;
+  border-color: #CC5500;
+  box-shadow: 0 0 8px rgba(204, 85, 0, 0.35);
+}
+
+.user-profile-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 800;
+  padding: 1px 5px;
+  border-radius: 8px;
+  min-width: 16px;
+  height: 16px;
+  line-height: 1;
+  background: var(--color-primary, #9CAF88);
+  color: #1a1a1a;
+  margin-left: 2px;
+}
+
+.user-profile-wishlist .user-profile-badge {
+  background: var(--color-tertiary, #CC5500);
+  color: #ffffff;
 }
 
 /* Badges */
 .badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 12px;
-  border-radius: var(--radius-full);
-  font-size: 0.78rem;
-  font-weight: 600;
-}
-
-.badge-indigo {
-  background: rgba(79, 70, 229, 0.1);
-  color: var(--accent-indigo);
-  border: 1px solid rgba(79, 70, 229, 0.2);
-}
-
-.badge-emerald {
-  background: rgba(16, 185, 129, 0.1);
-  color: var(--accent-emerald);
-  border: 1px solid rgba(16, 185, 129, 0.2);
-}
-
-.badge-rose {
-  background: rgba(244, 63, 94, 0.1);
-  color: var(--accent-rose);
-  border: 1px solid rgba(244, 63, 94, 0.2);
-}
-
-/* Buttons */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 10px 18px;
-  border-radius: var(--radius-md);
-  font-size: 0.875rem;
-  font-weight: 600;
-  cursor: pointer;
-  border: none;
-  transition: all 0.2s ease;
-}
-
-.btn-primary {
-  background: var(--accent-indigo-gradient);
-  color: white;
-  box-shadow: 0 4px 14px rgba(79, 70, 229, 0.3);
-}
-
-.btn-primary:hover {
-  opacity: 0.94;
-  transform: translateY(-1px);
-}
-
-.btn-secondary {
-  background: var(--panel-solid);
-  color: var(--text-primary);
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-xs);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: var(--table-header-bg);
+  color: var(--text-secondary);
   border: 1px solid var(--panel-border);
 }
 
-.btn-secondary:hover {
-  background: var(--table-row-hover);
+.badge-indigo,
+.badge-primary {
+  background: var(--color-primary-light);
+  color: var(--color-primary-dark);
+  border-color: var(--color-primary);
 }
 
-.btn-ghost {
-  background: transparent;
-  color: var(--text-secondary);
-}
-
-.btn-ghost:hover {
-  background: rgba(148, 163, 184, 0.1);
+.badge-tertiary {
+  background: var(--color-tertiary-light);
+  color: var(--color-tertiary);
+  border-color: var(--color-tertiary);
 }
 
 /* Grid Utilities */
@@ -245,17 +862,292 @@ button, input, select, textarea {
   gap: 20px;
 }
 
-@media (max-width: 1200px) {
-  .grid-4 { grid-template-columns: repeat(3, 1fr); }
+/* ==========================================================================
+   Skeletal Loaders
+   ========================================================================== */
+.skeleton-loader {
+  background: #e2e6df;
+  position: relative;
+  overflow: hidden;
 }
 
-@media (max-width: 900px) {
-  .grid-4 { grid-template-columns: repeat(2, 1fr); }
-  .grid-3 { grid-template-columns: repeat(2, 1fr); }
-  .grid-2 { grid-template-columns: 1fr; }
-  .content-body { padding: 20px; }
+[data-theme="dark"] .skeleton-loader {
+  background: #2a3028;
 }
 
+.skeleton-loader::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.4) 50%,
+    transparent 100%
+  );
+  animation: shimmer 1.5s infinite;
+}
+
+[data-theme="dark"] .skeleton-loader::after {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.08) 50%,
+    transparent 100%
+  );
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* ==========================================================================
+   RESPONSIVE DESIGN BREAKPOINTS (Laptop, Tablet, Phone)
+   ========================================================================== */
+
+/* Desktop & Laptop (1025px+) */
+@media (min-width: 1025px) {
+  .dashboard-layout {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    gap: 28px;
+    align-items: start;
+  }
+  .filter-mobile-toggle {
+    display: none !important;
+  }
+}
+
+/* Tablet (768px - 1024px) */
+@media (max-width: 1024px) {
+  .main-content {
+    padding: 18px 16px;
+  }
+  .grid-4 {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+  .grid-3 {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+  }
+  .dashboard-layout {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    gap: 20px;
+  }
+  .filter-mobile-toggle {
+    display: none !important;
+  }
+  .navbar-container {
+    padding: 10px 16px !important;
+  }
+}
+
+/* Small Tablet & Large Phone (601px - 767px) */
+@media (max-width: 767px) {
+  .main-content {
+    padding: 16px 12px;
+  }
+  .grid-4, .grid-3 {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+  .grid-2 {
+    grid-template-columns: 1fr;
+  }
+  .dashboard-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .filter-mobile-toggle {
+    display: flex !important;
+  }
+  .filter-sidebar-wrapper {
+    display: none;
+  }
+  .filter-sidebar-wrapper.is-open {
+    display: block;
+  }
+  .navbar-container {
+    padding: 10px 12px !important;
+    flex-wrap: wrap;
+    gap: 10px !important;
+  }
+  .navbar-search {
+    order: 3;
+    max-width: 100% !important;
+    width: 100% !important;
+    flex-basis: 100%;
+  }
+  .navbar-actions {
+    margin-left: auto;
+    gap: 6px !important;
+    overflow-x: auto;
+    max-width: 100%;
+    padding-bottom: 2px;
+  }
+  .carousel-btn-prev { left: 8px; }
+  .carousel-btn-next { right: 8px; }
+  .button {
+    width: 32px;
+    height: 32px;
+  }
+  .button-elem {
+    width: 12px;
+    height: 12px;
+    margin: 0 10px;
+  }
+  .button:hover .button-box,
+  .button:focus .button-box {
+    transform: translateX(-32px);
+  }
+}
+
+/* Phone (<= 600px) */
 @media (max-width: 600px) {
-  .grid-4, .grid-3 { grid-template-columns: 1fr; }
+  .main-content {
+    padding: 12px 10px;
+  }
+  .grid-4, .grid-3, .grid-2 {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+  .dashboard-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .navbar-container {
+    padding: 8px 10px !important;
+  }
+  .user-profile p,
+  .user-profile-label {
+    display: none;
+  }
+  .user-profile {
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border-radius: 6px;
+  }
+  .badge {
+    font-size: 0.7rem;
+    padding: 2px 6px;
+  }
+  .carousel-btn-prev { left: 6px; }
+  .carousel-btn-next { right: 6px; }
+  .button {
+    width: 30px;
+    height: 30px;
+  }
+  .button-elem {
+    width: 11px;
+    height: 11px;
+    margin: 0 9px;
+  }
+  .button:hover .button-box,
+  .button:focus .button-box {
+    transform: translateX(-30px);
+  }
+}
+
+/* Very Small Phone (<= 400px) */
+@media (max-width: 400px) {
+  .grid-4, .grid-3 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ==========================================================================
+   WISHLIST HEART CHECKBOX - From Uiverse.io by catraco
+   ========================================================================== */
+.heart-container {
+  --heart-color: var(--color-tertiary, #CC5500);
+  position: relative;
+  width: 50px;
+  height: 50px;
+  transition: .3s;
+}
+
+.heart-container .checkbox {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  z-index: 20;
+  cursor: pointer;
+}
+
+.heart-container .svg-container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.heart-container .svg-outline,
+.heart-container .svg-filled {
+  fill: var(--heart-color);
+  position: absolute;
+}
+
+.heart-container .svg-filled {
+  animation: keyframes-svg-filled 1s;
+  display: none;
+}
+
+.heart-container .svg-celebrate {
+  position: absolute;
+  animation: keyframes-svg-celebrate .5s;
+  animation-fill-mode: forwards;
+  display: none;
+  stroke: var(--heart-color);
+  fill: var(--heart-color);
+  stroke-width: 2px;
+}
+
+.heart-container .checkbox:checked~.svg-container .svg-filled {
+  display: block;
+}
+
+.heart-container .checkbox:checked~.svg-container .svg-celebrate {
+  display: block;
+}
+
+@keyframes keyframes-svg-filled {
+  0% {
+    transform: scale(0);
+  }
+
+  25% {
+    transform: scale(1.2);
+  }
+
+  50% {
+    transform: scale(1);
+    filter: brightness(1.5);
+  }
+}
+
+@keyframes keyframes-svg-celebrate {
+  0% {
+    transform: scale(0);
+  }
+
+  50% {
+    opacity: 1;
+    filter: brightness(1.5);
+  }
+
+  100% {
+    transform: scale(1.4);
+    opacity: 0;
+    display: none;
+  }
 }

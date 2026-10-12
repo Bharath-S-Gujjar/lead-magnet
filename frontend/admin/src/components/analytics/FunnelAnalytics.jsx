@@ -22,7 +22,7 @@ export const FunnelAnalytics = () => {
 
   if (isLoading) {
     return (
-      <div className="glass-card" style={{ padding: '24px' }}>
+      <div className="glass-card dashboard-card">
         <div className="skeleton" style={{ height: '200px', borderRadius: '12px' }}></div>
       </div>
     );
@@ -30,7 +30,7 @@ export const FunnelAnalytics = () => {
 
   if (!data || !data.stages || data.stages.length === 0) {
     return (
-      <div className="glass-card" style={{ padding: '24px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+      <div className="glass-card dashboard-card" style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>
         <Filter size={24} style={{ marginBottom: '8px', opacity: 0.5 }} />
         <p>No funnel data available yet</p>
       </div>
@@ -38,12 +38,12 @@ export const FunnelAnalytics = () => {
   }
 
   const maxCount = Math.max(...data.stages.map(s => s.count), 1);
-  const colors = ['#6366f1', '#8b5cf6', '#a78bfa', '#c4b5fd', '#ddd6fe', '#ede9fe'];
+  const colors = ['#CC5500', '#db6a1d', '#9CAF88', '#869874', '#A7A7A7', '#8a8a8a'];
 
   return (
-    <div className="glass-card" style={{ padding: '24px' }}>
+    <div className="glass-card dashboard-card">
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
-        <Filter size={18} style={{ color: 'var(--accent-primary)' }} />
+        <Filter size={18} style={{ color: 'var(--color-tertiary, #CC5500)' }} />
         <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 600 }}>Purchase Funnel</h3>
         {data.summary && (
           <span style={{
@@ -51,8 +51,8 @@ export const FunnelAnalytics = () => {
             fontSize: '0.75rem',
             padding: '4px 10px',
             borderRadius: '20px',
-            background: 'rgba(99,102,241,0.15)',
-            color: 'var(--accent-primary)',
+            background: 'rgba(204, 85, 0, 0.15)',
+            color: 'var(--color-tertiary, #CC5500)',
             fontWeight: 600,
           }}>
             {data.summary.overall_conversion_rate}% overall conversion

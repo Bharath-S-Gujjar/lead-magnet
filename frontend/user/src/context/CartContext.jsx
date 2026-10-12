@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import confetti from 'canvas-confetti';
 import { addToCartApi, clearCartApi, fetchCart, getAnonymousId, getCustomerSession, removeFromCartApi, trackCustomerEvent, updateCartApi } from '../services/api';
 import { useAuth } from './AuthContext';
 
@@ -111,12 +110,6 @@ export const CartProvider = ({ children }) => {
       },
       metadata: { quantity, size, color },
     });
-
-    confetti({
-      particleCount: 40,
-      spread: 60,
-      origin: { y: 0.7 }
-    });
   };
 
   const removeFromCart = (id, selectedSize, selectedColor) => {
@@ -150,6 +143,11 @@ export const CartProvider = ({ children }) => {
     clearCartApi(userId, anonymousId).catch(restorePersistedCart);
   };
 
+  const removeOrderedItems = (orderedProductIds) => {
+    const ids = Array.isArray(orderedProductIds) ? orderedProductIds.map(String) : [];
+    setCart(prev => prev.filter(item => !ids.includes(String(item.id))));
+  };
+
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
   const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const originalSubtotal = cart.reduce((sum, item) => sum + ((item.originalPrice || item.price) * item.quantity), 0);
@@ -164,6 +162,7 @@ export const CartProvider = ({ children }) => {
       removeFromCart,
       updateQuantity,
       clearCart,
+      removeOrderedItems,
       totalItems,
       subtotal,
       originalSubtotal,

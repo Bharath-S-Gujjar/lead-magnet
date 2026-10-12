@@ -33,11 +33,15 @@ env/
 # Node & Frontend Build
 node_modules/
 frontend/node_modules/
+frontend/*/node_modules/
+.vite/
+**/node_modules/.vite/
 dist/
 dist-ssr/
 build/
 frontend/dist/
 frontend/build/
+frontend/*/dist/
 *.local
 
 # Archives (may contain secrets)
@@ -66,3 +70,7 @@ data/catalog/raw/
 data/catalog/cleaned_clothing_catalog.json
 data/catalog/resume_operation_summary.json
 backups/
+backend/backup_customer_data.py
+backend/execute_customer_reset.py
+backend/customer_data_reset_report.md
+scripts/audit_git_secrets.py

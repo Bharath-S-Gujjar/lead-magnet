@@ -4,7 +4,6 @@ import { CategorySection } from '../components/CategorySection';
 import { ProductGrid } from '../components/ProductGrid';
 import { FilterPanel } from '../components/FilterPanel';
 import { fetchProducts, fetchProductMeta, trackCustomerEvent } from '../services/api';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 function normalizeProduct(product) {
   return {
@@ -37,6 +36,7 @@ export const UserDashboard = ({ searchQuery, selectedGender, setSelectedGender }
   const [pagination, setPagination] = useState({ page: 1, limit: 24, total: 0, pages: 1 });
   const [availableBrands, setAvailableBrands] = useState([]);
   const [totalCatalogCount, setTotalCatalogCount] = useState(0);
+  const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
 
   // Load catalog metadata once on mount
   useEffect(() => {
@@ -141,12 +141,13 @@ export const UserDashboard = ({ searchQuery, selectedGender, setSelectedGender }
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-      {/* Hero Clothing Banner Carousel */}
-      <HeroBanner />
+    <div className="main-page-wrapper" style={{ position: 'relative', width: '100%' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', position: 'relative', zIndex: 1 }}>
+        {/* Hero Clothing Banner Carousel */}
+        <HeroBanner />
 
       {/* Category Pills & Gender Tabs */}
-      <CategorySection 
+      <CategorySection
         selectedGender={selectedGender}
         setSelectedGender={setSelectedGender}
         selectedCategory={selectedCategory}
@@ -154,25 +155,38 @@ export const UserDashboard = ({ searchQuery, selectedGender, setSelectedGender }
         totalItemsCount={pagination.total || totalCatalogCount}
       />
 
+      {/* Mobile/Tablet Filter Toggle Button */}
+      <div className="filter-mobile-toggle" style={{ display: 'none', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+        <button
+          onClick={() => setMobileFilterOpen(!mobileFilterOpen)}
+          className="btn btn-secondary"
+          style={{ width: '100%', padding: '10px 16px', fontWeight: 700 }}
+        >
+          {mobileFilterOpen ? '✕ Hide Filters' : '⚡ Filter Products (Brand, Price, Rating)'}
+        </button>
+      </div>
+
       {/* Main Content Layout: Sidebar Filter + Product Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: '28px', alignItems: 'start' }}>
-        <FilterPanel 
-          selectedGender={selectedGender}
-          setSelectedGender={setSelectedGender}
-          selectedCategory={selectedCategory}
-          setSelectedCategory={setSelectedCategory}
-          selectedBrand={selectedBrand}
-          setSelectedBrand={setSelectedBrand}
-          maxPrice={maxPrice}
-          setMaxPrice={setMaxPrice}
-          minRating={minRating}
-          setMinRating={setMinRating}
-          onReset={handleResetFilters}
-          availableBrands={availableBrands}
-        />
+      <div className="dashboard-layout">
+        <div className={`filter-sidebar-wrapper ${mobileFilterOpen ? 'is-open' : ''}`}>
+          <FilterPanel
+            selectedGender={selectedGender}
+            setSelectedGender={setSelectedGender}
+            selectedCategory={selectedCategory}
+            setSelectedCategory={setSelectedCategory}
+            selectedBrand={selectedBrand}
+            setSelectedBrand={setSelectedBrand}
+            maxPrice={maxPrice}
+            setMaxPrice={setMaxPrice}
+            minRating={minRating}
+            setMinRating={setMinRating}
+            onReset={handleResetFilters}
+            availableBrands={availableBrands}
+          />
+        </div>
 
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
             <h3 className="heading-md" style={{ color: 'var(--text-primary)' }}>
               {loading ? (
                 'Loading clothing items...'
@@ -189,7 +203,7 @@ export const UserDashboard = ({ searchQuery, selectedGender, setSelectedGender }
             )}
           </div>
 
-          <ProductGrid 
+          <ProductGrid
             products={products}
             loading={loading}
             error={error}
@@ -204,7 +218,7 @@ export const UserDashboard = ({ searchQuery, selectedGender, setSelectedGender }
               justifyContent: 'center',
               alignItems: 'center',
               gap: '12px',
-              marginTop: '40px',
+              marginTop: '36px',
               paddingTop: '20px',
               borderTop: '1px solid var(--panel-border)'
             }}>
@@ -216,13 +230,11 @@ export const UserDashboard = ({ searchQuery, selectedGender, setSelectedGender }
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: '6px',
-                  opacity: page <= 1 ? 0.5 : 1,
-                  cursor: page <= 1 ? 'not-allowed' : 'pointer',
                   padding: '8px 16px',
                   fontSize: '0.85rem'
                 }}
               >
-                <ChevronLeft size={16} /> Previous
+                ‹ Previous
               </button>
 
               <span style={{
@@ -242,18 +254,19 @@ export const UserDashboard = ({ searchQuery, selectedGender, setSelectedGender }
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: '6px',
-                  opacity: page >= pagination.pages ? 0.5 : 1,
-                  cursor: page >= pagination.pages ? 'not-allowed' : 'pointer',
                   padding: '8px 16px',
                   fontSize: '0.85rem'
                 }}
               >
-                Next <ChevronRight size={16} />
+                Next ›
               </button>
             </div>
           )}
         </div>
       </div>
     </div>
+    </div>
   );
 };
+
+export default UserDashboard;

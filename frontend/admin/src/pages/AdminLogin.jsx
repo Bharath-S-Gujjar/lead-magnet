@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Shirt, Lock, User, LogIn } from 'lucide-react';
 import { useAdminAuth } from '../context/AdminAuthContext';
+import ParticleDrift from '../components/ParticleDrift';
 
 export function AdminLogin() {
   const navigate = useNavigate();
@@ -39,20 +40,47 @@ export function AdminLogin() {
     <div style={{
       minHeight: '100vh',
       width: '100%',
+      position: 'relative',
       background: 'var(--bg-app)',
-      backgroundImage: 'var(--bg-gradient)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      padding: '20px'
+      padding: '20px',
+      overflow: 'hidden'
     }}>
+      {/* Particle Drift 2 Interactive Background */}
+      <div
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100vw',
+          height: '100vh',
+          zIndex: 0,
+          pointerEvents: 'none',
+          overflow: 'hidden'
+        }}
+      >
+        <ParticleDrift
+          background="transparent"
+          baseColor="#A7A7A7"
+          accentColor="#CC5500"
+          density={120}
+          dotSize={3.5}
+          speed={20}
+          hover={200}
+        />
+      </div>
+
       <div style={{
+        position: 'relative',
+        zIndex: 1,
         width: '100%',
-        maxWidth: '480px',
+        maxWidth: '460px',
         background: 'var(--panel-solid)',
         border: '1px solid var(--panel-border)',
-        boxShadow: 'var(--panel-shadow-hover)',
-        borderRadius: 'var(--radius-lg)',
+        boxShadow: '0 8px 30px rgba(0, 0, 0, 0.12)',
+        borderRadius: 'var(--radius-md, 6px)',
         padding: '36px 32px',
         display: 'flex',
         flexDirection: 'column',
@@ -61,17 +89,19 @@ export function AdminLogin() {
         {/* Header Branding */}
         <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
           <div style={{
-            width: '56px',
-            height: '56px',
-            borderRadius: '16px',
-            background: 'linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%)',
+            width: '52px',
+            height: '52px',
+            borderRadius: '8px',
+            background: 'var(--color-primary, #9CAF88)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: 'white',
-            boxShadow: '0 8px 20px rgba(79, 70, 229, 0.3)'
+            color: '#1a1d18',
+            fontWeight: 800,
+            fontSize: '1.2rem',
+            boxShadow: '0 4px 16px rgba(156, 175, 136, 0.4)'
           }}>
-            <Shirt size={30} />
+            LM
           </div>
           <div>
             <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.6rem', fontWeight: 800, color: 'var(--text-primary)' }}>

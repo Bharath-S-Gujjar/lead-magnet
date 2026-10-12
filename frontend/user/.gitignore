@@ -1,9 +1,10 @@
 # Dependencies
 node_modules/
 
-# Production build
+# Production build & cache
 dist/
 dist-ssr/
+.vite/
 
 # Environment files
 .env

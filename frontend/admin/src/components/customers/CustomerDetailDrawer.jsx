@@ -88,17 +88,62 @@ function buildChartData(behaviorDistribution) {
 export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
   const { admin } = useAdminAuth();
   const [detail, setDetail] = useState(null);
+  const [cachedDetail, setCachedDetail] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [shouldRender, setShouldRender] = useState(isOpen);
+  const [isSlideOpen, setIsSlideOpen] = useState(false);
+
+  // Manage mounting for smooth slide-in / slide-out CSS transitions
+  useEffect(() => {
+    let timer;
+    let animId;
+    if (isOpen) {
+      setShouldRender(true);
+      // Wait a frame after mount to allow DOM insertion before transitioning transform
+      animId = requestAnimationFrame(() => {
+        animId = requestAnimationFrame(() => {
+          setIsSlideOpen(true);
+        });
+      });
+    } else {
+      setIsSlideOpen(false);
+      timer = setTimeout(() => {
+        setShouldRender(false);
+      }, 450);
+    }
+    return () => {
+      if (animId) cancelAnimationFrame(animId);
+      if (timer) clearTimeout(timer);
+    };
+  }, [isOpen]);
+
+  // Lock background body scrolling and listen for Escape key while drawer is open
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') onClose?.();
+    };
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, onClose]);
 
   useEffect(() => {
-    if (!isOpen || !customerId) { setDetail(null); setError(''); return; }
+    if (!isOpen || !customerId) { return; }
     let isMounted = true;
     async function load() {
       setIsLoading(true); setError('');
       try {
         const data = await getAdminCustomerIntelligence(customerId, admin?.token);
-        if (isMounted) setDetail(data);
+        if (isMounted) {
+          setDetail(data);
+          setCachedDetail(data);
+        }
       } catch (err) {
         if (isMounted) { setError(err.message || 'Unable to load customer intelligence.'); setDetail(null); }
       } finally {
@@ -109,24 +154,25 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
     return () => { isMounted = false; };
   }, [isOpen, customerId, admin?.token]);
 
-  if (!isOpen) return null;
+  if (!shouldRender && !isOpen) return null;
 
-  const profile = detail?.customer || {};
-  const lead = detail?.lead || {};
-  const orders = detail?.orders || [];
-  const cart = detail?.cart || [];
-  const wishlist = detail?.wishlist || [];
-  const comms = detail?.marketing?.communications || [];
-  const scoreHistory = detail?.score_history || [];
-  const rfm = detail?.rfm || {};
-  const affinity = detail?.product_affinity || {};
-  const explanation = detail?.lead_explanation || {};
-  const retention = detail?.retention || {};
-  const journey = detail?.journey_timeline || [];
+  const currentDetail = detail || cachedDetail;
+  const profile = currentDetail?.customer || {};
+  const lead = currentDetail?.lead || {};
+  const orders = currentDetail?.orders || [];
+  const cart = currentDetail?.cart || [];
+  const wishlist = currentDetail?.wishlist || [];
+  const comms = currentDetail?.marketing?.communications || [];
+  const scoreHistory = currentDetail?.score_history || [];
+  const rfm = currentDetail?.rfm || {};
+  const affinity = currentDetail?.product_affinity || {};
+  const explanation = currentDetail?.lead_explanation || {};
+  const retention = currentDetail?.retention || {};
+  const journey = currentDetail?.journey_timeline || [];
 
   // Canonical behavior data — from behavior_summary (live events)
-  const bs = detail?.behavior_summary || {};
-  const bd = detail?.behavior_distribution || {};
+  const bs = currentDetail?.behavior_summary || {};
+  const bd = currentDetail?.behavior_distribution || {};
   const chartData = buildChartData(bd);
 
   const totalRevenue = orders.reduce((s, o) => s + (o.total_amount || o.total || 0), 0);
@@ -144,15 +190,16 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
 
   return (
     <>
-      <div className={`drawer-overlay ${isOpen ? 'open' : ''}`} onClick={onClose} />
+      <div className={`drawer-overlay ${isSlideOpen ? 'open' : ''}`} onClick={onClose} />
 
-      <div className={`drawer-panel ${isOpen ? 'open' : ''}`} style={{ maxWidth: '760px', width: '100%', overflowY: 'auto' }}>
+      <div className={`drawer-panel ${isSlideOpen ? 'open' : ''}`}>
 
         {/* ── Header ── */}
         <div style={{
           padding: '24px 32px', borderBottom: '1px solid var(--panel-border)',
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          background: 'var(--panel-bg)', position: 'sticky', top: 0, zIndex: 10
+          background: 'var(--panel-bg)', position: 'sticky', top: 0, zIndex: 10,
+          flexShrink: 0
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <div style={{
@@ -173,11 +220,11 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
               </div>
             </div>
           </div>
-          <button onClick={onClose} className="btn btn-ghost" style={{ padding: '8px' }}><X size={20} /></button>
+          <button onClick={onClose} className="btn btn-ghost" style={{ padding: '8px' }} aria-label="Close drawer"><X size={20} /></button>
         </div>
 
         {/* ── Body ── */}
-        <div style={{ padding: '32px' }}>
+        <div className="drawer-content" style={{ padding: '32px' }}>
           {isLoading ? (
             <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--text-muted)' }}>
               Fetching Customer 360 intelligence...
@@ -580,10 +627,7 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
                           {getChannelIcon(c.channel)}
                           <div>
                             <div style={{ fontWeight: 700, textTransform: 'capitalize' }}>{c.channel} Channel</div>
-                            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                              Recipient: {c.recipient || 'N/A'}
-                              {c.last_error && <span style={{ color: 'var(--text-secondary)' }}> • Reason: {c.last_error}</span>}
-                            </div>
+                            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Recipient: {c.recipient || 'N/A'}</div>
                           </div>
                         </div>
                         <div style={{ textAlign: 'right' }}>

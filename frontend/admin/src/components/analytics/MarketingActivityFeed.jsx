@@ -44,7 +44,7 @@ export const MarketingActivityFeed = () => {
   };
 
   return (
-    <div className="glass-card" style={{ padding: '24px 28px', marginBottom: '28px' }}>
+    <div className="glass-card dashboard-card">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
         <div>
           <h3 className="heading-lg" style={{ color: 'var(--text-primary)' }}>Marketing Automation Activity</h3>
@@ -107,7 +107,6 @@ export const MarketingActivityFeed = () => {
                   </div>
                   <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                     Channel: {item.channel?.toUpperCase()} • Recipient: {item.recipient || 'N/A'}
-                    {item.last_error && <span style={{ color: 'var(--text-secondary)' }}> • Reason: {item.last_error}</span>}
                   </div>
                 </div>
               </div>

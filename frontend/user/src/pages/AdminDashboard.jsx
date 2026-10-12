@@ -7,7 +7,6 @@ import { GenderDistribution } from '../components/admin/GenderDistribution';
 import { CustomerTable } from '../components/admin/CustomerTable';
 import { CustomerDetailDrawer } from '../components/admin/CustomerDetailDrawer';
 import { LeadsTable } from '../components/admin/LeadsTable';
-import { ShoppingBag, Clock, User, Package } from 'lucide-react';
 import {
   fetchAnalyticsEvents,
   fetchAnalyticsOverview,
@@ -117,72 +116,40 @@ function buildCustomers(profiles, sessions, leads) {
 }
 
 function LoadingSkeleton() {
-  const pulse = {
-    background: 'linear-gradient(90deg, var(--panel-solid) 25%, rgba(255,255,255,0.06) 50%, var(--panel-solid) 75%)',
-    backgroundSize: '200% 100%',
-    animation: 'skeletonPulse 1.5s ease-in-out infinite',
-    borderRadius: '8px',
-  };
   return (
-    <>
-      {/* KPI Cards skeleton */}
-      <section>
-        <div className="grid-4" style={{ gap: '20px' }}>
-          {[1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="glass-card" style={{ padding: '24px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '14px' }}>
-                <div style={{ ...pulse, height: '14px', width: '60%' }} />
-                <div style={{ ...pulse, height: '36px', width: '36px', borderRadius: '10px' }} />
-              </div>
-              <div style={{ ...pulse, height: '32px', width: '50%', marginBottom: '8px' }} />
-              <div style={{ ...pulse, height: '12px', width: '80%' }} />
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Chart skeleton */}
-      <div className="glass-card" style={{ padding: '24px 28px', marginTop: '20px' }}>
-        <div style={{ ...pulse, height: '20px', width: '40%', marginBottom: '8px' }} />
-        <div style={{ ...pulse, height: '14px', width: '60%', marginBottom: '24px' }} />
-        <div style={{ display: 'flex', gap: '48px' }}>
-          <div style={{ ...pulse, height: '220px', width: '220px', borderRadius: '50%' }} />
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {[1, 2, 3].map((i) => (
-              <div key={i} style={{ ...pulse, height: '60px', borderRadius: '8px' }} />
-            ))}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} style={{ padding: '24px', background: 'var(--panel-solid)', border: '1px solid var(--panel-border)', borderRadius: 'var(--radius-md, 6px)' }}>
+            <div className="skeleton-loader" style={{ height: '14px', width: '60%', marginBottom: '12px', borderRadius: '3px' }} />
+            <div className="skeleton-loader" style={{ height: '28px', width: '40%', marginBottom: '8px', borderRadius: '4px' }} />
+            <div className="skeleton-loader" style={{ height: '12px', width: '80%', borderRadius: '3px' }} />
           </div>
-        </div>
-      </div>
-
-      {/* Table skeleton */}
-      <section className="glass-card" style={{ padding: '32px', marginTop: '20px' }}>
-        <div style={{ ...pulse, height: '22px', width: '35%', marginBottom: '8px' }} />
-        <div style={{ ...pulse, height: '14px', width: '55%', marginBottom: '24px' }} />
-        {[1, 2, 3, 4, 5].map((i) => (
-          <div key={i} style={{ ...pulse, height: '62px', marginBottom: '8px', borderRadius: '8px' }} />
         ))}
-      </section>
-    </>
+      </div>
+      <div style={{ padding: '24px', background: 'var(--panel-solid)', border: '1px solid var(--panel-border)', borderRadius: 'var(--radius-md, 6px)' }}>
+        <div className="skeleton-loader" style={{ height: '20px', width: '30%', marginBottom: '16px', borderRadius: '4px' }} />
+        <div className="skeleton-loader" style={{ height: '180px', width: '100%', borderRadius: '4px' }} />
+      </div>
+    </div>
   );
 }
 
 function RecentOrders({ orders }) {
   if (!orders || orders.length === 0) {
     return (
-      <div className="glass-card" style={{ padding: '28px 32px' }}>
-        <h3 className="heading-lg" style={{ color: 'var(--text-primary)', marginBottom: '6px' }}>Recent Orders</h3>
-        <p className="text-subtle" style={{ marginBottom: '20px' }}>Live orders from MongoDB orders collection</p>
+      <div style={{ padding: '24px', background: 'var(--panel-solid)', border: '1px solid var(--panel-border)', borderRadius: '4px' }}>
+        <h3 className="heading-lg" style={{ color: 'var(--text-primary)', marginBottom: '4px' }}>Recent Orders</h3>
+        <p className="text-subtle" style={{ marginBottom: '16px' }}>Live orders from orders collection</p>
         <div style={{
-          padding: '32px',
+          padding: '24px',
           textAlign: 'center',
-          background: 'var(--table-header-bg)',
-          borderRadius: 'var(--radius-lg)',
+          background: 'var(--bg-app)',
+          borderRadius: '4px',
           border: '1px dashed var(--panel-border)',
           color: 'var(--text-muted)',
         }}>
-          <Package size={36} style={{ marginBottom: '10px', opacity: 0.5 }} />
-          <div style={{ fontSize: '0.9rem' }}>No orders yet. Place an order from the storefront to see data here.</div>
+          <div style={{ fontSize: '0.88rem' }}>No orders placed yet.</div>
         </div>
       </div>
     );
@@ -191,29 +158,27 @@ function RecentOrders({ orders }) {
   const recent = orders.slice(0, 10);
 
   return (
-    <div className="glass-card" style={{ padding: '28px 32px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+    <div style={{ padding: '24px', background: 'var(--panel-solid)', border: '1px solid var(--panel-border)', borderRadius: '4px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
         <div>
           <h3 className="heading-lg" style={{ color: 'var(--text-primary)' }}>Recent Orders</h3>
-          <p className="text-subtle">Live orders from MongoDB — {orders.length} total order{orders.length !== 1 ? 's' : ''}</p>
+          <p className="text-subtle">Live store orders: {orders.length} total</p>
         </div>
-        <span className="badge badge-emerald" style={{ fontSize: '0.8rem', padding: '6px 14px' }}>
+        <span className="badge badge-primary" style={{ fontSize: '0.8rem', padding: '4px 12px' }}>
           {orders.length} Total
         </span>
       </div>
 
       <div style={{ overflowX: 'auto', maxHeight: '440px', overflowY: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '0 8px', fontSize: '0.875rem' }}>
+        <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '0 6px', fontSize: '0.875rem' }}>
           <thead>
             <tr style={{ background: 'var(--table-header-bg)', color: 'var(--text-secondary)' }}>
-              <th style={{ padding: '14px 18px', borderRadius: 'var(--radius-md) 0 0 var(--radius-md)', fontWeight: 700, textAlign: 'left' }}>Order ID</th>
-              <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'left' }}>Customer</th>
-              <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'center' }}>Items</th>
-              <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'right' }}>Total</th>
-              <th style={{ padding: '14px 16px', fontWeight: 700, textAlign: 'center' }}>Status</th>
-              <th style={{ padding: '14px 18px', borderRadius: '0 var(--radius-md) var(--radius-md) 0', fontWeight: 700, textAlign: 'left' }}>
-                <Clock size={13} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Date
-              </th>
+              <th style={{ padding: '12px 16px', fontWeight: 700, textAlign: 'left' }}>Order ID</th>
+              <th style={{ padding: '12px 14px', fontWeight: 700, textAlign: 'left' }}>Customer</th>
+              <th style={{ padding: '12px 14px', fontWeight: 700, textAlign: 'center' }}>Items</th>
+              <th style={{ padding: '12px 14px', fontWeight: 700, textAlign: 'right' }}>Total</th>
+              <th style={{ padding: '12px 14px', fontWeight: 700, textAlign: 'center' }}>Status</th>
+              <th style={{ padding: '12px 16px', fontWeight: 700, textAlign: 'left' }}>Date</th>
             </tr>
           </thead>
           <tbody>
@@ -222,34 +187,29 @@ function RecentOrders({ orders }) {
                 key={order._id}
                 style={{
                   background: 'var(--panel-solid)',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.02)',
                   border: '1px solid var(--panel-border)',
                 }}
               >
-                <td style={{ padding: '14px 18px', borderRadius: 'var(--radius-md) 0 0 var(--radius-md)', fontFamily: 'monospace', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                <td style={{ padding: '12px 16px', fontFamily: 'monospace', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                   #{String(order._id).slice(-8).toUpperCase()}
                 </td>
-                <td style={{ padding: '14px 16px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <User size={15} style={{ color: 'var(--accent-indigo)' }} />
-                    <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{order.customer_email || '—'}</span>
-                  </div>
+                <td style={{ padding: '12px 14px' }}>
+                  <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{order.customer_email || 'Shopper'}</span>
                 </td>
-                <td style={{ padding: '14px 16px', textAlign: 'center' }}>
-                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', color: 'var(--accent-indigo)', fontWeight: 700 }}>
-                    <ShoppingBag size={14} />
+                <td style={{ padding: '12px 14px', textAlign: 'center' }}>
+                  <span style={{ color: 'var(--brand-primary)', fontWeight: 700 }}>
                     {Array.isArray(order.items) ? order.items.length : 0}
-                  </div>
+                  </span>
                 </td>
-                <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 800, color: 'var(--text-primary)', fontSize: '0.95rem' }}>
+                <td style={{ padding: '12px 14px', textAlign: 'right', fontWeight: 700, color: 'var(--text-primary)' }}>
                   ₹{(order.total_amount || 0).toLocaleString('en-IN')}
                 </td>
-                <td style={{ padding: '14px 16px', textAlign: 'center' }}>
-                  <span className="badge badge-emerald" style={{ fontSize: '0.75rem', padding: '4px 10px', textTransform: 'capitalize' }}>
+                <td style={{ padding: '12px 14px', textAlign: 'center' }}>
+                  <span className="badge badge-primary" style={{ fontSize: '0.75rem', textTransform: 'capitalize' }}>
                     {order.status || 'placed'}
                   </span>
                 </td>
-                <td style={{ padding: '14px 18px', borderRadius: '0 var(--radius-md) var(--radius-md) 0', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+                <td style={{ padding: '12px 16px', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
                   {formatDate(order.created_at)}
                 </td>
               </tr>
@@ -361,14 +321,14 @@ export function AdminDashboard() {
   };
 
   return (
-    <div className="app-layout">
+    <div className="app-layout" style={{ position: 'relative', width: '100%' }}>
       <AdminTopbar
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
         notifications={notifications}
       />
 
-      <main className="content-body">
+      <main className="content-body" style={{ position: 'relative', zIndex: 1 }}>
         {isLoading ? (
           <LoadingSkeleton />
         ) : (
@@ -378,8 +338,8 @@ export function AdminDashboard() {
             <GenderDistribution eventAnalytics={eventAnalytics} overview={overview} customers={customers} />
 
             {loadError ? (
-              <div className="glass-card" style={{ padding: '18px 24px', color: 'var(--accent-rose)', marginBottom: '20px' }}>
-                ⚠ Failed to load dashboard data: {loadError}
+              <div style={{ padding: '16px 20px', color: 'var(--brand-tertiary)', border: '1px solid var(--panel-border)', borderRadius: '4px', background: 'var(--panel-solid)' }}>
+                Failed to load dashboard data: {loadError}
               </div>
             ) : null}
 

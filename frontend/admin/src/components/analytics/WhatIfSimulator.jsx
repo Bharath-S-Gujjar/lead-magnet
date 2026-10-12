@@ -63,7 +63,7 @@ export const WhatIfSimulator = () => {
   };
 
   return (
-    <div className="glass-card" style={{ padding: '24px' }}>
+    <div className="glass-card dashboard-card">
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
         <FlaskConical size={18} style={{ color: '#8b5cf6' }} />
         <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 600 }}>What-If Simulator</h3>

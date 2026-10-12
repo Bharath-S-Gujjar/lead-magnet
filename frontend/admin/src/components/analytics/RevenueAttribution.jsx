@@ -22,7 +22,7 @@ export const RevenueAttribution = () => {
 
   if (isLoading) {
     return (
-      <div className="glass-card" style={{ padding: '24px' }}>
+      <div className="glass-card dashboard-card">
         <div className="skeleton" style={{ height: '100px', borderRadius: '12px' }}></div>
       </div>
     );
@@ -35,39 +35,39 @@ export const RevenueAttribution = () => {
       label: 'Qualified Leads',
       value: data.total_qualified_leads || 0,
       icon: Target,
-      color: '#6366f1',
-      bg: 'rgba(99,102,241,0.12)',
+      color: '#CC5500',
+      bg: 'rgba(204, 85, 0, 0.12)',
     },
     {
       label: 'Leads → Purchase',
       value: data.qualified_with_purchase || 0,
       suffix: ` (${data.qualified_to_purchase_conversion_rate || 0}%)`,
       icon: TrendingUp,
-      color: '#10b981',
-      bg: 'rgba(16,185,129,0.12)',
+      color: '#9CAF88',
+      bg: 'rgba(156, 175, 136, 0.15)',
     },
     {
       label: 'Attributed Revenue',
       value: `₹${(data.attributed_revenue || 0).toLocaleString('en-IN')}`,
       icon: DollarSign,
-      color: '#f59e0b',
-      bg: 'rgba(245,158,11,0.12)',
+      color: '#CC5500',
+      bg: 'rgba(204, 85, 0, 0.12)',
     },
     {
       label: 'Attributed Orders',
       value: data.attributed_orders || 0,
       icon: DollarSign,
-      color: '#8b5cf6',
-      bg: 'rgba(139,92,246,0.12)',
+      color: '#A7A7A7',
+      bg: 'rgba(167, 167, 167, 0.15)',
     },
   ];
 
   const hasZeroAttributed = !data.attributed_revenue && !data.attributed_orders;
 
   return (
-    <div className="glass-card" style={{ padding: '24px' }}>
+    <div className="glass-card dashboard-card">
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
-        <DollarSign size={18} style={{ color: '#f59e0b' }} />
+        <DollarSign size={18} style={{ color: 'var(--color-tertiary, #CC5500)' }} />
         <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 600 }}>Lead → Revenue Attribution</h3>
       </div>
 

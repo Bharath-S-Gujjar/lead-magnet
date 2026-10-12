@@ -1,8 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
-import { API_BASE_URL } from '../services/api';
 
 const AdminAuthContext = createContext(null);
 const ADMIN_STORAGE_KEY = 'lead_magnet_admin_session';
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:5000').replace(/\/$/, '');
 
 export function AdminAuthProvider({ children }) {
   const [admin, setAdmin] = useState(() => {

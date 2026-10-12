@@ -1,10 +1,5 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { 
-  User, Package, Heart, Tag, HelpCircle, MapPin, CreditCard, 
-  Globe, Bell, Shield, Star, MessageSquare, Store, FileText, 
-  LogOut, ChevronRight, Edit3, Check, X, Plus, Sparkles, AlertCircle
-} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { getCustomerSession } from '../services/api';
 
@@ -14,7 +9,7 @@ export function Profile() {
   const navigate = useNavigate();
 
   // Active modal state
-  const [activeModal, setActiveModal] = useState(null); // 'edit_profile', 'addresses', 'language', 'notifications', 'cards', 'privacy', 'coupons', 'faqs', 'terms'
+  const [activeModal, setActiveModal] = useState(null); // 'edit_profile', 'addresses', 'language', 'notifications', 'cards', 'coupons', 'faqs', 'terms'
 
   const [profileForm, setProfileForm] = useState({
     fullName: customer?.full_name || customer?.fullName || customer?.username || '',
@@ -40,7 +35,6 @@ export function Profile() {
   const [newAddr, setNewAddr] = useState({ name: '', phone: '', type: 'Home', street: '', city: '', state: '', pincode: '' });
   const [showAddAddr, setShowAddAddr] = useState(false);
 
-  const [language, setLanguage] = useState(customer?.language || 'English');
   const [notifications, setNotifications] = useState(() => {
     return (customer?.notifications && typeof customer.notifications === 'object') ? customer.notifications : {
       email: true,
@@ -62,7 +56,7 @@ export function Profile() {
     if (updateProfile) {
       updateProfile(profileForm);
     }
-    showToast('Profile details updated successfully!');
+    showToast('Profile details updated successfully.');
     setActiveModal(null);
   };
 
@@ -75,21 +69,14 @@ export function Profile() {
     if (updateProfile) updateProfile({ addresses: updated });
     setNewAddr({ name: '', phone: '', type: 'Home', street: '', city: '', state: '', pincode: '' });
     setShowAddAddr(false);
-    showToast('New address saved successfully!');
+    showToast('New address saved successfully.');
   };
 
   const handleToggleNotification = (key) => {
     const updated = { ...notifications, [key]: !notifications[key] };
     setNotifications(updated);
     if (updateProfile) updateProfile({ notifications: updated });
-    showToast('Notification preference saved!');
-  };
-
-  const handleSelectLanguage = (lang) => {
-    setLanguage(lang);
-    if (updateProfile) updateProfile({ language: lang });
-    showToast(`Language changed to ${lang}`);
-    setActiveModal(null);
+    showToast('Notification preference saved.');
   };
 
   const handleLogout = () => {
@@ -102,23 +89,38 @@ export function Profile() {
   if (!isAuth) {
     return (
       <div style={{ maxWidth: '600px', margin: '40px auto', padding: '0 20px', textAlign: 'center' }}>
-        <div className="glass-card" style={{ padding: '40px 24px', borderRadius: 'var(--radius-lg)' }}>
+        <div style={{
+          padding: '40px 24px',
+          borderRadius: '4px',
+          background: 'var(--panel-solid)',
+          border: '1px solid var(--panel-border)'
+        }}>
           <div style={{
-            width: '64px', height: '64px', borderRadius: '50%', background: 'rgba(79, 70, 229, 0.1)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-indigo)',
+            width: '52px',
+            height: '52px',
+            borderRadius: '4px',
+            background: 'var(--bg-app)',
+            border: '1px solid var(--panel-border)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--brand-primary)',
             margin: '0 auto 16px'
           }}>
-            <User size={32} />
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+              <circle cx="12" cy="7" r="4" />
+            </svg>
           </div>
           <h2 className="heading-lg" style={{ marginBottom: '8px' }}>Sign in to view your profile</h2>
           <p className="text-subtle" style={{ marginBottom: '24px' }}>
             Access your orders, saved wishlist, coupons, address book and profile settings.
           </p>
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-            <Link to="/login" className="btn btn-primary" style={{ padding: '10px 24px', borderRadius: 'var(--radius-full)' }}>
+            <Link to="/login" className="btn btn-primary" style={{ padding: '10px 24px', borderRadius: '4px' }}>
               Sign In
             </Link>
-            <Link to="/signup" className="btn btn-secondary" style={{ padding: '10px 24px', borderRadius: 'var(--radius-full)' }}>
+            <Link to="/signup" className="btn btn-secondary" style={{ padding: '10px 24px', borderRadius: '4px' }}>
               Create Account
             </Link>
           </div>
@@ -141,33 +143,52 @@ export function Profile() {
       {/* Toast Notification */}
       {toastMessage && (
         <div style={{
-          position: 'fixed', bottom: '24px', right: '24px', zIndex: 100,
-          background: 'var(--accent-indigo)', color: 'white', padding: '12px 20px',
-          borderRadius: 'var(--radius-md)', boxShadow: '0 10px 25px rgba(0,0,0,0.2)',
-          display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.9rem', fontWeight: 600
+          position: 'fixed',
+          bottom: '24px',
+          right: '24px',
+          zIndex: 100,
+          background: 'var(--brand-primary)',
+          color: '#1a1d18',
+          padding: '12px 20px',
+          borderRadius: '4px',
+          border: '1px solid var(--panel-border)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          fontSize: '0.9rem',
+          fontWeight: 600
         }}>
-          <Check size={18} />
           <span>{toastMessage}</span>
         </div>
       )}
 
       {/* 1. Header Profile & VIP Card */}
-      <div className="glass-card" style={{ padding: '24px', borderRadius: 'var(--radius-lg)' }}>
+      <div style={{
+        padding: '24px',
+        borderRadius: '4px',
+        background: 'var(--panel-solid)',
+        border: '1px solid var(--panel-border)'
+      }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <img 
               src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(userEmail)}`} 
               alt={userName}
+              loading="lazy"
+              decoding="async"
               style={{
-                width: '64px', height: '64px', borderRadius: '50%', background: '#e2e8f0',
-                border: '3px solid var(--accent-indigo)', boxShadow: '0 4px 12px rgba(79, 70, 229, 0.2)'
+                width: '56px',
+                height: '56px',
+                borderRadius: '4px',
+                background: 'var(--bg-app)',
+                border: '1px solid var(--panel-border)'
               }}
             />
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <h2 className="heading-lg" style={{ color: 'var(--text-primary)' }}>{userName}</h2>
-                <span className="badge badge-indigo" style={{ fontSize: '0.75rem' }}>
-                  <Sparkles size={12} /> @{userUsername}
+                <span className="badge badge-primary" style={{ fontSize: '0.75rem' }}>
+                  @{userUsername}
                 </span>
               </div>
               <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
@@ -180,12 +201,16 @@ export function Profile() {
           </div>
 
           <div style={{
-            background: 'rgba(79, 70, 229, 0.08)', border: '1px solid rgba(79, 70, 229, 0.2)',
-            borderRadius: 'var(--radius-md)', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: '12px'
+            background: 'var(--bg-app)',
+            border: '1px solid var(--panel-border)',
+            borderRadius: '4px',
+            padding: '10px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px'
           }}>
-            <div style={{ fontSize: '1.4rem' }}>⚡</div>
             <div>
-              <div style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--accent-indigo)' }}>
+              <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--brand-tertiary)' }}>
                 {points} Magnet Coins
               </div>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Available Rewards Balance</div>
@@ -195,11 +220,13 @@ export function Profile() {
 
         {/* User Profile View Card */}
         <div style={{
-          marginTop: '20px', padding: '16px 20px', borderRadius: 'var(--radius-md)',
-          background: 'var(--panel-solid)', border: '1px solid var(--panel-border)'
+          marginTop: '20px',
+          padding: '16px 20px',
+          borderRadius: '4px',
+          background: 'var(--bg-app)',
+          border: '1px solid var(--panel-border)'
         }}>
-          <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <User size={16} style={{ color: 'var(--accent-indigo)' }} />
+          <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '10px' }}>
             User Profile
           </h4>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', fontSize: '0.84rem' }}>
@@ -213,152 +240,150 @@ export function Profile() {
             </div>
             <div>
               <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Username:</span>
-              <div style={{ fontWeight: 700, color: 'var(--accent-indigo)' }}>@{userUsername}</div>
+              <div style={{ fontWeight: 700, color: 'var(--brand-tertiary)' }}>@{userUsername}</div>
             </div>
           </div>
         </div>
 
         {/* Promo Banner inside card */}
         <div style={{
-          marginTop: '16px', padding: '12px 16px', borderRadius: 'var(--radius-md)',
-          background: 'linear-gradient(135deg, rgba(79, 70, 229, 0.12) 0%, rgba(59, 130, 246, 0.08) 100%)',
-          border: '1px dashed rgba(79, 70, 229, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          flexWrap: 'wrap', gap: '10px'
+          marginTop: '16px',
+          padding: '12px 16px',
+          borderRadius: '4px',
+          background: 'var(--bg-app)',
+          border: '1px solid var(--panel-border)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '10px'
         }}>
           <span style={{ fontSize: '0.84rem', color: 'var(--text-primary)', fontWeight: 500 }}>
-            ✨ Enjoy <strong>FREE Express Shipping</strong> & Early Access to Flash Sales with Lead Magnet VIP.
+            Enjoy <strong>Free Express Shipping</strong> and early access with Lead Magnet VIP.
           </span>
-          <button onClick={() => setActiveModal('coupons')} className="btn btn-primary" style={{ padding: '6px 14px', fontSize: '0.78rem', borderRadius: 'var(--radius-full)' }}>
+          <button onClick={() => setActiveModal('coupons')} className="btn btn-primary" style={{ padding: '6px 14px', fontSize: '0.78rem', borderRadius: '4px' }}>
             Explore Rewards
           </button>
         </div>
 
         {/* Quick Action Grid (Orders, Wishlist, Coupons, Help) */}
         <div className="grid-4" style={{ marginTop: '24px' }}>
-          <Link to="/orders" className="btn btn-secondary" style={{ flexDirection: 'column', gap: '8px', padding: '16px 12px', textAlign: 'center', height: '100%' }}>
-            <Package size={22} style={{ color: 'var(--accent-indigo)' }} />
+          <Link to="/orders" className="btn btn-secondary" style={{ flexDirection: 'column', gap: '8px', padding: '16px 12px', textAlign: 'center', height: '100%', borderRadius: '4px' }}>
+            <img width="24" height="24" src="https://img.icons8.com/material-outlined/24/box--v1.png" alt="box--v1" loading="lazy" decoding="async" style={{ display: 'block', margin: '0 auto' }} />
             <span style={{ fontSize: '0.88rem', fontWeight: 700 }}>Orders</span>
           </Link>
 
-          <Link to="/wishlist" className="btn btn-secondary" style={{ flexDirection: 'column', gap: '8px', padding: '16px 12px', textAlign: 'center', height: '100%' }}>
-            <Heart size={22} style={{ color: 'var(--accent-rose)' }} />
+          <Link to="/wishlist" className="btn btn-secondary" style={{ flexDirection: 'column', gap: '8px', padding: '16px 12px', textAlign: 'center', height: '100%', borderRadius: '4px' }}>
             <span style={{ fontSize: '0.88rem', fontWeight: 700 }}>Wishlist</span>
           </Link>
 
-          <button onClick={() => setActiveModal('coupons')} className="btn btn-secondary" style={{ flexDirection: 'column', gap: '8px', padding: '16px 12px', textAlign: 'center', height: '100%' }}>
-            <Tag size={22} style={{ color: 'var(--accent-amber)' }} />
+          <button onClick={() => setActiveModal('coupons')} className="btn btn-secondary" style={{ flexDirection: 'column', gap: '8px', padding: '16px 12px', textAlign: 'center', height: '100%', borderRadius: '4px' }}>
             <span style={{ fontSize: '0.88rem', fontWeight: 700 }}>Coupons</span>
           </button>
 
-          <button onClick={() => setActiveModal('faqs')} className="btn btn-secondary" style={{ flexDirection: 'column', gap: '8px', padding: '16px 12px', textAlign: 'center', height: '100%' }}>
-            <HelpCircle size={22} style={{ color: 'var(--accent-blue)' }} />
+          <button onClick={() => setActiveModal('faqs')} className="btn btn-secondary" style={{ flexDirection: 'column', gap: '8px', padding: '16px 12px', textAlign: 'center', height: '100%', borderRadius: '4px' }}>
             <span style={{ fontSize: '0.88rem', fontWeight: 700 }}>Help Center</span>
           </button>
         </div>
       </div>
 
       {/* 2. Account Settings Section */}
-      <div className="glass-card" style={{ padding: '24px', borderRadius: 'var(--radius-lg)' }}>
-        <h3 className="heading-md" style={{ marginBottom: '16px', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <div style={{
+        padding: '24px',
+        borderRadius: '4px',
+        background: 'var(--panel-solid)',
+        border: '1px solid var(--panel-border)'
+      }}>
+        <h3 className="heading-md" style={{ marginBottom: '16px', color: 'var(--text-primary)' }}>
           Account Settings
         </h3>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', background: 'var(--panel-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', background: 'var(--panel-border)', borderRadius: '4px', overflow: 'hidden' }}>
           
           {/* Edit Profile */}
           <button onClick={() => setActiveModal('edit_profile')} style={menuItemStyle}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-              <User size={19} style={{ color: 'var(--accent-indigo)' }} />
-              <div style={{ textAlign: 'left' }}>
-                <div style={{ fontWeight: 600, fontSize: '0.92rem', color: 'var(--text-primary)' }}>Edit Profile</div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Name, Email, Phone number, Gender</div>
-              </div>
+            <div style={{ textAlign: 'left' }}>
+              <div style={{ fontWeight: 600, fontSize: '0.92rem', color: 'var(--text-primary)' }}>Edit Profile</div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Name, Email, Phone number, Gender</div>
             </div>
-            <ChevronRight size={18} style={{ color: 'var(--text-muted)' }} />
+            <span style={{ color: 'var(--text-muted)' }}>›</span>
           </button>
 
           {/* Saved Addresses */}
           <button onClick={() => setActiveModal('addresses')} style={menuItemStyle}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-              <MapPin size={19} style={{ color: 'var(--accent-rose)' }} />
-              <div style={{ textAlign: 'left' }}>
-                <div style={{ fontWeight: 600, fontSize: '0.92rem', color: 'var(--text-primary)' }}>Saved Addresses</div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{addresses.length} delivery addresses saved</div>
-              </div>
+            <div style={{ textAlign: 'left' }}>
+              <div style={{ fontWeight: 600, fontSize: '0.92rem', color: 'var(--text-primary)' }}>Saved Addresses</div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{addresses.length} delivery addresses saved</div>
             </div>
-            <ChevronRight size={18} style={{ color: 'var(--text-muted)' }} />
+            <span style={{ color: 'var(--text-muted)' }}>›</span>
           </button>
 
           {/* Saved Credit / Debit & Gift Cards */}
           <button onClick={() => setActiveModal('cards')} style={menuItemStyle}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-              <CreditCard size={19} style={{ color: 'var(--accent-blue)' }} />
-              <div style={{ textAlign: 'left' }}>
-                <div style={{ fontWeight: 600, fontSize: '0.92rem', color: 'var(--text-primary)' }}>Saved Credit / Debit & Gift Cards</div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Manage payment methods and vouchers</div>
-              </div>
+            <div style={{ textAlign: 'left' }}>
+              <div style={{ fontWeight: 600, fontSize: '0.92rem', color: 'var(--text-primary)' }}>Saved Payment Methods</div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Manage payment methods and vouchers</div>
             </div>
-            <ChevronRight size={18} style={{ color: 'var(--text-muted)' }} />
+            <span style={{ color: 'var(--text-muted)' }}>›</span>
           </button>
 
           {/* Notification Settings */}
           <button onClick={() => setActiveModal('notifications')} style={menuItemStyle}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-              <Bell size={19} style={{ color: 'var(--accent-amber)' }} />
-              <div style={{ textAlign: 'left' }}>
-                <div style={{ fontWeight: 600, fontSize: '0.92rem', color: 'var(--text-primary)' }}>Notification Settings</div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Email alerts, SMS and promotional offers</div>
-              </div>
+            <div style={{ textAlign: 'left' }}>
+              <div style={{ fontWeight: 600, fontSize: '0.92rem', color: 'var(--text-primary)' }}>Notification Settings</div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Email alerts, SMS and promotional offers</div>
             </div>
-            <ChevronRight size={18} style={{ color: 'var(--text-muted)' }} />
+            <span style={{ color: 'var(--text-muted)' }}>›</span>
           </button>
         </div>
       </div>
 
-      {/* 5. Feedback & Information Section */}
-      <div className="glass-card" style={{ padding: '24px', borderRadius: 'var(--radius-lg)' }}>
+      {/* 3. Feedback & Information Section */}
+      <div style={{
+        padding: '24px',
+        borderRadius: '4px',
+        background: 'var(--panel-solid)',
+        border: '1px solid var(--panel-border)'
+      }}>
         <h3 className="heading-md" style={{ marginBottom: '16px', color: 'var(--text-primary)' }}>
-          Feedback & Information
+          Information & Support
         </h3>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', background: 'var(--panel-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', background: 'var(--panel-border)', borderRadius: '4px', overflow: 'hidden' }}>
           <button onClick={() => setActiveModal('terms')} style={menuItemStyle}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-              <FileText size={19} style={{ color: 'var(--accent-blue)' }} />
-              <div style={{ textAlign: 'left' }}>
-                <div style={{ fontWeight: 600, fontSize: '0.92rem', color: 'var(--text-primary)' }}>Terms, Policies and Licenses</div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Refunds, shipping terms & privacy terms</div>
-              </div>
+            <div style={{ textAlign: 'left' }}>
+              <div style={{ fontWeight: 600, fontSize: '0.92rem', color: 'var(--text-primary)' }}>Terms, Policies and Licenses</div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Refunds, shipping terms and privacy terms</div>
             </div>
-            <ChevronRight size={18} style={{ color: 'var(--text-muted)' }} />
+            <span style={{ color: 'var(--text-muted)' }}>›</span>
           </button>
 
           <button onClick={() => setActiveModal('faqs')} style={menuItemStyle}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-              <HelpCircle size={19} style={{ color: 'var(--accent-emerald)' }} />
-              <div style={{ textAlign: 'left' }}>
-                <div style={{ fontWeight: 600, fontSize: '0.92rem', color: 'var(--text-primary)' }}>Browse FAQs</div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Common questions about delivery and returns</div>
-              </div>
+            <div style={{ textAlign: 'left' }}>
+              <div style={{ fontWeight: 600, fontSize: '0.92rem', color: 'var(--text-primary)' }}>Browse FAQs</div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Common questions about delivery and returns</div>
             </div>
-            <ChevronRight size={18} style={{ color: 'var(--text-muted)' }} />
+            <span style={{ color: 'var(--text-muted)' }}>›</span>
           </button>
         </div>
       </div>
 
-      {/* 6. Prominent Log Out Button */}
+      {/* 4. Prominent Log Out Button */}
       <div style={{ marginTop: '10px', marginBottom: '40px' }}>
         <button 
           onClick={handleLogout}
           className="btn btn-secondary"
           style={{
-            width: '100%', padding: '14px', borderRadius: 'var(--radius-md)',
-            color: 'var(--accent-rose)', fontWeight: 700, fontSize: '1rem',
-            border: '1px solid var(--panel-border)', background: 'var(--panel-solid)',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.03)', gap: '10px'
+            width: '100%',
+            padding: '14px',
+            borderRadius: '4px',
+            color: 'var(--brand-tertiary)',
+            fontWeight: 700,
+            fontSize: '1rem',
+            border: '1px solid var(--panel-border)',
+            background: 'var(--panel-solid)'
           }}
         >
-          <LogOut size={20} />
           Log Out
         </button>
       </div>
@@ -405,10 +430,16 @@ export function Profile() {
               <div style={{ display: 'flex', gap: '12px', marginTop: '6px' }}>
                 {['Male', 'Female', 'Other'].map((g) => (
                   <label key={g} style={{
-                    flex: 1, padding: '10px', borderRadius: 'var(--radius-md)', border: '1px solid var(--panel-border)',
-                    background: profileForm.gender === g ? 'rgba(79, 70, 229, 0.1)' : 'var(--panel-solid)',
-                    borderColor: profileForm.gender === g ? 'var(--accent-indigo)' : 'var(--panel-border)',
-                    textAlign: 'center', cursor: 'pointer', fontWeight: 600, fontSize: '0.88rem'
+                    flex: 1,
+                    padding: '10px',
+                    borderRadius: '4px',
+                    border: '1px solid var(--panel-border)',
+                    background: profileForm.gender === g ? 'var(--bg-app)' : 'var(--panel-solid)',
+                    borderColor: profileForm.gender === g ? 'var(--brand-primary)' : 'var(--panel-border)',
+                    textAlign: 'center',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    fontSize: '0.88rem'
                   }}>
                     <input 
                       type="radio" 
@@ -422,7 +453,7 @@ export function Profile() {
                 ))}
               </div>
             </div>
-            <button type="submit" className="btn btn-primary" style={{ marginTop: '8px', padding: '12px', borderRadius: 'var(--radius-md)' }}>
+            <button type="submit" className="btn btn-primary" style={{ marginTop: '8px', padding: '12px', borderRadius: '4px' }}>
               Save Profile Changes
             </button>
           </form>
@@ -435,12 +466,14 @@ export function Profile() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {addresses.map((addr) => (
               <div key={addr.id} style={{
-                padding: '14px', borderRadius: 'var(--radius-md)', border: '1px solid var(--panel-border)',
-                background: addr.isDefault ? 'rgba(79, 70, 229, 0.04)' : 'var(--panel-solid)'
+                padding: '14px',
+                borderRadius: '4px',
+                border: '1px solid var(--panel-border)',
+                background: 'var(--panel-solid)'
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                   <span style={{ fontWeight: 700, fontSize: '0.92rem' }}>{addr.name}</span>
-                  <span className="badge badge-indigo" style={{ fontSize: '0.72rem' }}>{addr.type}</span>
+                  <span className="badge badge-primary" style={{ fontSize: '0.72rem' }}>{addr.type}</span>
                 </div>
                 <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
                   {addr.street}, {addr.city}, {addr.state} - {addr.pincode}
@@ -453,12 +486,12 @@ export function Profile() {
               <button 
                 onClick={() => setShowAddAddr(true)} 
                 className="btn btn-secondary" 
-                style={{ width: '100%', padding: '10px', marginTop: '8px', borderStyle: 'dashed' }}
+                style={{ width: '100%', padding: '10px', marginTop: '8px', borderStyle: 'dashed', borderRadius: '4px' }}
               >
-                <Plus size={16} /> Add New Delivery Address
+                + Add New Delivery Address
               </button>
             ) : (
-              <form onSubmit={handleAddAddress} style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px', padding: '14px', border: '1px solid var(--panel-border)', borderRadius: 'var(--radius-md)' }}>
+              <form onSubmit={handleAddAddress} style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px', padding: '14px', border: '1px solid var(--panel-border)', borderRadius: '4px' }}>
                 <h4 style={{ fontSize: '0.9rem', fontWeight: 700 }}>Add New Address</h4>
                 <input placeholder="Full Name" value={newAddr.name} onChange={(e) => setNewAddr({ ...newAddr, name: e.target.value })} required style={inputStyle} />
                 <input placeholder="Phone Number" value={newAddr.phone} onChange={(e) => setNewAddr({ ...newAddr, phone: e.target.value })} required style={inputStyle} />
@@ -468,8 +501,8 @@ export function Profile() {
                   <input placeholder="Pincode" value={newAddr.pincode} onChange={(e) => setNewAddr({ ...newAddr, pincode: e.target.value })} required style={inputStyle} />
                 </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <button type="submit" className="btn btn-primary" style={{ flex: 1, padding: '8px' }}>Save Address</button>
-                  <button type="button" onClick={() => setShowAddAddr(false)} className="btn btn-ghost" style={{ padding: '8px' }}>Cancel</button>
+                  <button type="submit" className="btn btn-primary" style={{ flex: 1, padding: '8px', borderRadius: '4px' }}>Save Address</button>
+                  <button type="button" onClick={() => setShowAddAddr(false)} className="btn btn-secondary" style={{ padding: '8px', borderRadius: '4px' }}>Cancel</button>
                 </div>
               </form>
             )}
@@ -485,9 +518,9 @@ export function Profile() {
               { key: 'orderUpdates', title: 'Order Updates', desc: 'Receive real-time tracking alerts for your orders' },
               { key: 'email', title: 'Email Notifications', desc: 'Invoices, order confirmation and receipts' },
               { key: 'sms', title: 'SMS Notifications', desc: 'Delivery updates sent to your phone' },
-              { key: 'promotions', title: 'Promotional Offers & Sales', desc: 'Exclusive discount codes and flash sale notifications' },
+              { key: 'promotions', title: 'Promotional Offers and Sales', desc: 'Exclusive discount codes and sale notifications' },
             ].map(({ key, title, desc }) => (
-              <div key={key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', border: '1px solid var(--panel-border)', borderRadius: 'var(--radius-md)' }}>
+              <div key={key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', border: '1px solid var(--panel-border)', borderRadius: '4px' }}>
                 <div>
                   <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{title}</div>
                   <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{desc}</div>
@@ -496,7 +529,7 @@ export function Profile() {
                   type="checkbox" 
                   checked={notifications[key]} 
                   onChange={() => handleToggleNotification(key)} 
-                  style={{ width: '20px', height: '20px', accentColor: 'var(--accent-indigo)', cursor: 'pointer' }}
+                  style={{ width: '18px', height: '18px', accentColor: 'var(--brand-primary)', cursor: 'pointer' }}
                 />
               </div>
             ))}
@@ -506,18 +539,18 @@ export function Profile() {
 
       {/* Cards Modal */}
       {activeModal === 'cards' && (
-        <ModalOverlay title="Saved Credit / Debit Cards" onClose={() => setActiveModal(null)}>
+        <ModalOverlay title="Saved Payment Methods" onClose={() => setActiveModal(null)}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <div style={{ padding: '16px', borderRadius: 'var(--radius-md)', background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', color: 'white' }}>
-              <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', opacity: 0.7 }}>HDFC Bank Credit Card</div>
+            <div style={{ padding: '16px', borderRadius: '4px', background: 'var(--panel-solid)', border: '1px solid var(--panel-border)', color: 'var(--text-primary)' }}>
+              <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>Standard Bank Card</div>
               <div style={{ fontSize: '1.1rem', letterSpacing: '2px', margin: '14px 0', fontWeight: 600 }}>•••• •••• •••• 4291</div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', opacity: 0.8 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                 <span>Expires 08/28</span>
                 <span>{userName.toUpperCase()}</span>
               </div>
             </div>
-            <button onClick={() => showToast('Redirecting to secure card vault...')} className="btn btn-secondary" style={{ width: '100%', padding: '10px' }}>
-              <Plus size={16} /> Add New Payment Card
+            <button onClick={() => showToast('Redirecting to secure card vault...')} className="btn btn-secondary" style={{ width: '100%', padding: '10px', borderRadius: '4px' }}>
+              + Add New Payment Card
             </button>
           </div>
         </ModalOverlay>
@@ -525,23 +558,23 @@ export function Profile() {
 
       {/* Coupons Modal */}
       {activeModal === 'coupons' && (
-        <ModalOverlay title="Available Vouchers & Coupons" onClose={() => setActiveModal(null)}>
+        <ModalOverlay title="Available Vouchers and Coupons" onClose={() => setActiveModal(null)}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {[
-              { code: 'MAGNET20', discount: '20% OFF', desc: 'Flat 20% discount on all hoodies & jackets', min: 'Min Order: $49' },
+              { code: 'MAGNET20', discount: '20% OFF', desc: 'Flat 20% discount on all hoodies and jackets', min: 'Min Order: $49' },
               { code: 'FREESHIP', discount: 'FREE SHIPPING', desc: 'Zero delivery charges on your next order', min: 'No Minimum' },
               { code: 'WELCOME500', discount: '$15 OFF', desc: 'Exclusive welcome voucher for VIP members', min: 'Min Order: $75' },
             ].map(({ code, discount, desc, min }) => (
-              <div key={code} style={{ padding: '14px', border: '1px dashed var(--accent-indigo)', borderRadius: 'var(--radius-md)', background: 'rgba(79, 70, 229, 0.03)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div key={code} style={{ padding: '14px', border: '1px dashed var(--panel-border)', borderRadius: '4px', background: 'var(--panel-solid)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontWeight: 800, color: 'var(--accent-indigo)', fontSize: '1rem' }}>{code}</span>
-                    <span className="badge badge-indigo" style={{ fontSize: '0.7rem' }}>{discount}</span>
+                    <span style={{ fontWeight: 800, color: 'var(--brand-tertiary)', fontSize: '1rem' }}>{code}</span>
+                    <span className="badge badge-primary" style={{ fontSize: '0.7rem' }}>{discount}</span>
                   </div>
                   <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '4px' }}>{desc}</div>
                   <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>{min}</div>
                 </div>
-                <button onClick={() => { navigator.clipboard.writeText(code); showToast(`Coupon ${code} copied to clipboard!`); }} className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '0.78rem' }}>
+                <button onClick={() => { navigator.clipboard.writeText(code); showToast(`Coupon ${code} copied to clipboard.`); }} className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '0.78rem', borderRadius: '4px' }}>
                   Copy
                 </button>
               </div>
@@ -555,12 +588,12 @@ export function Profile() {
         <ModalOverlay title="Frequently Asked Questions" onClose={() => setActiveModal(null)}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {[
-              { q: 'How long does shipping take?', a: 'Standard delivery takes 3-5 business days. Express VIP delivery takes 1-2 days.' },
+              { q: 'How long does shipping take?', a: 'Standard delivery takes 3 to 5 business days. Express delivery takes 1 to 2 days.' },
               { q: 'What is the return policy?', a: 'You can return any unworn item with tags attached within 30 days of delivery.' },
               { q: 'How do I earn Magnet Coins?', a: 'You earn 10 Magnet Coins for every $10 spent on Lead Magnet store items.' },
-              { q: 'How can I contact customer support?', a: 'Our support team is available 24/7 via email at support@leadmagnet.com.' },
+              { q: 'How can I contact customer support?', a: 'Our support team is available via email at support@leadmagnet.com.' },
             ].map(({ q, a }, idx) => (
-              <div key={idx} style={{ padding: '12px 14px', border: '1px solid var(--panel-border)', borderRadius: 'var(--radius-md)', background: 'var(--panel-solid)' }}>
+              <div key={idx} style={{ padding: '12px 14px', border: '1px solid var(--panel-border)', borderRadius: '4px', background: 'var(--panel-solid)' }}>
                 <div style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-primary)', marginBottom: '4px' }}>{q}</div>
                 <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>{a}</div>
               </div>
@@ -574,8 +607,8 @@ export function Profile() {
         <ModalOverlay title="Terms, Policies and Licenses" onClose={() => setActiveModal(null)}>
           <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.6, display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <p><strong>1. Lead Magnet Store Terms:</strong> By using our platform, you agree to our standard customer purchasing and delivery guidelines.</p>
-            <p><strong>2. Return & Refund Policy:</strong> Unworn items with original tags can be returned within 30 days for full store credit or refund.</p>
-            <p><strong>3. Data Privacy:</strong> We strictly protect user data and payment credentials under PCI-DSS compliance standards.</p>
+            <p><strong>2. Return and Refund Policy:</strong> Unworn items with original tags can be returned within 30 days for full store credit or refund.</p>
+            <p><strong>3. Data Privacy:</strong> We strictly protect user data and payment credentials under security standards.</p>
           </div>
         </ModalOverlay>
       )}
@@ -589,18 +622,19 @@ function ModalOverlay({ title, onClose, children }) {
   return (
     <div style={{
       position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 90,
-      background: 'rgba(0, 0, 0, 0.45)', backdropFilter: 'blur(4px)',
+      background: 'rgba(0, 0, 0, 0.5)',
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px'
     }}>
-      <div className="glass-card" style={{
+      <div style={{
         width: '100%', maxWidth: '520px', background: 'var(--panel-solid)',
-        borderRadius: 'var(--radius-lg)', padding: '24px', boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
+        borderRadius: '4px', padding: '24px',
+        border: '1px solid var(--panel-border)',
         maxHeight: '90vh', overflowY: 'auto'
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
           <h3 className="heading-md" style={{ color: 'var(--text-primary)' }}>{title}</h3>
-          <button onClick={onClose} className="btn btn-ghost" style={{ padding: '6px', borderRadius: '50%' }}>
-            <X size={20} />
+          <button onClick={onClose} className="btn btn-secondary" style={{ padding: '4px 10px', borderRadius: '4px' }}>
+            ✕
           </button>
         </div>
         {children}
@@ -619,7 +653,6 @@ const menuItemStyle = {
   border: 'none',
   width: '100%',
   cursor: 'pointer',
-  transition: 'background 0.15s ease',
   textAlign: 'left'
 };
 
@@ -634,7 +667,7 @@ const labelStyle = {
 const inputStyle = {
   width: '100%',
   padding: '10px 14px',
-  borderRadius: 'var(--radius-md)',
+  borderRadius: '4px',
   border: '1px solid var(--panel-border)',
   background: 'var(--bg-app)',
   color: 'var(--text-primary)',

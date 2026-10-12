@@ -1,17 +1,18 @@
 import React from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { Shirt, Heart, ShoppingBag, Search, Moon, Sun, Package, Shield, LogOut, LogIn, UserPlus, User } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useWishlist } from '../context/WishlistContext';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { getCustomerSession } from '../services/api';
+import { UserLoginButton } from './UserLoginButton';
+import { NavPillButton } from './NavPillButton';
 
 export const Navbar = ({ searchQuery, setSearchQuery, selectedGender, setSelectedGender }) => {
   const { totalItems } = useCart();
   const { totalWishlist } = useWishlist();
   const { theme, toggleTheme } = useTheme();
-  const { customer: authCustomer, admin, logout, adminLogout, isCustomerAuthenticated, isAdminAuthenticated } = useAuth();
+  const { customer: authCustomer, logout, adminLogout, isCustomerAuthenticated, isAdminAuthenticated } = useAuth();
   const storedCustomer = getCustomerSession();
   const customer = authCustomer || storedCustomer;
   const isLoggedIn = Boolean(isCustomerAuthenticated || customer?.email || customer?.token);
@@ -22,13 +23,6 @@ export const Navbar = ({ searchQuery, setSearchQuery, selectedGender, setSelecte
     return null;
   }
 
-  const handleGenderClick = (gender) => {
-    setSelectedGender && setSelectedGender(gender);
-    if (location.pathname !== '/') {
-      navigate('/');
-    }
-  };
-
   const handleLogout = () => {
     if (isCustomerAuthenticated) logout();
     if (isAdminAuthenticated) adminLogout();
@@ -36,185 +30,153 @@ export const Navbar = ({ searchQuery, setSearchQuery, selectedGender, setSelecte
   };
 
   return (
-    <header style={{
+    <header className="navbar-container" style={{
       position: 'sticky',
       top: 0,
       zIndex: 50,
-      background: 'var(--panel-bg)',
-      backdropFilter: 'var(--backdrop-blur)',
+      background: 'var(--panel-solid, #ffffff)',
       borderBottom: '1px solid var(--panel-border)',
-      padding: '16px 40px',
+      padding: '10px 24px',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'space-between',
-      gap: '24px'
+      gap: '14px'
     }}>
-      {/* 1. Lead Magnet Logo Branding */}
-      <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+      {/* 1. Logo Branding */}
+      <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
         <div style={{
-          width: '42px',
-          height: '42px',
-          borderRadius: '12px',
-          background: 'linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%)',
+          width: '34px',
+          height: '34px',
+          borderRadius: '6px',
+          background: 'var(--color-primary, #9CAF88)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          color: 'white',
-          boxShadow: '0 4px 14px rgba(79, 70, 229, 0.3)'
+          color: '#1a2016',
+          fontWeight: 800,
+          fontSize: '0.95rem'
         }}>
-          <Shirt size={22} />
+          LM
         </div>
         <div>
-          <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.35rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+          <h1 style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.1 }}>
             Lead Magnet
           </h1>
-          <span style={{ fontSize: '0.78rem', color: 'var(--accent-indigo)', fontWeight: 700 }}>
-            PREMIUM CLOTHING STORE
+          <span style={{ fontSize: '0.68rem', color: 'var(--color-primary-dark, #6f805e)', fontWeight: 600 }}>
+            CLOTHING STORE
           </span>
         </div>
       </Link>
 
-      {/* 2. Wider Search Bar */}
-      <div style={{ flex: 1, maxWidth: '650px' }}>
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px',
-          background: 'var(--panel-solid)',
-          border: '1px solid var(--panel-border)',
-          padding: '10px 18px',
-          borderRadius: 'var(--radius-full)',
-          boxShadow: '0 2px 6px rgba(0,0,0,0.02)'
-        }}>
-          <Search size={18} style={{ color: 'var(--text-muted)' }} />
-          <input
-            type="text"
-            placeholder="Search shirts, hoodies, dresses, Levi's, Zara..."
-            value={searchQuery || ''}
-            onChange={(e) => setSearchQuery && setSearchQuery(e.target.value)}
-            style={{
-              border: 'none',
-              background: 'transparent',
-              outline: 'none',
-              width: '100%',
-              fontSize: '0.88rem',
-              color: 'var(--text-primary)'
-            }}
-          />
-        </div>
+      {/* 2. Search Bar - Uiverse.io by boryanakrasteva */}
+      <div className="navbar-search input-container" style={{ flex: 1, maxWidth: '460px' }}>
+        <input
+          type="text"
+          className="input"
+          placeholder="SEARCH CLOTHING..."
+          value={searchQuery || ''}
+          onChange={(e) => setSearchQuery && setSearchQuery(e.target.value)}
+        />
+        <svg className="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="11" cy="11" r="8" />
+          <path d="m21 21-4.3-4.3" />
+        </svg>
       </div>
 
       {/* 3. Action Controls */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+      <div className="navbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'nowrap' }}>
         {/* Wishlist Link */}
-        <Link
+        <NavPillButton
           to="/wishlist"
-          className="btn btn-secondary"
-          style={{ padding: '9px 14px', borderRadius: 'var(--radius-full)', position: 'relative' }}
+          variant="wishlist"
+          icon={
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="#CC5500" style={{ display: 'block' }}>
+              <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+            </svg>
+          }
+          label="Wishlist"
+          badge={totalWishlist}
           title="Wishlist"
-        >
-          <Heart size={18} style={{ color: 'var(--accent-rose)' }} />
-          <span style={{ fontSize: '0.85rem' }}>Wishlist</span>
-          {totalWishlist > 0 && (
-            <span style={{
-              background: 'var(--accent-rose)',
-              color: 'white',
-              fontSize: '0.7rem',
-              fontWeight: 800,
-              padding: '2px 6px',
-              borderRadius: 'var(--radius-full)'
-            }}>
-              {totalWishlist}
-            </span>
-          )}
-        </Link>
+        />
 
         {/* Shopping Cart Link */}
-        <Link
+        <NavPillButton
           to="/cart"
-          // className="btn btn-primary" 
-          className="btn btn-secondary"
-          style={{ padding: '9px 16px', borderRadius: 'var(--radius-full)', position: 'relative' }}
+          variant="cart"
+          icon={
+            <img
+              width="16"
+              height="16"
+              src="https://img.icons8.com/material-outlined/24/shopping-cart--v1.png"
+              alt="Cart"
+            />
+          }
+          label="Cart"
+          badge={totalItems}
           title="Shopping Cart"
-        >
-          <ShoppingBag size={18} />
-          <span style={{ fontSize: '0.85rem' }}>Cart</span>
-          {totalItems > 0 && (
-            <span style={{
-              background: 'white',
-              color: 'var(--accent-indigo)',
-              fontSize: '0.7rem',
-              fontWeight: 800,
-              padding: '2px 6px',
-              borderRadius: 'var(--radius-full)'
-            }}>
-              {totalItems}
-            </span>
-          )}
-        </Link>
+        />
 
         {/* Orders Link */}
-        <Link
+        <NavPillButton
           to="/orders"
-          className="btn btn-secondary"
-          style={{ padding: '9px 14px', borderRadius: 'var(--radius-full)' }}
+          variant="orders"
+          icon={
+            <img
+              width="16"
+              height="16"
+              src="https://img.icons8.com/material-outlined/24/box--v1.png"
+              alt="Orders"
+            />
+          }
+          label="Orders"
           title="My Orders"
-        >
-          <Package size={18} style={{ color: 'var(--accent-indigo)' }} />
-          <span style={{ fontSize: '0.85rem' }}>Orders</span>
-        </Link>
+        />
 
-        {/* Theme Toggle */}
-        <button
+        {/* Dark Mode Toggle */}
+        <NavPillButton
           onClick={toggleTheme}
-          className="btn btn-ghost"
-          style={{ padding: '9px', borderRadius: '50%' }}
-          title="Toggle Theme"
-        >
-          {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
-        </button>
+          variant="theme"
+          icon={
+            <span style={{ fontSize: '15px', lineHeight: 1 }}>
+              {theme === 'light' ? '☾' : '☼'}
+            </span>
+          }
+          title="Toggle Dark Mode"
+          ariaLabel="Toggle Dark Mode"
+        />
 
-        {/* Auth / Profile Area */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', paddingLeft: '8px', borderLeft: '1px solid var(--panel-border)' }}>
+        {/* Auth Area */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '4px', borderLeft: '1px solid var(--panel-border)' }}>
           {isLoggedIn ? (
             <>
-              <Link
+              <NavPillButton
                 to="/account"
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 14px',
-                  borderRadius: 'var(--radius-full)', background: 'rgba(79, 70, 229, 0.1)',
-                  border: '1px solid var(--accent-indigo)', transition: 'transform 0.15s ease'
-                }}
+                variant="account"
+                avatar={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(customer?.email || 'customer')}`}
+                label={customer?.full_name ? customer.full_name.split(' ')[0] : customer?.username || 'Account'}
                 title="View Profile & Settings"
-              >
-                <img
-                  src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(customer?.email || 'customer')}`}
-                  alt="Customer Avatar"
-                  style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#e2e8f0', border: '2px solid var(--accent-indigo)' }}
-                />
-                <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  {customer?.full_name ? customer.full_name.split(' ')[0] : customer?.username || 'Account'}
-                </span>
-              </Link>
-              <button onClick={handleLogout} className="btn btn-ghost" style={{ padding: '6px 10px', color: 'var(--accent-rose)', fontSize: '0.82rem', gap: '4px' }} title="Logout">
-                <LogOut size={16} />
-                <span>Logout</span>
-              </button>
+              />
+              <NavPillButton
+                onClick={handleLogout}
+                variant="logout"
+                label="Logout"
+                title="Logout"
+              />
             </>
           ) : (
             <>
-              <Link to="/login" className="btn btn-ghost" style={{ padding: '7px 12px', fontSize: '0.84rem', gap: '6px' }} title="Account Settings">
-                <User size={16} />
-                <span>Account</span>
-              </Link>
-              <Link to="/login" className="btn btn-ghost" style={{ padding: '7px 14px', fontSize: '0.84rem', gap: '6px' }}>
-                <LogIn size={16} />
-                <span>Login</span>
-              </Link>
-              <Link to="/signup" className="btn btn-primary" style={{ padding: '7px 16px', fontSize: '0.84rem', borderRadius: 'var(--radius-full)', gap: '6px' }}>
-                <UserPlus size={16} />
-                <span>Register</span>
-              </Link>
+              <UserLoginButton to="/login" label="Log In" />
+              <NavPillButton
+                to="/signup"
+                variant="register"
+                icon={
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="#9CAF88" style={{ display: 'block' }}>
+                    <path d="M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+                  </svg>
+                }
+                label="Register"
+                title="Create an Account"
+              />
             </>
           )}
         </div>
@@ -222,3 +184,5 @@ export const Navbar = ({ searchQuery, setSearchQuery, selectedGender, setSelecte
     </header>
   );
 };
+
+export default Navbar;

@@ -4,17 +4,17 @@ import { getRFMDistribution } from '../../services/api';
 import { Users, Crown, Heart, AlertTriangle, Ghost } from 'lucide-react';
 
 const SEGMENT_STYLES = {
-  'Champions': { color: '#10b981', icon: Crown, bg: 'rgba(16,185,129,0.12)' },
-  'Loyal Customers': { color: '#6366f1', icon: Heart, bg: 'rgba(99,102,241,0.12)' },
-  'Potential Loyalists': { color: '#8b5cf6', icon: Users, bg: 'rgba(139,92,246,0.12)' },
-  'New Customers': { color: '#3b82f6', icon: Users, bg: 'rgba(59,130,246,0.12)' },
-  'Promising': { color: '#06b6d4', icon: Users, bg: 'rgba(6,182,212,0.12)' },
-  'Need Attention': { color: '#f59e0b', icon: AlertTriangle, bg: 'rgba(245,158,11,0.12)' },
-  'About To Sleep': { color: '#f97316', icon: Ghost, bg: 'rgba(249,115,22,0.12)' },
-  'At Risk': { color: '#ef4444', icon: AlertTriangle, bg: 'rgba(239,68,68,0.12)' },
-  'Hibernating': { color: '#94a3b8', icon: Ghost, bg: 'rgba(148,163,184,0.12)' },
-  'Lost': { color: '#64748b', icon: Ghost, bg: 'rgba(100,116,139,0.12)' },
-  'No Orders': { color: '#94a3b8', icon: Users, bg: 'rgba(148,163,184,0.08)' },
+  'Champions': { color: '#9CAF88', icon: Crown, bg: 'rgba(156, 175, 136, 0.15)' },
+  'Loyal Customers': { color: '#6f805e', icon: Heart, bg: 'rgba(111, 128, 94, 0.15)' },
+  'Potential Loyalists': { color: '#849770', icon: Users, bg: 'rgba(132, 151, 112, 0.15)' },
+  'New Customers': { color: '#A7A7A7', icon: Users, bg: 'rgba(167, 167, 167, 0.15)' },
+  'Promising': { color: '#7a8e6b', icon: Users, bg: 'rgba(122, 142, 107, 0.15)' },
+  'Need Attention': { color: '#e06b1a', icon: AlertTriangle, bg: 'rgba(224, 107, 26, 0.15)' },
+  'About To Sleep': { color: '#CC5500', icon: Ghost, bg: 'rgba(204, 85, 0, 0.15)' },
+  'At Risk': { color: '#b34b00', icon: AlertTriangle, bg: 'rgba(179, 75, 0, 0.15)' },
+  'Hibernating': { color: '#8a8a8a', icon: Ghost, bg: 'rgba(138, 138, 138, 0.15)' },
+  'Lost': { color: '#686868', icon: Ghost, bg: 'rgba(104, 104, 104, 0.15)' },
+  'No Orders': { color: '#A7A7A7', icon: Users, bg: 'rgba(167, 167, 167, 0.08)' },
 };
 
 export const RFMDistribution = () => {
@@ -36,7 +36,7 @@ export const RFMDistribution = () => {
 
   if (isLoading) {
     return (
-      <div className="glass-card" style={{ padding: '24px' }}>
+      <div className="glass-card dashboard-card">
         <div className="skeleton" style={{ height: '150px', borderRadius: '12px' }}></div>
       </div>
     );
@@ -44,7 +44,7 @@ export const RFMDistribution = () => {
 
   if (!data || !data.segments || Object.keys(data.segments).length === 0) {
     return (
-      <div className="glass-card" style={{ padding: '24px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+      <div className="glass-card dashboard-card" style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>
         <Users size={24} style={{ marginBottom: '8px', opacity: 0.5 }} />
         <p>No RFM data available — customers need purchase history</p>
       </div>
@@ -55,9 +55,9 @@ export const RFMDistribution = () => {
   const total = data.total_customers_with_orders || 0;
 
   return (
-    <div className="glass-card" style={{ padding: '24px' }}>
+    <div className="glass-card dashboard-card">
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
-        <Crown size={18} style={{ color: '#f59e0b' }} />
+        <Crown size={18} style={{ color: 'var(--color-tertiary, #CC5500)' }} />
         <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 600 }}>RFM Segments</h3>
         <span style={{
           marginLeft: 'auto',

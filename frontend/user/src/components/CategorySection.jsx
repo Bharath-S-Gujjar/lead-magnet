@@ -79,9 +79,9 @@ export const CategorySection = ({
   ];
 
   return (
-    <section style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+    <section style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
       {/* Gender Selection Tabs */}
-      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
         {genderTabs.map((g) => {
           const isSelected = selectedGender === g.value || (!selectedGender && g.value === 'all');
           return (
@@ -89,7 +89,6 @@ export const CategorySection = ({
               key={g.value}
               onClick={() => {
                 setSelectedGender && setSelectedGender(g.value);
-                // Reset category if switching gender and current category isn't in gender list
                 if (g.value !== 'all' && GENDER_CATEGORIES[g.value] && selectedCategory !== 'all') {
                   if (!GENDER_CATEGORIES[g.value].includes(selectedCategory)) {
                     setSelectedCategory && setSelectedCategory('all');
@@ -97,16 +96,16 @@ export const CategorySection = ({
                 }
               }}
               style={{
-                padding: '9px 22px',
-                borderRadius: 'var(--radius-full)',
-                border: isSelected ? '1px solid var(--accent-indigo)' : '1px solid var(--panel-border)',
-                background: isSelected ? 'var(--accent-indigo)' : 'var(--panel-solid)',
-                color: isSelected ? 'white' : 'var(--text-primary)',
-                fontWeight: 800,
-                fontSize: '0.88rem',
+                padding: '8px 18px',
+                borderRadius: 'var(--radius-sm, 4px)',
+                border: isSelected ? '1.5px solid var(--color-primary, #9CAF88)' : '1px solid var(--panel-border)',
+                background: isSelected ? 'var(--color-primary, #9CAF88)' : 'var(--panel-solid)',
+                color: isSelected ? '#1a2016' : 'var(--text-primary)',
+                fontWeight: 700,
+                fontSize: '0.85rem',
                 cursor: 'pointer',
-                boxShadow: isSelected ? '0 4px 14px rgba(79, 70, 229, 0.3)' : 'none',
-                transition: 'all 0.2s ease'
+                boxShadow: 'none',
+                transition: 'all 0.18s ease'
               }}
             >
               {g.label}
@@ -117,18 +116,27 @@ export const CategorySection = ({
 
       {/* Category Section Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <h3 className="heading-md" style={{ color: 'var(--text-primary)' }}>{sectionTitle}</h3>
-        <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-          {totalItemsCount > 0 ? `${totalItemsCount.toLocaleString('en-IN')} Clothing Items Available` : 'Clothing Catalog'}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--color-tertiary, #CC5500)', display: 'inline-block' }} />
+          <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '0.01em' }}>
+            {sectionTitle}
+          </h3>
+        </div>
+        <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+          {totalItemsCount > 0 ? (
+            <>
+              <strong style={{ color: 'var(--color-tertiary, #CC5500)' }}>{totalItemsCount.toLocaleString('en-IN')}</strong> items available
+            </>
+          ) : 'Clothing Catalog'}
         </span>
       </div>
 
-      {/* Category Pills */}
+      {/* Category Buttons */}
       <div style={{
         display: 'flex',
-        gap: '10px',
+        gap: '8px',
         overflowX: 'auto',
-        paddingBottom: '8px',
+        paddingBottom: '6px',
         scrollbarWidth: 'thin'
       }}>
         {categories.map((cat) => {
@@ -138,17 +146,17 @@ export const CategorySection = ({
               key={cat}
               onClick={() => setSelectedCategory && setSelectedCategory(cat === 'All Categories' ? 'all' : cat)}
               style={{
-                padding: '8px 18px',
-                borderRadius: 'var(--radius-full)',
-                border: isSelected ? '1px solid var(--accent-indigo)' : '1px solid var(--panel-border)',
-                background: isSelected ? 'var(--accent-indigo)' : 'var(--panel-solid)',
-                color: isSelected ? 'white' : 'var(--text-primary)',
-                fontSize: '0.85rem',
-                fontWeight: 700,
+                padding: '7px 15px',
+                borderRadius: 'var(--radius-sm, 4px)',
+                border: isSelected ? '1.5px solid var(--color-tertiary, #CC5500)' : '1px solid var(--panel-border)',
+                background: isSelected ? 'var(--color-tertiary-light, rgba(204, 85, 0, 0.12))' : 'var(--panel-solid)',
+                color: isSelected ? 'var(--color-tertiary, #CC5500)' : 'var(--text-primary)',
+                fontSize: '0.82rem',
+                fontWeight: isSelected ? 700 : 600,
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
-                boxShadow: isSelected ? '0 4px 12px rgba(79, 70, 229, 0.25)' : 'none',
-                transition: 'all 0.2s ease'
+                boxShadow: 'none',
+                transition: 'all 0.15s ease'
               }}
             >
               {cat}
@@ -159,3 +167,5 @@ export const CategorySection = ({
     </section>
   );
 };
+
+export default CategorySection;

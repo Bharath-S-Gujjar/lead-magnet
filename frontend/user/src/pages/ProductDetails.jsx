@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Heart, ShoppingBag, Star, Truck, ShieldCheck, RefreshCw, ArrowLeft, Shirt, Sparkles, AlertCircle, Loader2 } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useWishlist } from '../context/WishlistContext';
-import { useTracking } from '../hooks/useTracking';
-import { fetchProductById, fetchProducts, trackCustomerEvent } from '../services/api';
+import { fetchProductById, fetchProducts } from '../services/api';
 import { ProductCard } from '../components/ProductCard';
+import { ProductDetailsSkeleton } from '../components/Skeleton';
+import { AddToCartButton } from '../components/AddToCartButton';
+import { WishlistHeartButton } from '../components/WishlistHeartButton';
+import { getOptimizedImageUrl } from '../utils/imageOptimizer';
 
 function normalizeProduct(product) {
   const primaryImg = product.primary_image || product.image || product.images?.[0] || '';
@@ -69,7 +71,6 @@ export const ProductDetails = () => {
           setSelectedSize(norm.sizes[0] || 'M');
           setSelectedColor(norm.colors[0] || 'Classic');
 
-          // Fetch related products from same category or gender
           if (norm.category) {
             fetchProducts({ category: norm.category, limit: 4 })
               .then((res) => {
@@ -97,226 +98,212 @@ export const ProductDetails = () => {
     };
   }, [id]);
 
-  useEffect(() => {
-    if (product) {
-      trackCustomerEvent('product_view', {
-        page: `/product/${product.id}`,
-        entity: {
-          type: 'product',
-          id: product.id,
-          name: product.name,
-          category: product.category,
-          brand: product.brand,
-          price: product.price,
-        },
-      });
-    }
-  }, [product]);
-
-  // Silent Background Customer Telemetry Tracking
-  useTracking(product);
-
-  const isLiked = product ? isInWishlist(product.id) : false;
-
-  const getActiveProduct = () => ({
-    ...product,
-    image: selectedImage || product?.image
-  });
-
-  const handleBuyNow = () => {
-    addToCart(getActiveProduct(), selectedSize, selectedColor, quantity);
-    navigate('/cart');
-  };
-
-  const getFallbackGradient = () => {
-    const g = (product?.gender || '').toLowerCase();
-    if (g === 'women') return 'linear-gradient(135deg, #fce7f3 0%, #ede9fe 100%)';
-    if (g === 'kids') return 'linear-gradient(135deg, #fef3c7 0%, #e0e7ff 100%)';
-    return 'linear-gradient(135deg, #e0e7ff 0%, #f1f5f9 100%)';
-  };
-
   if (loading) {
-    return (
-      <div className="glass-card" style={{ padding: '80px 24px', textAlign: 'center', margin: '40px auto', maxWidth: '600px' }}>
-        <Loader2 size={44} className="spin-animation" style={{ color: 'var(--accent-indigo)', marginBottom: '16px', animation: 'spin 1s linear infinite' }} />
-        <h3 className="heading-md" style={{ color: 'var(--text-primary)', marginBottom: '6px' }}>Loading Product Details...</h3>
-        <p className="text-subtle">Fetching authoritative specifications from MongoDB</p>
-      </div>
-    );
+    return <ProductDetailsSkeleton />;
   }
 
   if (error || !product) {
     return (
-      <div className="glass-card" style={{ padding: '60px 24px', textAlign: 'center', margin: '40px auto', maxWidth: '600px' }}>
-        <AlertCircle size={48} style={{ color: 'var(--accent-rose)', marginBottom: '16px' }} />
-        <h3 className="heading-lg" style={{ color: 'var(--text-primary)', marginBottom: '8px' }}>Product Not Found</h3>
-        <p className="text-subtle" style={{ marginBottom: '24px' }}>{error || "The requested clothing item could not be retrieved from the catalog."}</p>
+      <div className="product-card" style={{ padding: '48px 24px', textAlign: 'center' }}>
+        <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px' }}>
+          {error || 'Product Not Found'}
+        </h3>
+        <p style={{ color: 'var(--text-secondary)', marginBottom: '18px', fontSize: '0.9rem' }}>
+          The requested product could not be located in the catalog.
+        </p>
         <button onClick={() => navigate('/')} className="btn btn-primary">
-          <ArrowLeft size={16} /> Return to Clothing Catalog
+          Back to Clothing Catalog
         </button>
       </div>
     );
   }
 
-  const hasRealImage = selectedImage && !selectedImage.includes('placeholder.com') && !imgFailed;
+  const isLiked = isInWishlist(product.id);
+
+  const handleBuyNow = () => {
+    addToCart(product, selectedSize, selectedColor, quantity);
+    navigate('/cart');
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-      {/* Back Button */}
-      <button 
-        onClick={() => navigate('/')} 
-        className="btn btn-ghost" 
-        style={{ width: 'fit-content', padding: '6px 12px', fontSize: '0.85rem' }}
-      >
-        <ArrowLeft size={16} /> Back to Clothing Store
-      </button>
+      {/* Navigation Breadcrumb */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+        <button onClick={() => navigate('/')} className="btn btn-ghost" style={{ padding: '4px 8px', fontSize: '0.82rem' }}>
+          Catalog
+        </button>
+        <span>/</span>
+        <span style={{ color: 'var(--text-secondary)' }}>{product.category}</span>
+        <span>/</span>
+        <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{product.name}</span>
+      </div>
 
-      {/* Main Details Card */}
-      <div className="glass-card" style={{ padding: '36px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '48px', alignItems: 'start' }}>
-        {/* Left Side: Photo Gallery / Visual Representation */}
-        <div>
+      {/* Main Details Grid */}
+      <div className="product-card" style={{
+        padding: '28px',
+        display: 'grid',
+        gridTemplateColumns: '1fr 1.15fr',
+        gap: '36px'
+      }}>
+        {/* Left Side: Image Gallery */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div style={{
             position: 'relative',
             width: '100%',
-            height: '480px',
-            borderRadius: 'var(--radius-lg)',
+            paddingTop: '110%',
+            borderRadius: 'var(--radius-sm, 4px)',
             overflow: 'hidden',
-            background: getFallbackGradient(),
-            marginBottom: '16px',
-            boxShadow: 'var(--panel-shadow)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
+            background: 'var(--table-header-bg, #ecefe9)',
+            border: '1px solid var(--panel-border)'
           }}>
-            {hasRealImage ? (
-              <img 
-                src={selectedImage} 
-                alt={product.name} 
+            {!imgFailed && selectedImage ? (
+              <img
+                src={getOptimizedImageUrl(selectedImage, 800, 80)}
+                alt={product.name}
+                loading="eager"
+                decoding="async"
                 onError={() => setImgFailed(true)}
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover'
+                }}
               />
             ) : (
               <div style={{
+                position: 'absolute',
+                inset: 0,
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
-                textAlign: 'center',
                 padding: '24px',
-                width: '100%',
-                height: '100%'
+                textAlign: 'center'
               }}>
-                <div style={{
-                  width: '96px',
-                  height: '96px',
-                  borderRadius: '50%',
-                  background: 'rgba(255, 255, 255, 0.85)',
-                  boxShadow: '0 8px 24px rgba(79, 70, 229, 0.12)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: 'var(--accent-indigo)',
-                  marginBottom: '16px'
-                }}>
-                  <Shirt size={48} strokeWidth={1.5} />
-                </div>
-                <span className="badge badge-indigo" style={{ marginBottom: '8px', fontSize: '0.82rem' }}>
-                  {product.category}
-                </span>
-                <span style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '0.04em' }}>
+                <span style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--color-primary, #9CAF88)', textTransform: 'uppercase' }}>
                   {product.brand}
                 </span>
-                <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                  Official Authentic Catalog Item
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  {product.category}
                 </span>
               </div>
             )}
           </div>
 
-          {/* Thumbnails if multiple images exist */}
+          {/* Thumbnail Strip */}
           {product.images && product.images.length > 1 && (
-            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-              {product.images.map((img, idx) => (
-                <div 
-                  key={idx}
-                  onClick={() => { setSelectedImage(img); setImgFailed(false); }}
+            <div style={{ display: 'flex', gap: '10px', overflowX: 'auto' }}>
+              {product.images.map((img, i) => (
+                <button
+                  key={i}
+                  onClick={() => {
+                    setSelectedImage(img);
+                    setImgFailed(false);
+                  }}
                   style={{
-                    width: '80px',
-                    height: '80px',
-                    borderRadius: 'var(--radius-md)',
+                    width: '64px',
+                    height: '64px',
+                    borderRadius: 'var(--radius-sm, 4px)',
                     overflow: 'hidden',
+                    border: selectedImage === img ? '2px solid var(--color-primary, #9CAF88)' : '1px solid var(--panel-border)',
+                    background: 'transparent',
                     cursor: 'pointer',
-                    border: selectedImage === img ? '2px solid var(--accent-indigo)' : '1px solid var(--panel-border)',
-                    boxShadow: selectedImage === img ? '0 4px 10px rgba(79,70,229,0.2)' : 'none',
-                    transition: 'all 0.2s ease'
+                    padding: 0,
+                    flexShrink: 0
                   }}
                 >
-                  <img src={img} alt="Thumbnail" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                </div>
+                  <img
+                    src={getOptimizedImageUrl(img, 150, 70)}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                </button>
               ))}
             </div>
           )}
         </div>
 
         {/* Right Side: Product Info */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <span className="badge badge-indigo" style={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              <span className="badge badge-primary">
                 {product.brand}
               </span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--accent-amber)', fontWeight: 800, fontSize: '0.9rem' }}>
-                <Star size={16} fill="#f59e0b" />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-primary)', fontWeight: 700, fontSize: '0.88rem' }}>
+                <span style={{ color: 'var(--color-tertiary, #CC5500)', fontSize: '0.95rem' }}>★</span>
                 <span>{product.rating}</span>
+                <span style={{ color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.78rem' }}>(Verified)</span>
               </div>
             </div>
 
-            <h2 className="heading-xl" style={{ color: 'var(--text-primary)', marginBottom: '10px' }}>
+            <h2 style={{ fontSize: '1.45rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px' }}>
               {product.name}
             </h2>
 
-            <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+            <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
               {product.description}
             </p>
           </div>
 
           {/* Pricing */}
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', paddingBottom: '16px', borderBottom: '1px solid var(--panel-border)' }}>
-            <span style={{ fontFamily: 'var(--font-heading)', fontSize: '2.2rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-              ₹{product.price.toLocaleString('en-IN')}
-            </span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', paddingBottom: '14px', borderBottom: '1px solid var(--panel-border)' }}>
             {product.discount > 0 && (
-              <>
-                <span style={{ fontSize: '1.1rem', color: 'var(--text-muted)', textDecoration: 'line-through' }}>
+              <div>
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  fontSize: '0.72rem',
+                  fontWeight: 700,
+                  color: 'var(--color-tertiary, #CC5500)',
+                  background: 'var(--color-tertiary-light, rgba(204, 85, 0, 0.12))',
+                  padding: '3px 8px',
+                  borderRadius: '4px',
+                  border: '1px solid rgba(204, 85, 0, 0.25)',
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
+                  lineHeight: 1.2
+                }}>
+                  Special Offer · Save {product.discount}%
+                </span>
+              </div>
+            )}
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px' }}>
+              <span style={{ fontSize: '1.75rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                ₹{product.price.toLocaleString('en-IN')}
+              </span>
+              {product.discount > 0 && (
+                <span style={{ fontSize: '0.95rem', color: 'var(--text-muted)', textDecoration: 'line-through' }}>
                   ₹{Math.round(product.price * (1 + product.discount / 100)).toLocaleString('en-IN')}
                 </span>
-                <span className="badge badge-rose">
-                  Save {product.discount}%
-                </span>
-              </>
-            )}
+              )}
+            </div>
           </div>
 
           {/* Size Selector */}
           {product.sizes && (
             <div>
-              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '10px' }}>
+              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
                 Select Size:
               </label>
-              <div style={{ display: 'flex', gap: '10px' }}>
+              <div style={{ display: 'flex', gap: '8px' }}>
                 {product.sizes.map(sz => (
                   <button
                     key={sz}
                     onClick={() => setSelectedSize(sz)}
                     style={{
-                      minWidth: '44px',
-                      height: '44px',
-                      borderRadius: 'var(--radius-md)',
-                      border: selectedSize === sz ? '2px solid var(--accent-indigo)' : '1px solid var(--panel-border)',
-                      background: selectedSize === sz ? 'var(--accent-indigo)' : 'var(--panel-solid)',
-                      color: selectedSize === sz ? 'white' : 'var(--text-primary)',
-                      fontWeight: 800,
-                      fontSize: '0.85rem',
+                      minWidth: '40px',
+                      height: '38px',
+                      borderRadius: 'var(--radius-sm, 4px)',
+                      border: selectedSize === sz ? '1px solid var(--color-primary, #9CAF88)' : '1px solid var(--panel-border)',
+                      background: selectedSize === sz ? 'var(--color-primary, #9CAF88)' : 'var(--panel-solid)',
+                      color: selectedSize === sz ? '#1a2016' : 'var(--text-primary)',
+                      fontWeight: 600,
+                      fontSize: '0.82rem',
                       cursor: 'pointer'
                     }}
                   >
@@ -327,101 +314,110 @@ export const ProductDetails = () => {
             </div>
           )}
 
-          {/* Color Swatches */}
+          {/* Color Selector */}
           {product.colors && (
             <div>
-              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '10px' }}>
-                Select Color: <span style={{ color: 'var(--accent-indigo)' }}>{selectedColor}</span>
+              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                Select Color: <span style={{ color: 'var(--color-primary-dark, #6f805e)' }}>{selectedColor}</span>
               </label>
-              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 {product.colors.map(col => (
                   <button
                     key={col}
                     onClick={() => setSelectedColor(col)}
                     style={{
-                      padding: '6px 14px',
-                      borderRadius: 'var(--radius-full)',
-                      border: selectedColor === col ? '2px solid var(--accent-indigo)' : '1px solid var(--panel-border)',
-                      background: selectedColor === col ? 'rgba(79, 70, 229, 0.12)' : 'var(--panel-solid)',
-                      color: selectedColor === col ? 'var(--accent-indigo)' : 'var(--text-primary)',
-                      fontWeight: 700,
-                      fontSize: '0.82rem',
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      transition: 'all 0.2s ease'
+                      padding: '5px 12px',
+                      borderRadius: 'var(--radius-sm, 4px)',
+                      border: selectedColor === col ? '1px solid var(--color-primary, #9CAF88)' : '1px solid var(--panel-border)',
+                      background: selectedColor === col ? 'var(--color-primary-light, rgba(156, 175, 136, 0.15))' : 'var(--panel-solid)',
+                      color: selectedColor === col ? 'var(--color-primary-dark, #6f805e)' : 'var(--text-primary)',
+                      fontWeight: 600,
+                      fontSize: '0.8rem',
+                      cursor: 'pointer'
                     }}
                   >
-                    <span>{col}</span>
+                    {col}
                   </button>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Quantity Selector & Action Buttons */}
-          <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginTop: '10px' }}>
+          {/* Quantity & Action Buttons */}
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '6px' }}>
             <div style={{
               display: 'flex',
               alignItems: 'center',
               border: '1px solid var(--panel-border)',
-              borderRadius: 'var(--radius-md)',
+              borderRadius: 'var(--radius-sm, 4px)',
               background: 'var(--panel-solid)'
             }}>
-              <button 
+              <button
                 onClick={() => setQuantity(q => Math.max(1, q - 1))}
-                style={{ width: '36px', height: '40px', border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: 800 }}
+                style={{ width: '32px', height: '36px', border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: 700 }}
               >
                 -
               </button>
-              <span style={{ width: '36px', textAlign: 'center', fontWeight: 800, fontSize: '0.9rem' }}>
+              <span style={{ width: '32px', textAlign: 'center', fontWeight: 600, fontSize: '0.85rem' }}>
                 {quantity}
               </span>
-              <button 
+              <button
                 onClick={() => setQuantity(q => q + 1)}
-                style={{ width: '36px', height: '40px', border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: 800 }}
+                style={{ width: '32px', height: '36px', border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: 700 }}
               >
                 +
               </button>
             </div>
 
-            <button 
-              onClick={() => addToCart(getActiveProduct(), selectedSize, selectedColor, quantity)}
-              className="btn btn-primary"
-              style={{ flex: 1, padding: '12px', fontSize: '0.95rem' }}
-            >
-              <ShoppingBag size={18} /> Add to Cart
-            </button>
+            <div style={{ flex: 1 }}>
+              <AddToCartButton
+                onClick={() => {
+                  addToCart(product, selectedSize, selectedColor, quantity);
+                }}
+              />
+            </div>
 
-            <button 
+            <button
               onClick={handleBuyNow}
-              className="btn btn-secondary"
-              style={{ padding: '12px 20px', fontSize: '0.95rem', background: 'var(--accent-emerald)', color: 'white', border: 'none' }}
+              className="btn btn-tertiary"
+              style={{ padding: '10px 18px', fontSize: '0.88rem' }}
             >
               Buy Now
             </button>
 
-            <button 
-              onClick={() => toggleWishlist(product)}
-              className="btn btn-secondary"
-              style={{ padding: '12px' }}
-              title={isLiked ? "Remove from Wishlist" : "Add to Wishlist"}
+            <div
+              style={{
+                width: '42px',
+                height: '42px',
+                borderRadius: 'var(--radius-sm, 4px)',
+                border: '1px solid var(--panel-border)',
+                background: 'var(--panel-solid)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                flexShrink: 0
+              }}
             >
-              <Heart size={20} fill={isLiked ? '#f43f5e' : 'none'} color={isLiked ? '#f43f5e' : '#64748b'} />
-            </button>
+              <WishlistHeartButton
+                isLiked={isLiked}
+                onToggle={() => toggleWishlist(product)}
+                size={38}
+                heartColor="var(--color-tertiary, #CC5500)"
+              />
+            </div>
           </div>
 
-          {/* Fabric & Product Specifications */}
+          {/* Specifications */}
           <div style={{
-            marginTop: '16px',
-            padding: '18px',
-            borderRadius: 'var(--radius-md)',
-            background: 'var(--table-header-bg)',
+            marginTop: '12px',
+            padding: '14px',
+            borderRadius: 'var(--radius-sm, 4px)',
+            background: 'var(--table-header-bg, #ecefe9)',
             border: '1px solid var(--panel-border)',
             display: 'grid',
             gridTemplateColumns: '1fr 1fr',
-            gap: '12px',
+            gap: '10px',
             fontSize: '0.82rem'
           }}>
             <div><strong>Fabric:</strong> {product.fabric}</div>
@@ -429,26 +425,16 @@ export const ProductDetails = () => {
             <div><strong>Fit Type:</strong> {product.fit}</div>
             <div><strong>Wash Care:</strong> {product.washInstructions}</div>
           </div>
-
-          {/* Guarantees */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '8px' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><Truck size={15} /> Free Express Delivery</span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><ShieldCheck size={15} /> 100% Authentic Brand Guarantee</span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><RefreshCw size={15} /> 30-Day Easy Returns</span>
-          </div>
         </div>
       </div>
 
       {/* Related Products Section */}
       {relatedProducts.length > 0 && (
-        <div style={{ marginTop: '24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '18px' }}>
-            <Sparkles size={20} style={{ color: 'var(--accent-indigo)' }} />
-            <h3 className="heading-md" style={{ color: 'var(--text-primary)' }}>
-              More from {product.category}
-            </h3>
-          </div>
-          <div className="grid-4" style={{ rowGap: '28px', columnGap: '24px' }}>
+        <div style={{ marginTop: '16px' }}>
+          <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '16px' }}>
+            More from {product.category}
+          </h3>
+          <div className="grid-4" style={{ rowGap: '24px', columnGap: '20px' }}>
             {relatedProducts.map(rel => (
               <ProductCard key={rel._id || rel.id} product={normalizeProduct(rel)} />
             ))}
@@ -458,3 +444,5 @@ export const ProductDetails = () => {
     </div>
   );
 };
+
+export default ProductDetails;

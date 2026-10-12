@@ -43,9 +43,9 @@ export const LeadAnalyticsSummary = ({ onRefresh }) => {
   const marketing = overview?.marketing || {};
 
   return (
-    <section style={{ marginBottom: '28px' }}>
+    <section className="dashboard-section">
       {/* Header bar with Refresh button */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+      <div className="section-header">
         <div>
           <h2 className="heading-lg" style={{ color: 'var(--text-primary)', marginBottom: '2px' }}>
             Live Intelligence Summary
@@ -82,12 +82,12 @@ export const LeadAnalyticsSummary = ({ onRefresh }) => {
       )}
 
       {/* KPI Cards Grid */}
-      <div className="grid-4" style={{ gap: '20px' }}>
+      <div className="grid-4">
         {/* Card 1: Total Customers */}
-        <div className="glass-card" style={{ padding: '24px' }}>
+        <div className="glass-card metric-card" style={{ borderTop: '3px solid var(--color-primary, #9CAF88)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
             <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Total Customers</span>
-            <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(156, 175, 136, 0.15)', color: 'var(--color-primary, #9CAF88)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Users size={18} />
             </div>
           </div>
@@ -102,14 +102,14 @@ export const LeadAnalyticsSummary = ({ onRefresh }) => {
         </div>
 
         {/* Card 2: Total Qualified Leads */}
-        <div className="glass-card" style={{ padding: '24px' }}>
+        <div className="glass-card metric-card" style={{ borderTop: '3px solid var(--color-tertiary, #CC5500)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
             <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Qualified Leads</span>
-            <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(79, 70, 229, 0.1)', color: '#4f46e5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(204, 85, 0, 0.12)', color: 'var(--color-tertiary, #CC5500)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Target size={18} />
             </div>
           </div>
-          <div style={{ fontFamily: 'var(--font-heading)', fontSize: '2.1rem', fontWeight: 800, color: 'var(--accent-indigo)' }}>
+          <div style={{ fontFamily: 'var(--font-heading)', fontSize: '2.1rem', fontWeight: 800, color: 'var(--color-tertiary, #CC5500)' }}>
             {displayVal(leads.total_qualified)}
           </div>
           <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
@@ -118,14 +118,14 @@ export const LeadAnalyticsSummary = ({ onRefresh }) => {
         </div>
 
         {/* Card 3: Hot Lead Segment */}
-        <div className="glass-card" style={{ padding: '24px' }}>
+        <div className="glass-card metric-card" style={{ borderTop: '3px solid #b34b00' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
             <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Hot Leads</span>
-            <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(204, 85, 0, 0.15)', color: '#CC5500', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Flame size={18} />
             </div>
           </div>
-          <div style={{ fontFamily: 'var(--font-heading)', fontSize: '2.1rem', fontWeight: 800, color: '#ef4444' }}>
+          <div style={{ fontFamily: 'var(--font-heading)', fontSize: '2.1rem', fontWeight: 800, color: '#CC5500' }}>
             {displayVal(leads.hot)}
           </div>
           <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', gap: '10px' }}>
@@ -136,14 +136,14 @@ export const LeadAnalyticsSummary = ({ onRefresh }) => {
         </div>
 
         {/* Card 4: Marketing Dispatches */}
-        <div className="glass-card" style={{ padding: '24px' }}>
+        <div className="glass-card metric-card" style={{ borderTop: '3px solid var(--color-secondary, #A7A7A7)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
             <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Communications Sent</span>
-            <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(167, 167, 167, 0.15)', color: 'var(--color-secondary, #A7A7A7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <MailCheck size={18} />
             </div>
           </div>
-          <div style={{ fontFamily: 'var(--font-heading)', fontSize: '2.1rem', fontWeight: 800, color: 'var(--accent-emerald)' }}>
+          <div style={{ fontFamily: 'var(--font-heading)', fontSize: '2.1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
             {displayVal(marketing.communications_sent)}
           </div>
           <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', gap: '8px' }}>

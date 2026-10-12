@@ -1,186 +1,111 @@
-# Lead Magnet — User Portal (Customer Storefront)
+# Lead Magnet — Premium Clothing Store Frontend 🛍️👗👕
 
-The User Portal is the customer-facing e-commerce storefront for Lead Magnet. Customers browse a 120,466-product clothing catalog, manage their cart and wishlist, place orders, and manage their account. All customer interactions are silently captured as behavioral telemetry that feeds the ML lead-scoring pipeline in the backend.
-
----
-
-## Tech Stack
-
-| Tool | Version |
-|:--|:--|
-| React | 18.3 |
-| Vite | 6.x |
-| React Router DOM | 6.28 |
-| Recharts | 3.x |
-| Lucide React | 0.469 |
-| Canvas Confetti | 1.9 |
-
-**Dev server port:** `3001`
+A modern, high-performance e-commerce frontend web application built for the **Lead Magnet** clothing brand. This portal provides an immersive shopping experience featuring multi-language support, real-time product filtering, wishlist management, cart handling, and order tracking.
 
 ---
 
-## Prerequisites
+## 🌟 Key Features
 
-- **Node.js** 18 or later
-- **npm** 9 or later
+- **🌐 Multi-Language Support**: Seamlessly switch between **English**, **Kannada (ಕನ್ನಡ)**, and **Hindi (हिंदी)** across the entire store UI.
+- **🏷️ Dynamic Clothing Catalog**: Browse clothing items organized by categories (*T-Shirts*, *Shirts*, *Jeans*, *Hoodies*, *Jackets*, *Dresses*, *Kurtas*, *Sarees*, *Trousers*, *Kids Wear*).
+- **⚡ Backend Product Integration Ready**: Designed to dynamically populate and render products fetched directly from your backend REST API or database.
+- **🛒 Shopping Cart & Wishlist**: Real-time persistent state management for saving favorite items and managing cart item quantities.
+- **📦 Order History & Tracking**: Dedicated Orders section matching the wishlist design system to review past clothing purchases and delivery statuses.
+- **👤 Customer Profile & Settings**: Clean account management view with personal preferences and shipping address settings.
+- **🌓 Dark & Light Theme**: Built-in glassmorphism design system supporting smooth toggle between dark mode and light mode.
 
-```bash
-node --version   # 18+
-npm --version    # 9+
+---
+
+## 🛠️ Tech Stack
+
+- **Core Framework**: React 18
+- **Build Tool & Dev Server**: Vite (Running on `http://localhost:3001`)
+- **Routing**: React Router DOM
+- **Icons**: Lucide React
+- **Data Visualizations**: Recharts
+- **Celebration Effects**: Canvas Confetti
+- **Styling**: Modern Vanilla CSS with HSL design tokens, CSS variables, glassmorphism, and responsive grid layouts.
+
+---
+
+## 📁 Project Structure
+
+```
+user/
+├── src/
+│   ├── components/       # Reusable UI components
+│   │   ├── CategorySection.jsx    # Gender & Category filter pills
+│   │   ├── Navbar.jsx             # Top navigation bar & language selector
+│   │   ├── ProductGrid.jsx        # Product cards grid layout
+│   │   └── HeroBanner.jsx         # Promotional banner slider
+│   ├── context/          # Application state context providers
+│   │   ├── CartContext.jsx        # Cart state manager
+│   │   ├── WishlistContext.jsx    # Wishlist state manager
+│   │   ├── LanguageContext.jsx    # i18n English/Kannada/Hindi state
+│   │   └── ThemeContext.jsx       # Light/Dark mode state
+│   ├── pages/            # Application routes & screens
+│   │   ├── Home.jsx               # Main store landing page
+│   │   ├── ProductDetails.jsx     # Individual product detail page
+│   │   ├── Cart.jsx               # Shopping cart & checkout flow
+│   │   ├── Wishlist.jsx           # Saved items view
+│   │   ├── Orders.jsx             # Customer purchase order history
+│   │   ├── Profile.jsx            # Account profile & settings
+│   │   └── Login.jsx / Signup.jsx # Authentication screens
+│   ├── data/             # Static data & clothing product definitions
+│   └── styles/           # CSS design system & global styles
+├── package.json
+└── vite.config.js
 ```
 
 ---
 
-## Installation
+## 🚀 Getting Started
 
-All commands run from the `frontend/user/` directory:
+### Prerequisites
 
-```bash
-cd frontend/user
-npm install
-```
+Ensure you have **Node.js** (v18 or higher) and **npm** installed on your system.
 
----
+### Installation
 
-## Available Scripts
-
-| Script | Command | Description |
-|:--|:--|:--|
-| Development | `npm run dev` | Starts Vite dev server at `http://localhost:3001` with HMR |
-| Production build | `npm run build` | Builds to `dist/` for deployment |
-| Preview build | `npm run preview` | Serves the `dist/` folder locally for build verification |
-
----
-
-## API Configuration
-
-### Development (local)
-
-No configuration is needed for local development. When no `VITE_API_BASE_URL` is set, the app defaults to `http://127.0.0.1:5000`.
-
-The backend must be running before the frontend will work. Start it with:
-```powershell
-venv\Scripts\python backend/local_test_launcher.py --serve --port 5000
-```
-
-### Production Build
-
-Set `VITE_API_BASE_URL` to the deployed backend URL **before** running `npm run build`. This can be done via:
-
-1. CI/CD environment variable (recommended)
-2. Deployment dashboard (Vercel, Render, etc.)
-3. A `.env.production.local` file that is **not committed**
-
-```
-VITE_API_BASE_URL=https://your-deployed-backend.onrender.com
-```
-
-> ⚠️ The build **will fail at startup** if `VITE_API_BASE_URL` is missing, empty, contains `localhost`, or contains `example.com` in a production build. This is intentional fail-closed behavior to prevent broken deployments.
-
-The committed `frontend/user/.env.production` file intentionally has this variable commented out — set it in your CI/CD pipeline or deployment environment, not in the file.
-
----
-
-## Running Against the Isolated Local Backend
-
-1. Start MongoDB Community on `127.0.0.1:27017`.
-2. Start the backend in isolated mode:
-   ```powershell
-   venv\Scripts\python backend/local_test_launcher.py --serve --port 5000
-   ```
-3. Start the user portal:
+1. Navigate to the `user` directory:
    ```bash
-   cd frontend/user
+   cd user
+   ```
+
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+3. Start the development server:
+   ```bash
    npm run dev
    ```
-4. Open `http://localhost:3001` in your browser.
+   The application will launch locally at `http://localhost:3001`.
 
-The frontend automatically connects to `http://127.0.0.1:5000` in development mode.
+4. Build for production:
+   ```bash
+   npm run build
+   ```
 
 ---
 
-## Application Structure
+## 🔌 Connecting to Backend API
 
-```
-frontend/user/
-├── src/
-│   ├── App.jsx                    # Root router and layout
-│   ├── main.jsx                   # Application entry point
-│   ├── components/
-│   │   ├── Navbar.jsx             # Top navigation bar, auth state, cart counter
-│   │   ├── HeroBanner.jsx         # Promotional banner slider
-│   │   ├── ProductGrid.jsx        # Product cards grid
-│   │   ├── ProductCard.jsx        # Individual product card
-│   │   ├── FilterPanel.jsx        # Category, gender, price filters
-│   │   └── CategorySection.jsx    # Category filter pills
-│   ├── context/
-│   │   ├── AuthContext.jsx        # JWT login state, register/login/logout
-│   │   ├── CartContext.jsx        # Cart state (add, update, remove, clear)
-│   │   ├── WishlistContext.jsx    # Wishlist state (add, remove)
-│   │   ├── UserTrackingContext.jsx # Behavioral telemetry hook
-│   │   └── ThemeContext.jsx       # Light/Dark theme toggle
-│   ├── pages/
-│   │   ├── Login.jsx / Signup.jsx # Authentication screens
-│   │   ├── ProductDetails.jsx     # Product detail view
-│   │   ├── Cart.jsx               # Cart and checkout flow
-│   │   ├── Wishlist.jsx           # Saved items
-│   │   ├── Orders.jsx             # Order history
-│   │   ├── Profile.jsx / Account.jsx # Account settings
-│   │   └── UserDashboard.jsx      # User home dashboard
-│   ├── services/
-│   │   └── api.js                 # All backend API calls
-│   ├── hooks/
-│   │   └── useTracking.js         # Behavioral event hooks
-│   └── styles/
-│       └── main.css               # Global CSS design system
-├── index.html
-├── vite.config.js                 # Port 3001, React plugin
-└── package.json
+Products are ready to be fetched dynamically from your backend server. Simply replace or extend `clothingProducts.js` or dispatch an API request in your state context:
+
+```javascript
+// Example REST API Fetch Integration
+useEffect(() => {
+  fetch('https://your-backend-api.com/api/products')
+    .then((res) => res.json())
+    .then((data) => setProducts(data))
+    .catch((err) => console.error(err));
+}, []);
 ```
 
 ---
 
-## Implemented User Workflows
+## 📄 License
 
-1. **Registration and login** — JWT-based, anonymous session merged on login.
-2. **Product browsing** — paginated catalog, filter by gender/category, search.
-3. **Product detail** — brand, price, discount, rating, add-to-cart, wishlist toggle.
-4. **Cart management** — add, update quantity, remove items, running total.
-5. **Wishlist** — add and remove products.
-6. **Checkout and orders** — COD order creation via `POST /api/orders`, order history view.
-7. **Behavioral telemetry** — every page view, cart add, and search is sent to the backend automatically via `UserTrackingContext`.
-
----
-
-## Verifying a Successful Build
-
-```bash
-cd frontend/user
-npm run build
-```
-
-A successful build outputs:
-```
-dist/index.html
-dist/assets/index-<hash>.js
-dist/assets/index-<hash>.css
-```
-
-Preview the built app locally:
-```bash
-npm run preview
-```
-
-> **Note:** Previewing the production build locally will fail on API calls if the backend is not running, which is expected behavior.
-
----
-
-## Troubleshooting
-
-| Symptom | Cause | Fix |
-|:--|:--|:--|
-| `Failed to fetch` on any API call | Backend not running or wrong port | Start backend on port 5000 |
-| CORS error in browser console | Backend CORS origins misconfigured | Ensure `http://localhost:3001` is in `FRONTEND_URL` or default origins |
-| Product grid shows 0 items | `leadmagnet_test` not seeded | Run `seed_clothing_products.py` with test env vars |
-| Production build throws `VITE_API_BASE_URL` error | Variable not set | Set `VITE_API_BASE_URL` to a real deployed URL before building |
-| `npm install` fails | Node version too old | Upgrade to Node.js 18+ |
+This project is part of the **Lead Magnet** clothing brand platform suite.
