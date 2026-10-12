@@ -1,13 +1,12 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { io } from 'socket.io-client';
 import { useAdminAuth } from '../../context/AdminAuthContext';
-import { getAdminRecentActivity } from '../../services/api';
+import { getAdminRecentActivity, API_BASE_URL as API_BASE } from '../../services/api';
 import {
   Activity, Wifi, WifiOff, Loader, ShoppingCart, Search, Eye, Heart,
   ShoppingBag, User, Target, Mail, AlertCircle, RefreshCw, TrendingUp
 } from 'lucide-react';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
 const MAX_FEED_SIZE = 50;
 
 // ─── Icon + label helpers ─────────────────────────────────────────────────────

@@ -1,133 +1,206 @@
-# Lead Magnet — Customer Intelligence & Analytics Admin Portal 📊👔
+# Lead Magnet — Admin Intelligence Portal
 
-The administrator portal for **Lead Magnet** brand management. This dashboard empowers store managers and analysts to track customer leads, demographic splits, session behaviors, shopping cart abandonments, and automated communication workflows in real-time.
-
----
-
-## 🌟 Key Features
-
-- **🔐 Secured Admin Authentication**: Guarded dashboard access. Official credentials:
-  - **Admin Email**: `admin@leadmagnet.com`
-  - **Admin Password**: `admin123`
-- **📈 Real-Time KPI Analytics**: Overview cards summarizing *Total Customers*, *Total Qualified Leads*, *Predicted Future Leads*, and *Active Customers Today*.
-- **📊 Demographic Split Visualization**: Interactive LeetCode-style doughnut chart and progress bars breaking down customer engagement by gender (*Women*, *Men*, *Kids*).
-- **📋 Customer Intelligence Directory**: Full-featured directory table supporting search query filtering and metric-focused sorting (*Time Spent*, *Number of Orders*, *Cart Items*, *Wishlist Likes*, *Psychographic Segment*).
-- **🔎 Slide-out Customer Detail Drawer**: Deep-dive behavioral analysis drawer displaying:
-  - Time Spent session bar charts & visit metrics
-  - Interest history timeline
-  - Active shopping cart contents & prices
-  - Liked products & wishlist history
-  - Customer interest summaries
-  - Read-only automated email & SMS communication logs
-- **🏬 Back to Store Link**: Quick navigation button in the top navigation bar linking directly to the main clothing store (`http://localhost:3001`).
-- **🌓 Adaptive Light & Dark Theme**: Full glassmorphism design system tailored for data density and visual clarity.
+The Admin Portal is the operational intelligence dashboard for Lead Magnet. It gives business operators a real-time view of customer conversion activity, lead qualification, marketing automation, and revenue analytics. It connects to the same Flask backend as the User Portal and receives live event updates via WebSocket.
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
-- **Core Framework**: React 18
-- **Build Tool & Dev Server**: Vite (Running on `http://localhost:3000`)
-- **Routing**: React Router DOM
-- **Data Visualizations**: Recharts (PieChart, BarChart, ResponsiveContainer)
-- **Icons**: Lucide React
-- **Styling**: Vanilla CSS with HSL design tokens, glassmorphism cards, and responsive panel layouts.
+| Tool | Version |
+|:--|:--|
+| React | 18.3 |
+| Vite | 6.x |
+| React Router DOM | 7.x |
+| Recharts | 2.x |
+| Socket.IO Client | 4.8 |
+| Lucide React | 0.469 |
+
+**Dev server port:** `3000`
 
 ---
 
-## 📁 Project Structure
+## Prerequisites
 
-```
-admin/
-├── src/
-│   ├── components/
-│   │   ├── analytics/
-│   │   │   ├── LeadAnalyticsSummary.jsx   # Top KPI metrics summary cards
-│   │   │   └── GenderDistribution.jsx      # Demographic doughnut chart & progress breakdown
-│   │   ├── customers/
-│   │   │   ├── CustomerTable.jsx          # Intelligence directory table with sorting & search
-│   │   │   └── CustomerDetailDrawer.jsx   # Slide-out customer behavior detail drawer
-│   │   └── layout/
-│   │       └── Topbar.jsx                 # Navigation header with "Back to Store" & search
-│   ├── context/
-│   │   ├── AdminAuthContext.jsx           # Admin login session management
-│   │   └── ThemeContext.jsx               # Dark/Light mode theme state
-│   ├── data/
-│   │   ├── adminCredentials.js            # Admin authentication configuration
-│   │   └── mockData.js                    # Datasets for backend telemetry mapping
-│   ├── pages/
-│   │   └── AdminLogin.jsx                 # Administrator authentication view
-│   ├── styles/                            # CSS variables & panel design system
-│   ├── App.jsx
-│   └── main.jsx
-├── package.json
-└── vite.config.js
+- **Node.js** 18 or later
+- **npm** 9 or later
+
+```bash
+node --version   # 18+
+npm --version    # 9+
 ```
 
 ---
 
-## 🚀 Getting Started
+## Installation
 
-### Prerequisites
+All commands run from the `frontend/admin/` directory:
 
-Ensure you have **Node.js** (v18 or higher) and **npm** installed on your system.
+```bash
+cd frontend/admin
+npm install
+```
 
-### Installation
+---
 
-1. Navigate to the `admin` directory:
-   ```bash
-   cd admin
+## Available Scripts
+
+| Script | Command | Description |
+|:--|:--|:--|
+| Development | `npm run dev` | Starts Vite dev server at `http://localhost:3000` with HMR |
+| Production build | `npm run build` | Builds to `dist/` for deployment |
+| Preview build | `npm run preview` | Serves the `dist/` folder locally for build verification |
+
+---
+
+## API Configuration
+
+### Development (local)
+
+No configuration is needed. The admin portal defaults to connecting to `http://127.0.0.1:5000` when `VITE_API_BASE_URL` is not set.
+
+Start the backend in isolated mode first:
+```powershell
+venv\Scripts\python backend/local_test_launcher.py --serve --port 5000
+```
+
+### Production Build
+
+Set `VITE_API_BASE_URL` to the deployed backend URL before building:
+
+```
+VITE_API_BASE_URL=https://your-deployed-backend.onrender.com
+```
+
+Set this via:
+- CI/CD environment variable (recommended)
+- Deployment platform dashboard (Vercel, Render, etc.)
+
+> ⚠️ The build will fail at startup if `VITE_API_BASE_URL` is missing or contains a localhost/placeholder value in production. This is intentional.
+
+The committed `frontend/admin/.env.production` file has this variable commented out intentionally — configure it in your deployment environment, not in the file.
+
+---
+
+## Authentication
+
+The admin portal uses **JWT-based authentication** against the backend `POST /api/admin/login` endpoint.
+
+**Local demo credentials** are configured via the backend `.env` variables `ADMIN_USERNAME` and `ADMIN_PASSWORD`. The defaults for local demo use are `admin` / `admin12345`, but these should always be confirmed against your local `backend/.env`.
+
+> ⚠️ Do not publish or hardcode default admin credentials in documentation or source code. The old README for this portal contained hardcoded credentials (`admin@leadmagnet.com` / `admin123`) — those are invalid and have been removed.
+
+The backend enforces:
+- JWT tokens signed with `JWT_SECRET` from the environment.
+- `@admin_required` middleware on all `/api/admin/*` routes.
+- Token expiry — expired tokens return `401 Unauthorized`.
+
+---
+
+## Running Against the Isolated Local Backend
+
+1. Confirm MongoDB Community is running on `127.0.0.1:27017`.
+2. Start the backend:
+   ```powershell
+   venv\Scripts\python backend/local_test_launcher.py --serve --port 5000
    ```
-
-2. Install dependencies:
+3. Start the admin portal:
    ```bash
-   npm install
-   ```
-
-3. Start the development server:
-   ```bash
+   cd frontend/admin
    npm run dev
    ```
-   The application will launch locally at `http://localhost:3000`.
-
-4. Access the dashboard using the official admin credentials:
-   - **Email**: `admin@leadmagnet.com`
-   - **Password**: `admin123`
-
-5. Build for production:
-   ```bash
-   npm run build
-   ```
+4. Open `http://localhost:3000` and log in with admin credentials.
 
 ---
 
-## 🔌 Backend Telemetry & Customer Data Integration
+## Application Structure
 
-The dashboard UI components are decoupled and built to map directly to real user telemetry and customer lead data fetched from your backend API:
-
-```javascript
-// Example customer object structure expected by the Customer Intelligence Directory
-{
-  id: "LM-CLO-8901",
-  name: "Rahul Sharma",
-  gender: "Male",
-  age: 27,
-  orders: 8,
-  cartItemsCount: 3,
-  likedItemsCount: 5,
-  timeSpent: "42 mins",
-  psychographic: "Streetwear Enthusiast",
-  sessions: [ ... ],
-  interestHistory: [ ... ],
-  cartItems: [ ... ],
-  likedItems: [ ... ],
-  sentEmail: { subject: "...", body: "...", status: "Sent" },
-  sentSms: { text: "...", status: "Delivered" }
-}
+```
+frontend/admin/
+├── src/
+│   ├── App.jsx                          # Root router, protected routes
+│   ├── main.jsx                         # Application entry point
+│   ├── components/
+│   │   ├── analytics/
+│   │   │   ├── FunnelAnalytics.jsx      # Conversion funnel drop-off chart
+│   │   │   ├── RFMDistribution.jsx      # RFM segmentation visualization
+│   │   │   ├── RevenueAttribution.jsx   # Marketing touchpoint revenue chart
+│   │   │   ├── LiveActivityFeed.jsx     # Real-time WebSocket event feed
+│   │   │   ├── MarketingActivityFeed.jsx # Recent communications log
+│   │   │   ├── LeadAnalyticsSummary.jsx # Top-level KPI cards
+│   │   │   ├── GenderDistribution.jsx   # Demographic breakdown chart
+│   │   │   └── WhatIfSimulator.jsx      # Interactive lead score simulator
+│   │   ├── customers/
+│   │   │   ├── CustomerTable.jsx        # Searchable, sortable customer directory
+│   │   │   └── CustomerDetailDrawer.jsx # 360° customer profile slide-out drawer
+│   │   └── layout/
+│   │       ├── Topbar.jsx               # Navigation header, user info
+│   │       ├── NotificationBell.jsx     # Admin notification badge and list
+│   │       └── AdminNotificationsList.jsx # Full notification feed
+│   ├── context/
+│   │   ├── AdminAuthContext.jsx         # JWT login/logout, token persistence
+│   │   └── ThemeContext.jsx             # Dark/Light mode toggle
+│   ├── pages/
+│   │   └── AdminLogin.jsx              # Login form
+│   ├── services/
+│   │   └── api.js                       # All backend API calls with auth headers
+│   └── styles/
+│       └── main.css                     # Global admin CSS design system
+├── index.html
+├── vite.config.js                       # Port 3000, open: true
+├── vercel.json                          # Vercel SPA routing config
+└── package.json
 ```
 
 ---
 
-## 📄 License
+## Implemented Dashboard Features
 
-This project is part of the **Lead Magnet** clothing brand platform suite.
+| Feature | API Endpoints Used |
+|:--|:--|
+| **Overview & KPI Cards** | `GET /api/admin/intelligence/overview` |
+| **Customer Directory** | `GET /api/admin/intelligence/leads` |
+| **Customer 360° Detail Drawer** | `GET /api/admin/intelligence/customer/:id` |
+| **Lead Score Explainability** | `GET /api/admin/intelligence/customer/:id/explain` |
+| **Funnel Analytics** | `GET /api/admin/analytics/funnel` |
+| **RFM Segmentation** | `GET /api/admin/analytics/rfm` |
+| **Revenue Attribution** | `GET /api/admin/analytics/revenue-attribution` |
+| **What-If Simulator** | `POST /api/admin/simulate/lead-score` |
+| **Live Activity Feed** | WebSocket `marketing_event` channel |
+| **Marketing Activity Log** | `GET /api/admin/intelligence/marketing-activity` |
+| **Notification Bell** | `GET /api/admin/notifications`, `PATCH /api/admin/notifications/:id/read` |
+
+---
+
+## Verifying a Successful Build
+
+```bash
+cd frontend/admin
+npm run build
+```
+
+A successful build outputs:
+```
+dist/index.html
+dist/assets/index-<hash>.js
+dist/assets/index-<hash>.css
+```
+
+Preview locally:
+```bash
+npm run preview
+```
+
+The Vercel routing configuration (`vercel.json`) rewrites all paths to `index.html` for client-side routing. For other hosting platforms, configure equivalent SPA fallback routing.
+
+---
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|:--|:--|:--|
+| Login returns `401 Unauthorized` | Wrong credentials or expired backend session | Confirm `ADMIN_USERNAME`/`ADMIN_PASSWORD` match `backend/.env` |
+| Dashboard shows no data | Backend not running or MongoDB unavailable | Start backend with `local_test_launcher.py --serve` |
+| CORS error in browser console | Backend CORS origins not including port 3000 | Port 3000 is in the default allowed origins; ensure backend is on port 5000 |
+| Live feed shows no events | WebSocket connection failed | Check backend is running; check browser console for WS errors |
+| Production build fails with `VITE_API_BASE_URL` error | Variable not set for production build | Set to real deployed backend URL before building |
+| Charts show empty state | No customers in database | Register a test customer via the User Portal first |

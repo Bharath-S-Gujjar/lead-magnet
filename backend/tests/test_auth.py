@@ -28,8 +28,8 @@ class AuthEndpointTests(unittest.TestCase):
 
         # 3. Admin login
         admin_res = self.client.post("/api/auth/admin/login", json={
-            "username": "admin",
-            "password": "admin12345"
+            "username": os.environ.get("ADMIN_USERNAME", "test_admin"),
+            "password": os.environ.get("ADMIN_PASSWORD", "test_admin_password")
         })
         self.assertEqual(admin_res.status_code, 200)
         data = admin_res.get_json()

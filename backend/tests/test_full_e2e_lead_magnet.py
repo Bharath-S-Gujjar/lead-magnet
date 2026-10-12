@@ -262,7 +262,10 @@ class FullE2ELeadMagnetTests(unittest.TestCase):
         # -------------------------------------------------------------
         # STEP 7: Admin Intelligence APIs & Dashboard Verification
         # -------------------------------------------------------------
-        admin_login = self.client.post("/api/auth/admin/login", json={"username": "admin", "password": "admin12345"})
+        admin_login = self.client.post("/api/auth/admin/login", json={
+            "username": os.environ.get("ADMIN_USERNAME", "test_admin"),
+            "password": os.environ.get("ADMIN_PASSWORD", "test_admin_password")
+        })
         self.assertEqual(admin_login.status_code, 200)
         admin_token = admin_login.get_json()["data"]["token"]
         admin_headers = {"Authorization": f"Bearer {admin_token}"}

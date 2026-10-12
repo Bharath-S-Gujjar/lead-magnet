@@ -1,17 +1,53 @@
 services:
+  # ── Web API (gunicorn + eventlet) ──────────────────────────────────────────
+  # Scheduler is intentionally DISABLED in web workers (ENABLE_SCHEDULER=false).
+  # Use the dedicated scheduler service below, or a separate Render cron/worker,
+  # when background jobs are needed.
   - type: web
     name: lead-magnet-backend
     env: python
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app --worker-class eventlet -w 1
     envVars:
+      - key: FLASK_ENV
+        value: production
       - key: MONGO_URI
+        sync: false
+      - key: MONGO_DB_NAME
         sync: false
       - key: JWT_SECRET
         generateValue: true
       - key: ADMIN_USERNAME
-        value: admin
+        sync: false           # Must be set in Render dashboard — do not use default "admin"
       - key: ADMIN_PASSWORD
         sync: false
       - key: FRONTEND_URL
-        value: "*"
+        sync: false           # Required: comma-separated HTTPS origins, e.g. https://app.example.com
+      - key: ENABLE_SCHEDULER
+        value: "false"        # Web workers must never own the scheduler
+      - key: WHATSAPP_APP_SECRET
+        sync: false
+      - key: WHATSAPP_WEBHOOK_VERIFY_TOKEN
+        sync: false
+
+  # ── Dedicated Scheduler Worker ──────────────────────────────────────────────
+  # Uncomment and configure this service to run background jobs in a dedicated
+  # process instead of inside web workers.  Only one instance of this service
+  # should run at a time.
+  #
+  # - type: worker
+  #   name: lead-magnet-scheduler
+  #   env: python
+  #   buildCommand: pip install -r requirements.txt
+  #   startCommand: python scheduler_service.py
+  #   envVars:
+  #     - key: FLASK_ENV
+  #       value: production
+  #     - key: MONGO_URI
+  #       sync: false
+  #     - key: MONGO_DB_NAME
+  #       sync: false
+  #     - key: JWT_SECRET
+  #       sync: false
+  #     - key: ENABLE_SCHEDULER
+  #       value: "true"

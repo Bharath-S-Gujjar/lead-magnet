@@ -67,8 +67,8 @@ class CleanStateAuthVerificationTests(unittest.TestCase):
 
         # 6. Authenticated admin request test
         admin_login = self.client.post("/api/auth/admin/login", json={
-            "username": "admin",
-            "password": "admin12345"
+            "username": os.environ.get("ADMIN_USERNAME", "test_admin"),
+            "password": os.environ.get("ADMIN_PASSWORD", "test_admin_password")
         })
         self.assertEqual(admin_login.status_code, 200)
         admin_token = admin_login.get_json()["data"]["token"]

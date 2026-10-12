@@ -35,6 +35,13 @@ from marketing_automation_service import (
     MARKETING_COOLDOWN_HOURS,
 )
 from communication_provider import get_communication_provider, DryRunCommunicationProvider
+from channel_selector_service import (
+    select_communication_channel,
+    determine_opportunity_preference,
+    is_high_priority_opportunity,
+    POLICY_WHATSAPP_FIRST,
+    POLICY_EMAIL_FIRST,
+)
 
 # Configurable opportunity cooldown between successive opportunity emails to the same customer (default 24h)
 OPPORTUNITY_COOLDOWN_HOURS = int(os.getenv("OPPORTUNITY_COOLDOWN_HOURS", "24"))
@@ -449,7 +456,7 @@ def _is_within_opportunity_cooldown(customer_id, db, cooldown_hours=OPPORTUNITY_
         id_conds.append({"customer_id": customer_id})
 
     last_comm = comms_col.find_one(
-        {"$or": id_conds, "channel": "email", "status": "sent"},
+        {"$or": id_conds, "channel": {"$in": ["email", "whatsapp"]}, "status": "sent"},
         sort=[("sent_at", -1)]
     )
     if not last_comm or not last_comm.get("sent_at"):
@@ -990,6 +997,83 @@ def build_opportunity_email_content(opportunity, customer_name, store_url):
     return subject, body
 
 
+def build_opportunity_whatsapp_content(opportunity, customer_name, store_url):
+    """Generate concise, natural customer-facing WhatsApp message for an opportunity.
+
+    CRITICAL RULES:
+        - NEVER expose lead scores, ML probabilities, model versions, feature vectors, or internal ranks.
+        - State real discounts that actually exist in the catalog.
+        - Concise, friendly tone suitable for WhatsApp messaging (within Meta template constraints).
+    """
+    name = customer_name or "there"
+    opp_type = opportunity.get("opportunity_type")
+    meta = opportunity.get("metadata") or {}
+
+    def _fmt_price(val):
+        try:
+            f_val = float(val)
+            if f_val.is_integer():
+                return f"₹{int(f_val)}"
+            return f"₹{f_val:,.2f}"
+        except (ValueError, TypeError):
+            return f"₹{val}"
+
+    if opp_type == OPP_CART_ITEM_DISCOUNT:
+        prod_name = meta.get("product_name") or "an item in your cart"
+        disc_pct = meta.get("discount_percent", 0)
+        curr_price = meta.get("current_price", 0)
+        return (
+            f"Hi {name} 👋 Great news! {prod_name} in your cart is now {disc_pct}% off "
+            f"(Now {_fmt_price(curr_price)})! Complete your order before the offer ends: {store_url}/cart"
+        )
+    elif opp_type == OPP_WISHLIST_ITEM_DISCOUNT:
+        prod_name = meta.get("product_name") or "an item on your wishlist"
+        disc_pct = meta.get("discount_percent", 0)
+        curr_price = meta.get("current_price", 0)
+        return (
+            f"Hi {name} 👋 Good news! {prod_name} from your wishlist is now {disc_pct}% off "
+            f"(Now {_fmt_price(curr_price)})! Take a look: {store_url}/wishlist"
+        )
+    elif opp_type == OPP_SIMILAR_PRODUCT_DISCOUNT:
+        rec_name = meta.get("recommended_product_name") or "a trending style"
+        disc_pct = meta.get("discount_percent", 0)
+        curr_price = meta.get("current_price", 0)
+        return (
+            f"Hi {name} 👋 We found a style you might love on special offer: {rec_name} is {disc_pct}% off "
+            f"(Now {_fmt_price(curr_price)})! Explore styles: {store_url}/shop"
+        )
+    elif opp_type == OPP_HOT_TO_WARM_REENGAGEMENT:
+        return (
+            f"Hi {name} 👋 We miss you at Lead Magnet! We've added new clothing arrivals tailored to your style. "
+            f"Explore what's new: {store_url}/shop"
+        )
+    elif opp_type == OPP_CART_ABANDONMENT:
+        return (
+            f"Hi {name} 👋 You left items waiting in your shopping cart at Lead Magnet! "
+            f"Complete your purchase here: {store_url}/cart"
+        )
+    elif opp_type == OPP_WISHLIST_INACTIVITY:
+        return (
+            f"Hi {name} 👋 Items you saved in your wishlist are still waiting for you! "
+            f"Take a look: {store_url}/wishlist"
+        )
+    elif opp_type == OPP_PRODUCT_PRICE_DROP:
+        prod_name = meta.get("product_title") or meta.get("product_name") or "an item you were interested in"
+        curr_price = meta.get("new_price", 0)
+        curr_str = _fmt_price(curr_price)
+        interest_src = str(meta.get("interest_source", "cart")).lower()
+        target_path = "/wishlist" if ("wishlist" in interest_src and "cart" not in interest_src) else "/cart"
+        target_url = meta.get("product_url") or meta.get("url") or f"{store_url}{target_path}"
+        return (
+            f"Hi {name} 👋 Price drop alert! {prod_name} is now down to {curr_str}! "
+            f"View product: {target_url}"
+        )
+    else:
+        return (
+            f"Hi {name} 👋 Check out handpicked clothing styles waiting for you at Lead Magnet: {store_url}/shop"
+        )
+
+
 def process_customer_opportunities(
     customer_id,
     db,
@@ -998,14 +1082,19 @@ def process_customer_opportunities(
     lead_state_doc=None,
     opportunity_cooldown_hours=OPPORTUNITY_COOLDOWN_HOURS,
     current_time=None,
+    lease_checker=None,
+    target_opportunity_key=None,
 ):
-    """Detect and idempotently communicate eligible opportunities for a customer via targeted Gmail.
+    """Detect and idempotently communicate eligible opportunities for a customer via smart channel selection.
 
     Enforces:
         - Lead status qualification
         - Opportunity-level idempotency (never duplicate for same opportunity_key)
-        - Customer email cooldown (prevents rapid-fire email sends)
-        - Channel eligibility (email only, WhatsApp postponed)
+        - Customer communication cooldown (prevents rapid-fire messaging)
+        - Smart Channel Selection (high-priority opportunities prefer WhatsApp when opted in;
+          other promotional flows prefer Gmail; fallback to alternative when preferred is ineligible;
+          never blindly duplicate or dispatch across multiple channels)
+        - Provider failure safety: never silently dispatch secondary channel on failure
         - Clean status recording in marketing_communications and marketing_opportunities.
 
     Returns:
@@ -1025,18 +1114,24 @@ def process_customer_opportunities(
 
     opp_col = db["marketing_opportunities"]
     try:
-        pending_pd = list(opp_col.find({
+        pending_opps = list(opp_col.find({
             "customer_id": query_id,
-            "opportunity_type": OPP_PRODUCT_PRICE_DROP,
             "opportunity_state": "detected",
         }))
         existing_keys = {o.get("opportunity_key") for o in opportunities}
-        for pd_opp in pending_pd:
-            if pd_opp.get("opportunity_key") not in existing_keys:
-                opportunities.append(pd_opp)
-                existing_keys.add(pd_opp.get("opportunity_key"))
+        for p_opp in pending_opps:
+            if p_opp.get("opportunity_key") not in existing_keys:
+                opportunities.append(p_opp)
+                existing_keys.add(p_opp.get("opportunity_key"))
     except Exception:
         pass
+
+    if target_opportunity_key is not None:
+        target_str = str(target_opportunity_key)
+        opportunities = [
+            o for o in opportunities
+            if str(o.get("_id")) == target_str or str(o.get("opportunity_key")) == target_str
+        ]
 
     if not opportunities:
         return {"detected_count": 0, "communicated": [], "skipped": []}
@@ -1046,17 +1141,19 @@ def process_customer_opportunities(
     if not profile and isinstance(customer_id, str):
         profile = profiles_col.find_one({"_id": customer_id}) or profiles_col.find_one({"user_id": customer_id})
 
-    # Channel eligibility check for email
-    eligibility = evaluate_channel_eligibility(profile, policy)
-    email_info = eligibility["email"]
-    if not email_info["eligible"]:
+    # General customer eligibility check: verify at least one potential communication channel exists
+    gen_eligibility = evaluate_channel_eligibility(profile, policy, campaign_type="opportunity")
+    email_eligible = bool(gen_eligibility.get("email", {}).get("eligible"))
+    wa_eligible = bool(gen_eligibility.get("whatsapp", {}).get("eligible"))
+
+    if not email_eligible and not wa_eligible:
+        reason = gen_eligibility.get("email", {}).get("reason") or "Customer has no eligible communication channels"
         return {
             "detected_count": len(opportunities),
             "communicated": [],
-            "skipped": [{"opportunity_key": o.get("opportunity_key"), "reason": email_info["reason"]} for o in opportunities],
+            "skipped": [{"opportunity_key": o.get("opportunity_key"), "reason": reason} for o in opportunities],
         }
 
-    recipient_email = email_info["recipient"]
     cust_name = (profile.get("full_name") or profile.get("username") or "there") if profile else "there"
     store_url = get_store_url()
 
@@ -1064,38 +1161,87 @@ def process_customer_opportunities(
     skipped = []
 
     # Check customer-level cooldown
-    within_cooldown = _is_within_opportunity_cooldown(query_id, db, cooldown_hours=opportunity_cooldown_hours)
+    within_cooldown = _is_within_opportunity_cooldown(query_id, db, cooldown_hours=opportunity_cooldown_hours, current_time=current_time)
 
     for opp in opportunities:
         opp_key = opp["opportunity_key"]
+        opp_type = opp.get("opportunity_type")
         opp_state = opp.get("opportunity_state")
 
         # 1. Idempotency Check: if already communicated for this opportunity, skip!
         if opp_state == "communicated":
             skipped.append({
                 "opportunity_key": opp_key,
-                "opportunity_type": opp.get("opportunity_type"),
+                "opportunity_type": opp_type,
                 "reason": "Opportunity already communicated",
             })
             continue
 
-        # 2. Global / Customer cooldown check: avoid sending rapid emails
+        comm_col = db["marketing_communications"]
+        existing_comm_sent = comm_col.find_one({
+            "customer_id": query_id,
+            "status": "sent",
+            "$or": [
+                {"idempotency_key": f"{opp_key}:email"},
+                {"idempotency_key": f"{opp_key}:whatsapp"},
+                {"metadata.opportunity_key": opp_key},
+            ]
+        })
+        if existing_comm_sent:
+            now_iso = existing_comm_sent.get("sent_at") or (current_time or datetime.now(timezone.utc)).isoformat()
+            opp_col.update_one(
+                {"opportunity_key": opp_key},
+                {"$set": {
+                    "opportunity_state": "communicated",
+                    "communicated_at": now_iso,
+                    "channel": existing_comm_sent.get("channel"),
+                }}
+            )
+            opp["opportunity_state"] = "communicated"
+            opp["communicated_at"] = now_iso
+            opp["channel"] = existing_comm_sent.get("channel")
+            skipped.append({
+                "opportunity_key": opp_key,
+                "opportunity_type": opp_type,
+                "reason": "Opportunity already communicated",
+            })
+            continue
+
+        # 2. Global / Customer cooldown check: avoid sending rapid communications
         if within_cooldown:
             skipped.append({
                 "opportunity_key": opp_key,
-                "opportunity_type": opp.get("opportunity_type"),
+                "opportunity_type": opp_type,
                 "reason": f"Customer is within {opportunity_cooldown_hours}h email cooldown",
             })
             continue
 
-        # 3. Build email content
-        subject, body = build_opportunity_email_content(opp, cust_name, store_url)
-        email_idempotency_key = f"{opp_key}:email"
+        # 3. Smart Channel Selection: determine single primary channel per opportunity
+        pref_policy = determine_opportunity_preference(opp, policy=policy, user_profile=profile)
+        selection = select_communication_channel(
+            user_profile=profile,
+            campaign_type=f"opportunity_{opp_type}",
+            classification="promotional",
+            policy=policy,
+            preference_policy=pref_policy,
+        )
 
+        if not selection.get("eligible") or not selection.get("channel"):
+            skipped.append({
+                "opportunity_key": opp_key,
+                "opportunity_type": opp_type,
+                "reason": selection.get("reason", "No eligible communication channel available"),
+            })
+            continue
+
+        selected_channel = selection["channel"]
+        recipient = selection["recipient"]
+
+        # 4. Build channel-appropriate content & metadata
         opp_meta = opp.get("metadata") or {}
         comm_meta = {
             "opportunity_key": opp_key,
-            "opportunity_type": opp.get("opportunity_type"),
+            "opportunity_type": opp_type,
             "product_id": str(opp.get("product_id") or ""),
         }
         if opp_meta.get("primary_image"):
@@ -1107,17 +1253,34 @@ def process_customer_opportunities(
         if opp_meta.get("new_price") is not None:
             comm_meta["new_price"] = opp_meta.get("new_price")
 
-        # 4. Dispatch Email (Gmail SMTP / dry-run provider)
+        idempotency_key = f"{opp_key}:{selected_channel}"
+
+        if selected_channel == "whatsapp":
+            body = build_opportunity_whatsapp_content(opp, cust_name, store_url)
+            subject = None
+        else:
+            subject, body = build_opportunity_email_content(opp, cust_name, store_url)
+
+        # Check distributed lease ownership immediately before communication dispatch
+        if lease_checker is not None and not lease_checker():
+            skipped.append({
+                "opportunity_key": opp_key,
+                "opportunity_type": opp_type,
+                "reason": "Distributed lease expired or transferred to another worker",
+            })
+            continue
+
+        # 5. Dispatch communication via selected primary channel
         comm_res = dispatch_communication(
             db,
             query_id,
-            campaign_type=f"opportunity_{opp.get('opportunity_type')}",
-            channel="email",
-            recipient=recipient_email,
+            campaign_type=f"opportunity_{opp_type}",
+            channel=selected_channel,
+            recipient=recipient,
             subject=subject,
             body=body,
             metadata=comm_meta,
-            idempotency_key=email_idempotency_key,
+            idempotency_key=idempotency_key,
             provider=provider,
         )
 
@@ -1127,19 +1290,25 @@ def process_customer_opportunities(
             now_iso = (current_time or datetime.now(timezone.utc)).isoformat()
             opp_col.update_one(
                 {"opportunity_key": opp_key},
-                {"$set": {"opportunity_state": "communicated", "communicated_at": now_iso}}
+                {"$set": {
+                    "opportunity_state": "communicated",
+                    "communicated_at": now_iso,
+                    "channel": selected_channel,
+                }}
             )
             opp["opportunity_state"] = "communicated"
             opp["communicated_at"] = now_iso
+            opp["channel"] = selected_channel
             communicated.append(opp)
-            # Once an email is sent, subsequent opportunities in the same evaluation cycle
-            # must observe the customer-level cooldown so we do NOT send multiple emails in rapid succession!
+            # Once a message is sent, subsequent opportunities in the same evaluation cycle
+            # must observe the customer-level cooldown so we do NOT send multiple messages in rapid succession
             within_cooldown = True
         else:
+            # Important: NEVER silently retry on another channel after provider failure
             skipped.append({
                 "opportunity_key": opp_key,
-                "opportunity_type": opp.get("opportunity_type"),
-                "reason": comm_res.get("last_error") or "Provider dispatch failed or skipped",
+                "opportunity_type": opp_type,
+                "reason": comm_res.get("last_error") if comm_res else "Provider dispatch failed or skipped",
             })
 
     return {

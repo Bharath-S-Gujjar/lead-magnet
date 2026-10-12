@@ -465,6 +465,104 @@ class AdminIntelligenceTests(unittest.TestCase):
         self.assertEqual(data_leads["total"], 0)
         self.assertEqual(len(data_leads["items"]), 0)
 
+    # 22. Cart and wishlist resolve title when product document uses title (Myntra schema)
+    def test_22_cart_and_wishlist_resolve_myntra_title_without_unavailable_label(self):
+        cid = ObjectId()
+        self.profiles.insert_one({"_id": cid, "email": "cart_title@test.com", "full_name": "Title Tester"})
+
+        # Product stored with 'title' and 'primary_image' (Myntra live schema)
+        myntra_pid = "myntra_98765432"
+        self.db["myntra_products"].insert_one({
+            "product_id": myntra_pid,
+            "title": "Myntra Premium Shirt",
+            "brand": "Arrow",
+            "category": "Shirts",
+            "gender": "Men",
+            "price": 899.0,
+            "primary_image": "https://example.com/arrow.jpg",
+        })
+
+        self.db["cart"].insert_one({
+            "user_id": cid,
+            "product_id": myntra_pid,
+            "quantity": 2,
+        })
+        self.db["wishlist"].insert_one({
+            "user_id": cid,
+            "product_id": myntra_pid,
+        })
+
+        admin_token = self.make_token(ObjectId(), role="admin")
+        res = self.client.get(
+            f"/api/admin/intelligence/customers/{str(cid)}/360",
+            headers={"Authorization": f"Bearer {admin_token}"}
+        )
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()["data"]
+
+        cart_items = data["cart"]
+        self.assertEqual(len(cart_items), 1)
+        self.assertEqual(cart_items[0]["name"], "Myntra Premium Shirt")
+        self.assertEqual(cart_items[0]["image"], "https://example.com/arrow.jpg")
+        self.assertNotEqual(cart_items[0]["name"], "Product unavailable")
+
+        wishlist_items = data["wishlist"]
+        self.assertEqual(len(wishlist_items), 1)
+        self.assertEqual(wishlist_items[0]["name"], "Myntra Premium Shirt")
+        self.assertEqual(wishlist_items[0]["image"], "https://example.com/arrow.jpg")
+        self.assertNotEqual(wishlist_items[0]["name"], "Product unavailable")
+
+    # 23. Marketing activity includes last_error and campaign_type
+    def test_23_marketing_activity_includes_last_error_and_campaign_type(self):
+        cid = ObjectId()
+        self.profiles.insert_one({"_id": cid, "email": "mkt_err@test.com"})
+        self.db["marketing_communications"].insert_one({
+            "customer_id": cid,
+            "channel": "whatsapp",
+            "campaign_type": "lead_qualification",
+            "status": "skipped",
+            "recipient": None,
+            "last_error": "Missing or invalid recipient for whatsapp",
+            "created_at": "2026-10-11T12:00:00Z",
+        })
+
+        admin_token = self.make_token(ObjectId(), role="admin")
+        res = self.client.get(
+            "/api/admin/intelligence/marketing-activity",
+            headers={"Authorization": f"Bearer {admin_token}"}
+        )
+        self.assertEqual(res.status_code, 200)
+        items = res.get_json()["data"]["items"]
+        skipped_items = [it for it in items if it.get("status") == "skipped"]
+        self.assertGreater(len(skipped_items), 0)
+        self.assertEqual(skipped_items[0]["last_error"], "Missing or invalid recipient for whatsapp")
+        self.assertEqual(skipped_items[0]["campaign_type"], "lead_qualification")
+
+    # 24. Product affinity resolves Myntra products
+    def test_24_product_affinity_resolves_myntra_products(self):
+        from product_affinity_service import compute_product_affinity
+        cid = ObjectId()
+        myntra_pid = "myntra_11223344"
+        self.db["myntra_products"].insert_one({
+            "product_id": myntra_pid,
+            "title": "Denim Slim Jacket",
+            "brand": "Levi's",
+            "category": "Jackets",
+            "price": 2499.0,
+        })
+        self.db["orders"].insert_one({
+            "user_id": cid,
+            "items": [{"product_id": myntra_pid, "quantity": 1}],
+            "status": "placed",
+        })
+
+        affinity = compute_product_affinity(cid, self.db)
+        purchased = affinity["frequently_purchased"]
+        self.assertEqual(len(purchased), 1)
+        self.assertEqual(purchased[0]["name"], "Denim Slim Jacket")
+        self.assertEqual(purchased[0]["brand"], "Levi's")
+        self.assertEqual(purchased[0]["category"], "Jackets")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -18,7 +18,11 @@ from datetime import datetime, timezone, timedelta
 from bson import ObjectId
 
 from customer_feature_service import _to_object_id
-from communication_provider import get_communication_provider, DryRunCommunicationProvider
+from communication_provider import (
+    get_communication_provider,
+    DryRunCommunicationProvider,
+    normalize_whatsapp_phone,
+)
 
 
 # Configurable cooldown period — prevents repeated marketing sends
@@ -131,14 +135,31 @@ def _is_channel_enabled(policy, channel_name):
     return False
 
 
-def evaluate_channel_eligibility(user_profile, policy=None):
-    """Determine channel eligibility based on contact info and active policy.
+TRANSACTIONAL_CAMPAIGNS = {"registration", "order_confirmation"}
+
+
+def evaluate_channel_eligibility(user_profile, policy=None, campaign_type=None, classification=None):
+    """Determine channel eligibility based on contact info, active policy, and explicit consent.
 
     Supported channels: email, whatsapp ONLY. NO SMS.
+
+    Policy & Consent Rules:
+        - Email: eligible if email channel is enabled and valid RFC-compliant email exists.
+        - WhatsApp Usability: phone number must exist and be valid E.164 with international
+          country code (normalized via normalize_whatsapp_phone).
+        - WhatsApp Opt-Out: customer opt-out strictly overrides opt-in and immediately makes
+          WhatsApp ineligible for both promotional and transactional messaging.
+        - Promotional WhatsApp: strictly requires explicit opt-in (whatsapp_opt_in == True).
+          Defaults to False for customers with no recorded consent.
+        - Transactional WhatsApp: allowed for transactional campaigns (registration, order_confirmation)
+          with a valid usable phone number, provided customer has not opted out. Does not grant
+          permission to send marketing/promotional messages.
 
     Args:
         user_profile (dict): User profile document from user_profiles collection.
         policy (dict, optional): Channel policy flags. Defaults to DEFAULT_CHANNEL_POLICY.
+        campaign_type (str, optional): Campaign identifier (e.g. 'registration', 'lead_qualified', 'cart_abandoned').
+        classification (str, optional): 'transactional' or 'promotional'. Inferred from campaign_type if None.
 
     Returns:
         dict: Eligibility mapping for email, whatsapp.
@@ -152,20 +173,69 @@ def evaluate_channel_eligibility(user_profile, policy=None):
             merged_policy["email"] = _is_channel_enabled(policy, "email")
         if "whatsapp" in policy or "whatsapp_enabled" in policy:
             merged_policy["whatsapp"] = _is_channel_enabled(policy, "whatsapp")
+        if campaign_type is None and "campaign_type" in policy:
+            campaign_type = policy["campaign_type"]
+        if classification is None and "classification" in policy:
+            classification = policy["classification"]
 
     profile = user_profile or {}
 
+    # Email channel evaluation (unchanged)
     email_val = profile.get("email")
     has_valid_email = isinstance(email_val, str) and "@" in email_val and bool(email_val.strip())
-
-    phone_val = profile.get("phone")
-    has_valid_phone = isinstance(phone_val, str) and bool(phone_val.strip())
-
     email_enabled = merged_policy["email"]
+    email_eligible = email_enabled and has_valid_email
+
+    # Determine message classification: transactional vs promotional
+    is_transactional = False
+    if classification:
+        is_transactional = str(classification).strip().lower() == "transactional"
+    elif campaign_type:
+        is_transactional = str(campaign_type).strip().lower() in TRANSACTIONAL_CAMPAIGNS
+
+    # Validate phone and usability for WhatsApp
+    phone_val = profile.get("phone")
+    has_valid_phone = False
+    phone_unusable_reason = None
+    clean_phone_str = None
+
+    if not phone_val or not str(phone_val).strip():
+        phone_unusable_reason = "No phone number found"
+    else:
+        clean_phone_str = str(phone_val).strip()
+        _, norm_err = normalize_whatsapp_phone(clean_phone_str)
+        if norm_err:
+            phone_unusable_reason = f"Invalid WhatsApp phone number: {norm_err}"
+        else:
+            has_valid_phone = True
+
+    # Consent fields: default existing/unspecified customers to False
+    whatsapp_opt_out = bool(profile.get("whatsapp_opt_out", False))
+    whatsapp_opt_in = bool(profile.get("whatsapp_opt_in", False) or profile.get("whatsapp_promotional_consent", False))
     whatsapp_enabled = merged_policy["whatsapp"]
 
-    email_eligible = email_enabled and has_valid_email
-    whatsapp_eligible = whatsapp_enabled and has_valid_phone
+    if not whatsapp_enabled:
+        whatsapp_eligible = False
+        whatsapp_reason = "WhatsApp channel disabled by policy"
+    elif whatsapp_opt_out:
+        # Opt-out strictly overrides opt-in and immediately makes WhatsApp ineligible
+        whatsapp_eligible = False
+        whatsapp_reason = "Customer has opted out of WhatsApp communications"
+    elif not has_valid_phone:
+        whatsapp_eligible = False
+        whatsapp_reason = phone_unusable_reason
+    elif is_transactional:
+        # Transactional messages do not require promotional opt-in, provided valid phone & not opted out
+        whatsapp_eligible = True
+        whatsapp_reason = "eligible"
+    else:
+        # Promotional / Marketing messages strictly require explicit opt-in
+        if whatsapp_opt_in:
+            whatsapp_eligible = True
+            whatsapp_reason = "eligible"
+        else:
+            whatsapp_eligible = False
+            whatsapp_reason = "Customer has not opted in to promotional WhatsApp messages"
 
     return {
         "email": {
@@ -175,8 +245,8 @@ def evaluate_channel_eligibility(user_profile, policy=None):
         },
         "whatsapp": {
             "eligible": whatsapp_eligible,
-            "recipient": phone_val if has_valid_phone else None,
-            "reason": "eligible" if whatsapp_eligible else ("No phone number found" if not has_valid_phone else "WhatsApp channel disabled by policy")
+            "recipient": clean_phone_str if has_valid_phone else None,
+            "reason": whatsapp_reason
         },
     }
 
@@ -362,7 +432,7 @@ def process_marketing_automation_event(event_id, db, provider=None, policy=None)
     if not profile and isinstance(c_id, str):
         profile = profiles_col.find_one({"user_id": c_id})
 
-    eligibility = evaluate_channel_eligibility(profile, policy)
+    eligibility = evaluate_channel_eligibility(profile, policy, campaign_type="lead_qualification")
     now_iso = datetime.now(timezone.utc).isoformat()
 
     events_col.update_one({"_id": event["_id"]}, {"$set": {"status": "processing"}})
@@ -698,7 +768,7 @@ def trigger_registration_communication(customer_id, db, provider=None, policy=No
     if not profile:
         return {}
 
-    eligibility = evaluate_channel_eligibility(profile, policy)
+    eligibility = evaluate_channel_eligibility(profile, policy, campaign_type="registration")
     name = profile.get("full_name") or profile.get("username") or "there"
 
     # TRANSACTIONAL - subject accurately describes the email, no fake Re:/Fwd:
@@ -856,37 +926,43 @@ def trigger_lead_qualification_communication(customer_id, lead_state_doc=None, d
 
     last_qual = lead_state_doc.get("last_qualified_at") or lead_state_doc.get("first_qualified_at") or datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    eligibility = evaluate_channel_eligibility(profile, policy)
-    results = {}
+    from channel_selector_service import (
+        select_communication_channel,
+        determine_opportunity_preference,
+    )
 
-    email_key = f"lead_qualified:{str(customer_id)}:{last_qual}:email"
-    email_info = eligibility["email"]
-    if email_info["eligible"]:
-        results["email"] = dispatch_communication(
-            db, customer_id, "lead_qualified", "email",
-            email_info["recipient"], subject=email_subject, body=email_body,
-            idempotency_key=email_key, provider=provider
-        )
-    else:
-        results["email"] = dispatch_communication(
-            db, customer_id, "lead_qualified", "email",
-            None, subject=email_subject, body=email_body,
-            idempotency_key=email_key, provider=provider
-        )
+    pref_policy = determine_opportunity_preference("lead_qualified", policy=policy, user_profile=profile)
+    selection = select_communication_channel(
+        user_profile=profile,
+        campaign_type="lead_qualified",
+        classification="promotional",
+        policy=policy,
+        preference_policy=pref_policy,
+    )
 
-    wa_key = f"lead_qualified:{str(customer_id)}:{last_qual}:whatsapp"
-    wa_info = eligibility["whatsapp"]
-    if wa_info["eligible"]:
+    if not selection.get("eligible") or not selection.get("channel"):
+        return {"skipped": True, "reason": selection.get("reason", "No eligible communication channel available")}
+
+    selected_channel = selection["channel"]
+    recipient = selection["recipient"]
+    results = {
+        "channel": selected_channel,
+        "selected_channel": selected_channel,
+    }
+
+    if selected_channel == "whatsapp":
+        wa_key = f"lead_qualified:{str(customer_id)}:{last_qual}:whatsapp"
         results["whatsapp"] = dispatch_communication(
             db, customer_id, "lead_qualified", "whatsapp",
-            wa_info["recipient"], body=wa_body,
+            recipient, body=wa_body,
             idempotency_key=wa_key, provider=provider
         )
     else:
-        results["whatsapp"] = dispatch_communication(
-            db, customer_id, "lead_qualified", "whatsapp",
-            None, body=wa_body,
-            idempotency_key=wa_key, provider=provider
+        email_key = f"lead_qualified:{str(customer_id)}:{last_qual}:email"
+        results["email"] = dispatch_communication(
+            db, customer_id, "lead_qualified", "email",
+            recipient, subject=email_subject, body=email_body,
+            idempotency_key=email_key, provider=provider
         )
 
     return results
@@ -990,38 +1066,86 @@ def trigger_cart_abandonment_communication(customer_id, db, provider=None, polic
     )
 
     cart_updated_key = cart_updated_dt.strftime("%Y-%m-%dT%H")
-    eligibility = evaluate_channel_eligibility(profile, policy)
-    results = {}
+    engine_opp_key = f"opp:{str(c_oid or customer_id)}:cart_abandonment:{cart_updated_key}"
 
-    email_key = f"cart_abandoned:{str(customer_id)}:{cart_updated_key}:email"
-    email_info = eligibility["email"]
-    if email_info["eligible"]:
-        results["email"] = dispatch_communication(
-            db, customer_id, "cart_abandoned", "email",
-            email_info["recipient"], subject=email_subject, body=email_body,
-            idempotency_key=email_key, provider=provider
-        )
-    else:
-        results["email"] = dispatch_communication(
-            db, customer_id, "cart_abandoned", "email",
-            None, subject=email_subject, body=email_body,
-            idempotency_key=email_key, provider=provider
-        )
+    # Check cross-path and channel idempotency
+    existing_comm = db["marketing_communications"].find_one({
+        "customer_id": c_oid or customer_id,
+        "status": "sent",
+        "$or": [
+            {"idempotency_key": f"cart_abandoned:{str(customer_id)}:{cart_updated_key}:email"},
+            {"idempotency_key": f"cart_abandoned:{str(customer_id)}:{cart_updated_key}:whatsapp"},
+            {"idempotency_key": f"{engine_opp_key}:email"},
+            {"idempotency_key": f"{engine_opp_key}:whatsapp"},
+            {"metadata.opportunity_key": engine_opp_key},
+        ]
+    })
+    if existing_comm:
+        channel_used = existing_comm.get("channel", "email")
+        return {
+            channel_used: existing_comm,
+            "channel": channel_used,
+            "selected_channel": channel_used,
+            "skipped": False,
+        }
 
-    wa_key = f"cart_abandoned:{str(customer_id)}:{cart_updated_key}:whatsapp"
-    wa_info = eligibility["whatsapp"]
-    if wa_info["eligible"]:
+    from channel_selector_service import (
+        select_communication_channel,
+        determine_opportunity_preference,
+    )
+
+    pref_policy = determine_opportunity_preference("cart_abandoned", policy=policy, user_profile=profile)
+    selection = select_communication_channel(
+        user_profile=profile,
+        campaign_type="cart_abandoned",
+        classification="promotional",
+        policy=policy,
+        preference_policy=pref_policy,
+    )
+
+    if not selection.get("eligible") or not selection.get("channel"):
+        return {"skipped": True, "reason": selection.get("reason", "No eligible communication channel available")}
+
+    selected_channel = selection["channel"]
+    recipient = selection["recipient"]
+    results = {
+        "channel": selected_channel,
+        "selected_channel": selected_channel,
+    }
+
+    if selected_channel == "whatsapp":
+        wa_key = f"cart_abandoned:{str(customer_id)}:{cart_updated_key}:whatsapp"
         results["whatsapp"] = dispatch_communication(
             db, customer_id, "cart_abandoned", "whatsapp",
-            wa_info["recipient"], body=wa_body,
+            recipient, body=wa_body,
+            metadata={"cart_updated_at": cart_updated_dt.isoformat(), "opportunity_key": engine_opp_key},
             idempotency_key=wa_key, provider=provider
         )
     else:
-        results["whatsapp"] = dispatch_communication(
-            db, customer_id, "cart_abandoned", "whatsapp",
-            None, body=wa_body,
-            idempotency_key=wa_key, provider=provider
+        email_key = f"cart_abandoned:{str(customer_id)}:{cart_updated_key}:email"
+        results["email"] = dispatch_communication(
+            db, customer_id, "cart_abandoned", "email",
+            recipient, subject=email_subject, body=email_body,
+            metadata={"cart_updated_at": cart_updated_dt.isoformat(), "opportunity_key": engine_opp_key},
+            idempotency_key=email_key, provider=provider
         )
+
+    # Sync state with marketing_opportunities if present
+    comm_record = results.get(selected_channel)
+    if comm_record and comm_record.get("status") == "sent":
+        try:
+            if "marketing_opportunities" in db.list_collection_names() or hasattr(db, "__getitem__"):
+                db["marketing_opportunities"].update_one(
+                    {"opportunity_key": engine_opp_key},
+                    {"$set": {
+                        "opportunity_state": "communicated",
+                        "communicated_at": datetime.now(timezone.utc).isoformat(),
+                        "channel": selected_channel,
+                    }},
+                    upsert=False
+                )
+        except Exception:
+            pass
 
     return results
 
@@ -1053,7 +1177,11 @@ def trigger_wishlist_reminder_communication(customer_id, db, provider=None, poli
     # Cooldown check: 7 days
     if reminder_delay_days > 0:
         last_reminder = db["marketing_communications"].find_one(
-            {"customer_id": c_oid or customer_id, "campaign_type": "wishlist_reminder", "status": "sent"},
+            {
+                "customer_id": c_oid or customer_id,
+                "campaign_type": {"$in": ["wishlist_reminder", "opportunity_wishlist_inactivity"]},
+                "status": "sent",
+            },
             sort=[("sent_at", -1)]
         )
         if last_reminder and last_reminder.get("sent_at"):
@@ -1097,37 +1225,44 @@ def trigger_wishlist_reminder_communication(customer_id, db, provider=None, poli
     )
 
     window = datetime.now(timezone.utc).strftime("%Y-W%W")
-    eligibility = evaluate_channel_eligibility(profile, policy)
-    results = {}
 
-    email_key = f"wishlist_reminder:{str(customer_id)}:{window}:email"
-    email_info = eligibility["email"]
-    if email_info["eligible"]:
-        results["email"] = dispatch_communication(
-            db, customer_id, "wishlist_reminder", "email",
-            email_info["recipient"], subject=email_subject, body=email_body,
-            idempotency_key=email_key, provider=provider
-        )
-    else:
-        results["email"] = dispatch_communication(
-            db, customer_id, "wishlist_reminder", "email",
-            None, subject=email_subject, body=email_body,
-            idempotency_key=email_key, provider=provider
-        )
+    from channel_selector_service import (
+        select_communication_channel,
+        determine_opportunity_preference,
+    )
 
-    wa_key = f"wishlist_reminder:{str(customer_id)}:{window}:whatsapp"
-    wa_info = eligibility["whatsapp"]
-    if wa_info["eligible"]:
+    pref_policy = determine_opportunity_preference("wishlist_reminder", policy=policy, user_profile=profile)
+    selection = select_communication_channel(
+        user_profile=profile,
+        campaign_type="wishlist_reminder",
+        classification="promotional",
+        policy=policy,
+        preference_policy=pref_policy,
+    )
+
+    if not selection.get("eligible") or not selection.get("channel"):
+        return {"skipped": True, "reason": selection.get("reason", "No eligible communication channel available")}
+
+    selected_channel = selection["channel"]
+    recipient = selection["recipient"]
+    results = {
+        "channel": selected_channel,
+        "selected_channel": selected_channel,
+    }
+
+    if selected_channel == "whatsapp":
+        wa_key = f"wishlist_reminder:{str(customer_id)}:{window}:whatsapp"
         results["whatsapp"] = dispatch_communication(
             db, customer_id, "wishlist_reminder", "whatsapp",
-            wa_info["recipient"], body=wa_body,
+            recipient, body=wa_body,
             idempotency_key=wa_key, provider=provider
         )
     else:
-        results["whatsapp"] = dispatch_communication(
-            db, customer_id, "wishlist_reminder", "whatsapp",
-            None, body=wa_body,
-            idempotency_key=wa_key, provider=provider
+        email_key = f"wishlist_reminder:{str(customer_id)}:{window}:email"
+        results["email"] = dispatch_communication(
+            db, customer_id, "wishlist_reminder", "email",
+            recipient, subject=email_subject, body=email_body,
+            idempotency_key=email_key, provider=provider
         )
 
     return results
@@ -1167,7 +1302,18 @@ def trigger_order_confirmation_communication(order_id, db, provider=None, policy
     )
 
     recipient_email = (profile.get("email") if profile else None) or order.get("customer_email")
-    recipient_phone = (profile.get("phone") if profile else None) or order.get("customer_phone")
+    shipping_addr = order.get("shipping_address") if isinstance(order.get("shipping_address"), dict) else {}
+    raw_phone = (profile.get("phone") if profile else None) or order.get("customer_phone") or shipping_addr.get("phone")
+
+    recipient_phone = None
+    if profile and profile.get("whatsapp_opt_out"):
+        recipient_phone = None
+    elif raw_phone:
+        clean_phone, norm_err = normalize_whatsapp_phone(raw_phone)
+        if not norm_err and clean_phone:
+            recipient_phone = clean_phone
+        else:
+            recipient_phone = None
 
     items = order.get("items") or []
     total_amount = float(order.get("total_amount") or 0.0)

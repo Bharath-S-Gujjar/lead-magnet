@@ -6,7 +6,38 @@
  * and clean data response unwrapping.
  */
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:5000').replace(/\/$/, '');
+// ─── API base URL ────────────────────────────────────────────────────────────
+// In development (npm run dev) VITE_API_BASE_URL defaults to localhost.
+// In production builds it MUST be set to the deployed backend URL via an
+// environment variable; the placeholder and localhost values are rejected at
+// module load time so that misconfiguration surfaces immediately.
+const _rawApiUrl = import.meta.env.VITE_API_BASE_URL || '';
+const _isProd = import.meta.env.PROD; // true only in `vite build` output
+
+if (_isProd) {
+  if (!_rawApiUrl) {
+    throw new Error(
+      '[Config] VITE_API_BASE_URL is not set. ' +
+      'Set this environment variable to the deployed backend URL before building.'
+    );
+  }
+  if (
+    _rawApiUrl.includes('your-backend-url') ||
+    _rawApiUrl.includes('example.com') ||
+    _rawApiUrl === 'http://127.0.0.1:5000' ||
+    _rawApiUrl === 'http://localhost:5000'
+  ) {
+    throw new Error(
+      '[Config] VITE_API_BASE_URL appears to be a placeholder or localhost value: ' +
+      JSON.stringify(_rawApiUrl) + '. ' +
+      'Set it to the real deployed backend URL before building for production.'
+    );
+  }
+}
+
+export const API_BASE_URL = (_rawApiUrl || 'http://127.0.0.1:5000').replace(/\/$/, '');
+
+
 
 /**
  * Helper to construct Authorization header.

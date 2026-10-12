@@ -107,6 +107,7 @@ export const MarketingActivityFeed = () => {
                   </div>
                   <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                     Channel: {item.channel?.toUpperCase()} • Recipient: {item.recipient || 'N/A'}
+                    {item.last_error && <span style={{ color: 'var(--text-secondary)' }}> • Reason: {item.last_error}</span>}
                   </div>
                 </div>
               </div>

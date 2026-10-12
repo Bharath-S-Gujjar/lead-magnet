@@ -4,6 +4,12 @@ __pycache__/
 
 # Environment
 .env
+.env.*
+.env.local
+.env.production
+# Allow placeholder examples
+!.env.example
+!.env.local.example
 
 # Virtual Environment
 venv/

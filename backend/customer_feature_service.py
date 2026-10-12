@@ -10,6 +10,7 @@ Rule: ONE REGISTERED CUSTOMER = ONE FEATURE RECORD.
 from datetime import datetime, timezone
 from bson import ObjectId
 from bson.errors import InvalidId
+from product_lookup import resolve_product_doc
 
 
 HIGH_INTENT_PAGE_KEYWORDS = ("pricing", "demo", "contact", "checkout")
@@ -92,7 +93,19 @@ def aggregate_customer_features(customer_id, db):
     cart_col = db["cart"]
     wishlist_col = db["wishlist"]
     orders_col = db["orders"]
-    products_col = db["products"]
+    if isinstance(db, dict):
+        products_col = db.get("myntra_products") or db.get("products")
+    else:
+        try:
+            col_names = db.list_collection_names()
+            if "myntra_products" in col_names:
+                products_col = db["myntra_products"]
+            elif "products" in col_names:
+                products_col = db["products"]
+            else:
+                products_col = db["myntra_products"]
+        except Exception:
+            products_col = db["myntra_products"]
 
     c_oid = _to_object_id(customer_id)
     profile = None
@@ -236,10 +249,26 @@ def aggregate_customer_features(customer_id, db):
         if isinstance(qty, int) and qty > 0:
             cart_item_count += qty
             p_id = c_item.get("product_id")
-            if isinstance(p_id, str) and ObjectId.is_valid(p_id):
-                p_id = ObjectId(p_id)
-            prod = products_col.find_one({"_id": p_id}) if p_id else None
-            price = prod.get("price", 0) if prod and isinstance(prod.get("price"), (int, float)) else 0
+            prod = None
+            if products_col is not None:
+                try:
+                    prod = resolve_product_doc(products_col, p_id)
+                except Exception:
+                    pass
+            if not prod and hasattr(db, "__getitem__"):
+                try:
+                    alt_col = db["products"]
+                    if alt_col is not products_col:
+                        prod = resolve_product_doc(alt_col, p_id)
+                except Exception:
+                    pass
+            price = 0
+            if prod:
+                price_val = prod.get("price")
+                if price_val is None:
+                    price_val = prod.get("current_price")
+                if isinstance(price_val, (int, float)):
+                    price = price_val
             cart_value += price * qty
 
     # Wishlist Aggregation

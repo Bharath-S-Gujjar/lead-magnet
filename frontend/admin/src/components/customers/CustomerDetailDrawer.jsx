@@ -580,7 +580,10 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
                           {getChannelIcon(c.channel)}
                           <div>
                             <div style={{ fontWeight: 700, textTransform: 'capitalize' }}>{c.channel} Channel</div>
-                            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Recipient: {c.recipient || 'N/A'}</div>
+                            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                              Recipient: {c.recipient || 'N/A'}
+                              {c.last_error && <span style={{ color: 'var(--text-secondary)' }}> • Reason: {c.last_error}</span>}
+                            </div>
                           </div>
                         </div>
                         <div style={{ textAlign: 'right' }}>

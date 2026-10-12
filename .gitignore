@@ -6,6 +6,11 @@
 !.env.example
 !.env.local.example
 backend/.env
+backend/.env.*
+backend/.env.local
+# Allow only the placeholder examples
+!backend/.env.example
+!backend/.env.local.example
 
 # Python
 __pycache__/
@@ -27,10 +32,17 @@ env/
 
 # Node & Frontend Build
 node_modules/
+frontend/node_modules/
 dist/
 dist-ssr/
 build/
+frontend/dist/
+frontend/build/
 *.local
+
+# Archives (may contain secrets)
+*.zip
+*.tar.gz
 
 # Logs
 *.log
@@ -53,3 +65,4 @@ data/catalog/backup/
 data/catalog/raw/
 data/catalog/cleaned_clothing_catalog.json
 data/catalog/resume_operation_summary.json
+backups/

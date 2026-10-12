@@ -13,19 +13,36 @@ import math
 from dotenv import load_dotenv
 from pymongo import MongoClient
 
-# Explicitly load backend/.env if present, with fallback to default load_dotenv
-dotenv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
-if os.path.exists(dotenv_path):
-    load_dotenv(dotenv_path=dotenv_path, override=True)
-else:
-    load_dotenv()
+# Explicitly load backend/.env if present, with fallback to default load_dotenv.
+# Skip .env loading entirely when the TESTING flag is set so that the test
+# harness can configure environment variables before this module is imported
+# and those values are never silently overridden by production credentials.
+_TESTING = os.environ.get("TESTING", "").strip() == "1"
+if not _TESTING:
+    dotenv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    if os.path.exists(dotenv_path):
+        load_dotenv(dotenv_path=dotenv_path, override=True)
+    else:
+        load_dotenv()
 from action_recommendations import get_next_action
 from auth_middleware import token_required, admin_required
 from ecommerce_model_adapter import predict_customer_features
 from identity_service import generate_anonymous_id, resolve_anonymous_identity
 from lead_processing_service import process_session
 from behavior_event_service import BehaviorEventError, log_behavior_event
-from customer_profile_service import build_profile_update, apply_profile_update, get_customer_profile
+from customer_profile_service import (
+    build_profile_update,
+    apply_profile_update,
+    get_customer_profile,
+    update_customer_whatsapp_consent,
+)
+from communication_provider import normalize_whatsapp_phone
+from whatsapp_webhook_service import (
+    verify_webhook_signature,
+    verify_webhook_challenge,
+    process_whatsapp_webhook_payload,
+    ensure_webhook_indexes,
+)
 from myntra_product_sync_service import ensure_myntra_product_indexes
 from product_lookup import resolve_product_doc, normalize_product_response
 from cart_service import get_user_cart, add_to_cart, update_cart_quantity, remove_from_cart, clear_cart
@@ -84,8 +101,25 @@ DEFAULT_ALLOWED_ORIGINS = [
 
 IS_PROD_ENV = os.getenv("FLASK_ENV", "").lower() == "production" or os.getenv("ENV", "").lower() == "production"
 FRONTEND_URL = os.getenv("FRONTEND_URL")
+
+# Reject wildcard CORS in production — a literal "*" is never a valid
+# frontend origin and was the placeholder value in the old render.yaml.
+if IS_PROD_ENV and FRONTEND_URL and FRONTEND_URL.strip() == "*":
+    raise ValueError(
+        "FRONTEND_URL is set to \"*\" which is not allowed in production. "
+        "Set FRONTEND_URL to a comma-separated list of real frontend origins "
+        "(e.g. https://app.example.com,https://admin.example.com)."
+    )
+
 if FRONTEND_URL:
-    ALLOWED_ORIGINS = [origin.strip() for origin in FRONTEND_URL.split(",") if origin.strip()]
+    _raw_origins = [origin.strip() for origin in FRONTEND_URL.split(",") if origin.strip()]
+    # Reject wildcard entries inside a comma-separated list in production.
+    if IS_PROD_ENV and "*" in _raw_origins:
+        raise ValueError(
+            "FRONTEND_URL contains a wildcard origin \"*\" which is not permitted "
+            "in production. Remove \"*\" and specify real frontend origins only."
+        )
+    ALLOWED_ORIGINS = _raw_origins
     if not IS_PROD_ENV:
         for default_origin in DEFAULT_ALLOWED_ORIGINS:
             if default_origin not in ALLOWED_ORIGINS:
@@ -123,16 +157,24 @@ def handle_500(e):
 
 
 def create_mongo_client():
+    """Create a MongoClient using certificate verification.
+
+    TLS is handled automatically by PyMongo for mongodb+srv:// URIs.
+    A certifi CA bundle is used as a second attempt if the default
+    system CA store fails.  The insecure tlsAllowInvalidCertificates
+    fallback has been intentionally removed; if both secure attempts
+    fail, the function fails closed with a sanitized error message.
+    """
     uri = os.getenv("MONGO_URI", "")
     if uri:
         # Attempt 1: Standard MongoClient (PyMongo handles TLS automatically for mongodb+srv://)
         try:
             client = MongoClient(uri, serverSelectionTimeoutMS=5000)
             client.admin.command("ping")
-            print("Successfully connected to MongoDB Atlas (Standard).")
+            print("Successfully connected to MongoDB (Standard).")
             return client, True
         except Exception as e:
-            print(f"MongoDB Atlas connection attempt 1 failed: {e}")
+            print(f"MongoDB connection attempt 1 failed: {type(e).__name__}")
 
         # Attempt 2: Explicit certifi CA bundle
         try:
@@ -143,36 +185,30 @@ def create_mongo_client():
                 serverSelectionTimeoutMS=5000,
             )
             client.admin.command("ping")
-            print("Successfully connected to MongoDB Atlas (Certifi).")
+            print("Successfully connected to MongoDB (Certifi CA).")
             return client, True
         except Exception as e:
-            print(f"MongoDB Atlas connection attempt 2 failed: {e}")
+            print(f"MongoDB connection attempt 2 (certifi) failed: {type(e).__name__}")
 
-        # Attempt 3: tlsAllowInvalidCertificates fallback
-        try:
-            client = MongoClient(
-                uri,
-                tls=True,
-                tlsAllowInvalidCertificates=True,
-                serverSelectionTimeoutMS=5000,
-            )
-            client.admin.command("ping")
-            print("Successfully connected to MongoDB Atlas (tlsAllowInvalidCertificates).")
-            return client, True
-        except Exception as e:
-            print(f"MongoDB Atlas connection attempt 3 failed: {e}")
+        # Both secure attempts failed — do not fall back to insecure TLS.
+        # Return unavailable so callers can surface a clean service error.
+        print(
+            "MongoDB: all secure connection attempts failed. "
+            "Check MONGO_URI, network access, and TLS/CA configuration. "
+            "Insecure tlsAllowInvalidCertificates is not available."
+        )
+        return MongoClient(uri, serverSelectionTimeoutMS=2000), False
 
-    # Fallback to local MongoDB
+    # No MONGO_URI configured — try local MongoDB for development.
     try:
         client = MongoClient("mongodb://localhost:27017/leadmagnet", serverSelectionTimeoutMS=2000)
         client.admin.command("ping")
         print("Successfully connected to local MongoDB.")
         return client, True
     except Exception as e:
-        print(f"Local MongoDB connection failed: {e}")
+        print(f"Local MongoDB connection failed: {type(e).__name__}")
 
-    fallback_uri = uri if uri else "mongodb://localhost:27017/leadmagnet"
-    return MongoClient(fallback_uri, serverSelectionTimeoutMS=2000), False
+    return MongoClient("mongodb://localhost:27017/leadmagnet", serverSelectionTimeoutMS=2000), False
 
 
 def ensure_product_indexes(products_collection):
@@ -275,6 +311,7 @@ def serialize_mongo_value(value):
 
 SAFE_PROFILE_FIELDS = {
     "_id", "email", "role", "full_name", "username", "age", "gender", "dob", "phone",
+    "whatsapp_opt_in", "whatsapp_opt_out", "whatsapp_opt_in_at", "whatsapp_opt_out_at", "whatsapp_opt_in_source", "whatsapp_opt_out_source",
     "created_at", "updated_at", "last_active_at", "visitor_id", "user_id",
     "engagement_score", "page_view_count", "session_count", "cart_add_count",
     "wishlist_add_count", "favorite_categories",
@@ -351,6 +388,33 @@ def initialize_database():
         return
 
     migrate_users_to_profiles_once()
+    ensure_webhook_indexes(db)
+    try:
+        from opportunity_engine import ensure_marketing_opportunities_indexes
+        ensure_marketing_opportunities_indexes(db)
+    except Exception:
+        pass
+    try:
+        from scheduler_service import ensure_scheduler_indexes, get_scheduler
+        ensure_scheduler_indexes(db)
+        scheduler = get_scheduler(db)
+        # Only start the scheduler when:
+        #  - not running tests, AND
+        #  - ENABLE_SCHEDULER=true (or "1"/"yes") is explicitly set.
+        # Web workers must set ENABLE_SCHEDULER=false so that the
+        # dedicated scheduler process/service is the single owner.
+        enable_scheduler = os.getenv("ENABLE_SCHEDULER", "false").lower()
+        is_scheduler_enabled = enable_scheduler in ("true", "1", "yes")
+        if not app.testing and not app.config.get("TESTING") and is_scheduler_enabled:
+            scheduler.start(db)
+        elif not app.testing and not app.config.get("TESTING"):
+            print(
+                "Scheduler not started in this process "
+                "(ENABLE_SCHEDULER is not 'true'). "
+                "Set ENABLE_SCHEDULER=true only in the dedicated scheduler service."
+            )
+    except Exception as sched_err:
+        print(f"Notice: Scheduler startup: {sched_err}")
 
 
 @app.before_request
@@ -479,6 +543,14 @@ def signup():
             return jsonify({"success": False, "message": "User already exists", "errors": []}), 400
 
         hashed_pw = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt())
+        now_utc = datetime.datetime.utcnow()
+        now_iso = now_utc.isoformat()
+
+        raw_opt_in = data.get("whatsapp_opt_in") if "whatsapp_opt_in" in data else data.get("whatsappOptIn", False)
+        raw_opt_out = data.get("whatsapp_opt_out") if "whatsapp_opt_out" in data else data.get("whatsappOptOut", False)
+        opt_in = bool(raw_opt_in)
+        opt_out = bool(raw_opt_out)
+
         user_doc = {
             "email": email,
             "password": hashed_pw,
@@ -489,7 +561,12 @@ def signup():
             "gender": data.get("gender"),
             "dob": data.get("dob"),
             "phone": data.get("phone"),
-            "updated_at": datetime.datetime.utcnow(),
+            "whatsapp_opt_in": opt_in,
+            "whatsapp_opt_out": opt_out,
+            "whatsapp_opt_in_at": now_iso if opt_in else None,
+            "whatsapp_opt_out_at": now_iso if opt_out else None,
+            "whatsapp_opt_in_source": data.get("whatsapp_opt_in_source", "signup") if opt_in else None,
+            "updated_at": now_utc,
         }
 
         anon_profile = profiles_collection.find_one({"visitor_id": anonymous_id}) if anonymous_id else None
@@ -611,6 +688,8 @@ def login():
                 "full_name": user.get("full_name"),
                 "username": user.get("username"),
                 "phone": user.get("phone"),
+                "whatsapp_opt_in": bool(user.get("whatsapp_opt_in", False)),
+                "whatsapp_opt_out": bool(user.get("whatsapp_opt_out", False)),
                 "gender": user.get("gender"),
                 "age": user.get("age"),
                 "dob": user.get("dob"),
@@ -1817,6 +1896,231 @@ def get_profile_route():
         return jsonify({"success": False, "message": str(e)}), 400
 
 
+@app.route("/api/profile/whatsapp-consent", methods=["GET", "PATCH", "PUT"])
+@token_required
+def whatsapp_consent_route():
+    """Manage customer WhatsApp communication consent.
+
+    Rules & Invariants:
+        - Authenticates caller using Bearer JWT.
+        - Resolves target profile strictly from authenticated identity (never untrusted body user ID).
+        - Rejects mismatched user ID with 403 Forbidden.
+        - Requires at least one valid boolean field ('whatsapp_opt_in' or 'whatsapp_opt_out').
+        - Non-boolean values (strings, numbers, null) rejected with 400.
+        - Contradictory values (both True or both False) rejected with 400.
+        - Explicit opt-in (whatsapp_opt_in=True) clears opt-out and enables promotional WhatsApp.
+        - Explicit opt-out (whatsapp_opt_out=True or whatsapp_opt_in=False) disables promotional WhatsApp.
+        - Serializes profile safely without exposing sensitive fields like password.
+        - Never sends communications or invokes external providers.
+    """
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable", "errors": []}), 500
+
+    user_id = g.current_user.get("sub")
+    if not user_id:
+        return jsonify({"success": False, "message": "Invalid authenticated user", "errors": []}), 401
+
+    # Authorization & User ID Tampering Prevention:
+    # Resolve target strictly from authenticated identity. Never trust request-supplied user_id.
+    # Prevent users from updating another customer's consent.
+    body_user_id = None
+    query_user_id = request.args.get("user_id") or request.args.get("customer_id")
+
+    if request.method in ["PATCH", "PUT"]:
+        data = request.get_json(silent=True)
+        if data is None or not isinstance(data, dict):
+            return jsonify({"success": False, "message": "Invalid JSON body", "errors": []}), 400
+        body_user_id = data.get("user_id") or data.get("customer_id")
+    else:
+        data = {}
+
+    supplied_user_id = body_user_id or query_user_id
+    if supplied_user_id is not None and str(supplied_user_id).strip() != str(user_id).strip():
+        return jsonify({
+            "success": False,
+            "message": "User ownership mismatch: cannot update consent for another customer",
+            "errors": []
+        }), 403
+
+    if request.method == "GET":
+        profile = get_customer_profile(profiles_collection, user_id=user_id)
+        if not profile:
+            return jsonify({"success": False, "message": "Customer profile not found", "errors": []}), 404
+        return jsonify({"success": True, "data": serialize_profile(profile)}), 200
+
+    # For PATCH / PUT:
+    # Require at least one valid consent field
+    if "whatsapp_opt_in" not in data and "whatsapp_opt_out" not in data:
+        return jsonify({
+            "success": False,
+            "message": "At least one consent field ('whatsapp_opt_in' or 'whatsapp_opt_out') is required",
+            "errors": []
+        }), 400
+
+    opt_in = data.get("whatsapp_opt_in")
+    opt_out = data.get("whatsapp_opt_out")
+    source = data.get("source") or data.get("whatsapp_opt_in_source") or data.get("whatsapp_opt_out_source") or "user_settings"
+
+    phone_update = None
+    if "phone" in data and data["phone"] is not None:
+        raw_phone = str(data["phone"]).strip()
+        if raw_phone:
+            norm_phone, norm_err = normalize_whatsapp_phone(raw_phone)
+            if norm_err:
+                return jsonify({"success": False, "message": f"Invalid WhatsApp phone number: {norm_err}", "errors": []}), 400
+            phone_update = norm_phone
+
+    try:
+        updated_profile = update_customer_whatsapp_consent(
+            profiles_collection=profiles_collection,
+            user_id=user_id,
+            opt_in=opt_in,
+            opt_out=opt_out,
+            source=source,
+            phone=phone_update,
+        )
+    except (TypeError, ValueError) as err:
+        return jsonify({"success": False, "message": str(err), "errors": []}), 400
+    except Exception as err:
+        return jsonify({"success": False, "message": str(err), "errors": []}), 500
+
+    if not updated_profile:
+        return jsonify({"success": False, "message": "Customer profile not found", "errors": []}), 404
+
+    return jsonify({
+        "success": True,
+        "message": "WhatsApp consent updated successfully",
+        "data": serialize_profile(updated_profile)
+    }), 200
+
+
+# --- WhatsApp Cloud API Webhook API (Task 5) ---
+
+@app.route("/api/webhook/whatsapp", methods=["GET", "POST"])
+@app.route("/api/webhooks/whatsapp", methods=["GET", "POST"])
+def whatsapp_webhook_route():
+    """Meta WhatsApp Cloud API Webhook endpoint.
+
+    Handles:
+        - GET: Meta verification challenge with secure token comparison.
+        - POST: Event webhook notifications (inbound messages, STOP opt-outs, delivery status updates).
+        - Signature verification: X-Hub-Signature-256 HMAC-SHA256 constant-time comparison against exact raw body.
+    """
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable", "errors": []}), 500
+
+    if request.method == "GET":
+        mode = request.args.get("hub.mode")
+        token = request.args.get("hub.verify_token")
+        challenge = request.args.get("hub.challenge")
+
+        expected_token = (
+            os.getenv("WHATSAPP_WEBHOOK_VERIFY_TOKEN")
+            or os.getenv("WHATSAPP_VERIFY_TOKEN")
+            or os.getenv("META_VERIFY_TOKEN")
+            or app.config.get("WHATSAPP_WEBHOOK_VERIFY_TOKEN")
+        )
+        # Fail closed: if no verify token is configured, reject verification.
+        # A missing token must never silently accept the challenge.
+        if not expected_token:
+            return jsonify({
+                "success": False,
+                "message": "Webhook verification token is not configured on the server",
+                "errors": [],
+            }), 500
+
+        valid, challenge_resp = verify_webhook_challenge(
+            mode=mode,
+            token=token,
+            challenge=challenge,
+            expected_token=expected_token,
+        )
+
+        if valid:
+            return challenge_resp, 200, {"Content-Type": "text/plain"}
+        return jsonify({"success": False, "message": "Verification token mismatch or invalid mode", "errors": []}), 403
+
+    # POST webhook
+    raw_body = request.get_data()
+    sig_header = request.headers.get("X-Hub-Signature-256")
+
+    app_secret = (
+        os.getenv("WHATSAPP_APP_SECRET")
+        or os.getenv("META_APP_SECRET")
+        or app.config.get("WHATSAPP_APP_SECRET")
+    )
+
+    if not sig_header:
+        return jsonify({"success": False, "message": "Missing X-Hub-Signature-256 header", "errors": []}), 401
+
+    if not app_secret:
+        return jsonify({"success": False, "message": "WhatsApp webhook app secret is not configured", "errors": []}), 500
+
+    if not verify_webhook_signature(raw_body, sig_header, app_secret):
+        return jsonify({"success": False, "message": "Invalid webhook signature", "errors": []}), 401
+
+    payload = request.get_json(silent=True)
+    if payload is None or not isinstance(payload, dict):
+        return jsonify({"success": False, "message": "Invalid JSON payload", "errors": []}), 400
+
+    if "entry" not in payload or not isinstance(payload["entry"], list):
+        return jsonify({"success": False, "message": "Unexpected webhook payload structure", "errors": []}), 400
+
+    try:
+        summary = process_whatsapp_webhook_payload(db, payload)
+        return jsonify({
+            "success": True,
+            "message": "Webhook processed successfully",
+            "data": summary,
+        }), 200
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e), "errors": []}), 500
+
+
+# --- Background Scheduler Admin APIs (Task 6) ---
+
+@app.route("/api/admin/scheduler/status", methods=["GET"])
+@admin_required
+def admin_scheduler_status_route():
+    """Get status of background pipeline scheduler and registered jobs."""
+    try:
+        from scheduler_service import get_scheduler
+        sched = get_scheduler(db)
+        return jsonify({"success": True, "data": sched.get_status()}), 200
+    except Exception as exc:
+        return jsonify({"success": False, "message": str(exc), "errors": []}), 500
+
+
+@app.route("/api/admin/scheduler/run-job", methods=["POST"])
+@admin_required
+def admin_scheduler_run_job_route():
+    """Manually trigger an immediate run of a registered background pipeline job."""
+    data = request.get_json(silent=True) or {}
+    job_id = data.get("job_id")
+    if not job_id:
+        return jsonify({"success": False, "message": "job_id is required", "errors": []}), 400
+
+    try:
+        from scheduler_service import get_scheduler
+        sched = get_scheduler(db)
+        result = sched.trigger_job(job_id=job_id, db=db)
+        return jsonify({"success": True, "job_id": job_id, "data": result}), 200
+    except Exception as exc:
+        return jsonify({"success": False, "message": str(exc), "errors": []}), 500
+
+
+@app.route("/api/admin/whatsapp/configuration", methods=["GET"])
+@admin_required
+def admin_whatsapp_config_route():
+    """Check WhatsApp production configuration without exposing secrets."""
+    try:
+        from whatsapp_webhook_service import validate_whatsapp_production_config
+        config_summary = validate_whatsapp_production_config()
+        return jsonify({"success": True, "data": config_summary}), 200
+    except Exception as exc:
+        return jsonify({"success": False, "message": str(exc), "errors": []}), 500
+
+
 # --- Recommendation API (V2.5) ---
 
 @app.route("/api/recommendations", methods=["GET"])
@@ -2419,6 +2723,7 @@ def create_order():
             customer_name=customer.get("full_name") or customer.get("username"),
             shipping_address=data.get("shipping_address"),
             payment_method=data.get("payment_method", "Credit Card"),
+            selected_items=data.get("items"),
         )
         now = order_doc["created_at"]
 

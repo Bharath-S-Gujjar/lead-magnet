@@ -159,7 +159,8 @@ class AuthenticationIdentityFoundationTests(unittest.TestCase):
         user_id = self._signup(email="token-user@example.com")
         user_token = self._login(email="token-user@example.com")["token"]
         admin_token = self.client.post("/api/auth/admin/login", json={
-            "username": "admin", "password": "admin12345"
+            "username": os.environ.get("ADMIN_USERNAME", "test_admin"),
+            "password": os.environ.get("ADMIN_PASSWORD", "test_admin_password")
         }).get_json()["data"]["token"]
 
         self.assertEqual(self.client.get("/api/admin/dashboard").status_code, 401)

@@ -1,142 +1,164 @@
-# Lead Magnet — AI-Powered Customer Intelligence & E-Commerce Platform
+# Lead Magnet
 
-> **Lead Magnet** is an enterprise-grade AI customer intelligence platform combining an active e-commerce shopping experience with real-time visitor behavioral telemetry, machine learning conversion scoring (XGBoost), rule-based marketing automation, and an administrative intelligence dashboard.
+**An AI-powered Customer Intelligence and Lead-Scoring Platform for E-Commerce.**
 
----
-
-## 🌟 Key Capabilities
-
-1. **Authoritative 120,466 Product Clothing Catalog**:
-   - Multi-gender clothing catalog (Women: 56.5%, Men: 42.7%, Kids: 0.8%) ingested from comprehensive sales datasets.
-   - Clean INR pricing, percentage discounts, normalized ratings, and deterministic internal identifiers (`product_id`).
-   - Zero fabricated stock, images, SKU, or synthetic reviews.
-2. **Real-Time Behavioral Telemetry**:
-   - Captures anonymous and identified customer events: page visits, dwell duration, search queries, product views, wishlist additions, cart updates, and checkout progression.
-3. **Machine Learning Purchase Prediction**:
-   - 11-feature behavioral vector fed into a tuned **XGBoost Classifier** ($\ge 92.8\%$ validation accuracy, $0.965$ ROC-AUC).
-   - Real-time conversion score ($\in [0.0, 1.0]$) classifying customers dynamically into **Cold**, **Warm**, and **Hot** lead segments.
-   - Transparent feature-contribution explainability identifying positive and negative conversion drivers.
-4. **Autonomous Marketing Engine**:
-   - Triggers targeted interventions based on behavioral state changes: cart abandonment re-engagement, high-intent browsing incentives, and post-purchase follow-ups.
-5. **Executive Admin Intelligence Dashboard**:
-   - **Overview & Customer Directory**: Searchable, filterable customer intelligence directory with live drill-down drawer.
-   - **Conversion Funnel & RFM Analytics**: Visualized drop-off analytics and Recency-Frequency-Monetary customer value segmentation.
-   - **Revenue Attribution & Live Feed**: Touchpoint revenue attribution alongside live real-time WebSocket event feeds.
-   - **What-If Scenario Simulator**: Interactive forecasting tool allowing administrators to simulate behavioral shifts and project conversion outcomes.
+Real e-commerce stores lose customers silently — visitors browse, fill carts, and leave without buying. Lead Magnet solves this by combining a full-featured clothing storefront with real-time behavioral analytics, an XGBoost-powered purchase-intent scorer, and a rule-based marketing automation engine that fires targeted, channel-appropriate communications at the right moment.
 
 ---
 
-## 🏗️ System Architecture
+## Features
 
-```
-+-------------------------------------------------------------------------------+
-|                                FRONTEND LAYER                                 |
-|   +------------------------------------+   +------------------------------+   |
-|   |   User Portal (React + Vite)       |   |  Admin Portal (React + Vite) |   |
-|   |   - Modern E-Commerce Storefront   |   |  - Live Behavioral Feeds     |   |
-|   |   - Real-time Telemetry Hook       |   |  - Funnel & RFM Analytics    |   |
-|   |   - Cart, Wishlist, Orders         |   |  - What-If Simulator & Leads |   |
-|   +-----------------+------------------+   +--------------+---------------+   |
-+---------------------|-------------------------------------|-------------------+
-                      | HTTP / REST                         | HTTP / WebSocket
-                      v                                     v
-+-------------------------------------------------------------------------------+
-|                            BACKEND APPLICATION LAYER                          |
-|   +-----------------------------------------------------------------------+   |
-|   |   Flask Application Core (app.py)                                     |   |
-|   |   - REST API Endpoints (/api/products, /api/auth, /api/admin)         |   |
-|   |   - Flask-SocketIO Event Dispatcher (Real-time admin streaming)       |   |
-|   |   - JWT Authentication & Role-Based Access Control                    |   |
-|   +-------------------+-------------------------------+-------------------+   |
-|                       |                               |                       |
-|   +-------------------v---------------+   +-----------v-------------------+   |
-|   | Behavioral Event & Session Engine |   | Machine Learning Inference    |   |
-|   | - Session lifecycle tracking      |   | - XGBoost Lead Scorer         |   |
-|   | - Customer Feature Aggregator     |   | - 11-feature behavioral vector|   |
-|   +-------------------+---------------+   +-----------+-------------------+   |
-|                       |                               |                       |
-|   +-------------------v---------------+   +-----------v-------------------+   |
-|   | Marketing Automation Service      |   | Admin Intelligence Services   |   |
-|   +-------------------+---------------+   +-----------+-------------------+   |
-+-----------------------|-------------------------------|-----------------------+
-                        | PyMongo (TLS / certifi)
-                        v
-+-------------------------------------------------------------------------------+
-|                            DATA STORAGE LAYER                                 |
-|   MongoDB Atlas Database: `leadmagnet`                                        |
-|   - products (120,466 validated catalog records)                              |
-|   - user_profiles, sessions, events, orders, cart, wishlist                   |
-|   - customer_features, customer_lead_state, lead_score_history                |
-|   - marketing_automation_events, marketing_communications, admin_notifications|
-+-------------------------------------------------------------------------------+
-```
+| Capability | Status |
+|:--|:--|
+| 120,466-product clothing catalog (Myntra dataset) | ✅ Implemented |
+| Customer registration, login, JWT authentication | ✅ Implemented |
+| Cart, wishlist, order management | ✅ Implemented |
+| Real-time behavioral telemetry (sessions, events) | ✅ Implemented |
+| Anonymous visitor identity resolution on signup | ✅ Implemented |
+| XGBoost lead scoring — 11-feature behavioral vector | ✅ Implemented |
+| Cold / Warm / Hot lead segmentation | ✅ Implemented |
+| ML explainability — feature contribution breakdown | ✅ Implemented |
+| Marketing automation (cart abandon, post-purchase, browse incentive) | ✅ Implemented |
+| Idempotency keys + 72-hour cooldown anti-spam | ✅ Implemented |
+| WhatsApp + Email channel selection with consent enforcement | ✅ Implemented |
+| Admin intelligence dashboard — customer 360° drawer | ✅ Implemented |
+| Funnel analytics, RFM segmentation, revenue attribution | ✅ Implemented |
+| What-If scenario simulator | ✅ Implemented |
+| Live real-time admin event feed (WebSocket) | ✅ Implemented |
+| Runtime database isolation for local testing | ✅ Implemented |
+| Dry-run communication provider (no real messages sent) | ✅ Implemented |
 
 ---
 
-## 🛠️ Technology Stack
+## Technology Stack
 
 | Tier | Technologies |
-| :--- | :--- |
-| **Backend API & Real-Time** | Python 3.10+, Flask, Flask-SocketIO, PyMongo, Eventlet, Gunicorn, JWT |
+|:--|:--|
+| **Backend** | Python 3.10+, Flask 3, Flask-SocketIO 5, PyMongo 4, Eventlet, Gunicorn, PyJWT |
 | **Machine Learning** | XGBoost, Scikit-Learn, NumPy, Pandas |
-| **Frontend Applications** | React 18, Vite, React Router, Recharts, Lucide React |
-| **Database** | MongoDB Atlas (M0 / Dedicated Cluster) |
-| **Testing** | Pytest (200 test cases, 100% passing) |
+| **User Frontend** | React 18, Vite 6, React Router 6, Recharts, Lucide React |
+| **Admin Frontend** | React 18, Vite 6, React Router 7, Recharts, Socket.IO Client |
+| **Database** | MongoDB Atlas (production) · MongoDB Community (local demo) |
+| **Testing** | Pytest (678 tests, 100% passing) |
 
 ---
 
-## 🚀 Quickstart & Demo Guide
+## Architecture Summary
 
-### 1. Prerequisites
-- Python 3.10+ & Node.js 18+
-- MongoDB Atlas cluster URI configured in `backend/.env`
-
-### 2. Backend Setup
-```bash
-# Activate virtual environment
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-
-# Install dependencies
-pip install -r backend/requirements.txt
-
-# Run backend test suite (200 tests)
-pytest backend/tests/ -v
-
-# Start the Flask API server
-cd backend
-python app.py
 ```
-*Backend runs on `http://127.0.0.1:5000`.*
+User Portal (React, :3001)  ─┐
+                              ├── HTTP REST + WebSocket ──► Flask Backend (:5000)
+Admin Portal (React, :3000) ─┘                                │
+                                                               ├── XGBoost ML Engine
+                                                               ├── Marketing Automation
+                                                               ├── Admin Intelligence
+                                                               └── MongoDB
+                                                                   ├── myntra_products (120,466)
+                                                                   ├── user_profiles, sessions, events
+                                                                   ├── cart, wishlist, orders
+                                                                   └── marketing_communications
+```
 
-### 3. Frontend Portals
+---
 
-#### Customer Storefront (User Portal)
+## Prerequisites
+
+| Requirement | Version |
+|:--|:--|
+| Python | 3.10 or later |
+| Node.js | 18 or later |
+| npm | 9 or later (bundled with Node.js) |
+| MongoDB Community | 6.x or later, running on `127.0.0.1:27017` (local demo only) |
+
+---
+
+## Getting the Code
+
+**Clone:**
+```bash
+git clone https://github.com/Bharath-S-Gujjar/lead-magnet.git
+cd lead-magnet
+```
+
+**Download ZIP:** Use the *Code → Download ZIP* button on GitHub, extract the archive, and `cd lead-magnet`.
+
+---
+
+## Quick Start (Local Demo)
+
+> Full instructions with troubleshooting are in each component's README.
+
+**1. Backend (Python virtual environment required):**
+```bash
+# Windows PowerShell
+python -m venv venv
+venv\Scripts\activate
+pip install -r backend/requirements.txt
+python backend/local_test_launcher.py --check-isolation   # confirm safety
+python backend/local_test_launcher.py --serve --port 5000
+```
+
+**2. User Portal:**
 ```bash
 cd frontend/user
 npm install
-npm run dev
+npm run dev          # http://localhost:3001
 ```
-*Accessible at `http://localhost:5173`.*
 
-#### Admin Intelligence Dashboard (Admin Portal)
+**3. Admin Portal:**
 ```bash
 cd frontend/admin
 npm install
-npm run dev
+npm run dev          # http://localhost:3000
 ```
-*Accessible at `http://localhost:5174`.*
+
+Admin login: use the `ADMIN_USERNAME` and `ADMIN_PASSWORD` values from `backend/.env` (defaults for local demo: `admin` / `admin12345`).
+
+> ⚠️ Always start the backend via `local_test_launcher.py --serve`, not `python backend/app.py`, for local demo. The launcher enforces isolated loopback database and dry-run communications.
 
 ---
 
-## 📚 Documentation Index
+## Testing
 
-For in-depth architectural and operational specifications, consult:
+```bash
+# Backend test suite (678 tests, ~75 seconds)
+python -m pytest backend/tests/ -q --tb=short
 
-- **[System Architecture](docs/architecture.md)** — Architectural blueprint, customer identity lifecycle, and state machine.
-- **[Local Setup & Running Guide](docs/setup.md)** — Step-by-step developer and presentation environment configuration.
-- **[API Specification](docs/api.md)** — Endpoints, payloads, and response contracts for all services.
-- **[Machine Learning Documentation](docs/ml.md)** — XGBoost model architecture, 11-feature pipeline, and evaluation metrics.
-- **[Deployment Guide](docs/deployment.md)** — Production topology, Render/Vercel settings, and environment variables.
-- **[Clothing Catalog Cleaning Report](docs/clothing_catalog_cleaning_report.md)** — Data cleaning, normalization, and deduplication methodology.
-- **[Atlas Catalog Replacement Report](docs/atlas_product_catalog_replacement.md)** — Non-destructive migration of the 120,466 products into MongoDB Atlas.
+# Frontend production builds
+cd frontend/user  && npm run build
+cd frontend/admin && npm run build
+```
+
+---
+
+## Documentation
+
+| Document | Location |
+|:--|:--|
+| **Backend setup, API, isolation, troubleshooting** | [`backend/README.md`](backend/README.md) |
+| **User frontend setup and configuration** | [`frontend/user/README.md`](frontend/user/README.md) |
+| **Admin frontend setup and configuration** | [`frontend/admin/README.md`](frontend/admin/README.md) |
+| **Architecture & data flow (Mermaid diagrams)** | [`docs/architecture_and_data_flow.md`](docs/architecture_and_data_flow.md) |
+| **Step-by-step demo guide** | [`docs/demo_guide.md`](docs/demo_guide.md) |
+| **Technical design decisions (viva notes)** | [`docs/project_viva_notes.md`](docs/project_viva_notes.md) |
+| **ML model documentation** | [`docs/ml.md`](docs/ml.md) |
+| **API specification** | [`docs/api.md`](docs/api.md) |
+| **Deployment guide** | [`docs/deployment.md`](docs/deployment.md) |
+| **Clothing catalog cleaning report** | [`docs/clothing_catalog_cleaning_report.md`](docs/clothing_catalog_cleaning_report.md) |
+
+---
+
+## Current Limitations
+
+| Limitation | Notes |
+|:--|:--|
+| Live payment gateways not configured | COD path used for local demo; Razorpay/Stripe keys needed for production |
+| WhatsApp requires Meta Sandbox allowlist | Test recipients must be pre-registered with Meta Developer dashboard |
+| Scheduler is disabled by default | Set `ENABLE_SCHEDULER=true` in production `.env` for background automation |
+| Production builds require `VITE_API_BASE_URL` | Set in CI/CD or deployment dashboard; localhost value is rejected at build time |
+
+---
+
+## License
+
+No license file is present in this repository.

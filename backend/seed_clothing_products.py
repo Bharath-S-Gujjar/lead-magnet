@@ -112,11 +112,15 @@ def generate_products():
             name = f"{brand} {style} {category}"
             img = images[item_index % len(images)]
             products.append({
+                "product_id": f"myntra_demo_{group_index}_{item_index}",
                 "name": name,
                 "category": category,
                 "gender": gender,
                 "brand": brand,
                 "price": int(price),
+                "current_price": float(price),
+                "original_price": float(price_range[1]),
+                "in_stock": True,
                 "image": img,
                 "stock": 15 + (group_index * 2) + item_index,
                 "description": f"{style} {category.lower()} by {brand}, premium design for Indian shoppers.",

@@ -157,3 +157,92 @@ def get_customer_profile(profiles_collection, user_id=None, visitor_id=None):
             return profile
 
     return None
+
+
+def update_customer_whatsapp_consent(
+    profiles_collection,
+    user_id,
+    opt_in=None,
+    opt_out=None,
+    source="user_settings",
+    phone=None,
+):
+    """Update WhatsApp consent flags for a customer profile.
+
+    Rules & Invariants:
+        - Requires at least one valid boolean field (opt_in or opt_out).
+        - Non-boolean values are rejected with TypeError.
+        - Contradictory values (both True or both False) are rejected with ValueError.
+        - Explicit opt-in (opt_in=True):
+            Sets whatsapp_opt_in=True, clears opt-out (whatsapp_opt_out=False),
+            records whatsapp_opt_in_at timestamp and whatsapp_opt_in_source.
+        - Explicit opt-out (opt_out=True or opt_in=False):
+            Sets whatsapp_opt_out=True, disables opt-in (whatsapp_opt_in=False),
+            records whatsapp_opt_out_at timestamp and whatsapp_opt_out_source.
+        - Opt-out clearance without opt-in (opt_out=False, opt_in omitted):
+            Sets whatsapp_opt_out=False, whatsapp_opt_in=False (promotional remains disabled).
+        - Atomic persistence to profiles_collection.
+    """
+    if not user_id:
+        raise ValueError("user_id is required")
+
+    # Strict type checks
+    if opt_in is None and opt_out is None:
+        raise ValueError("At least one consent field ('whatsapp_opt_in' or 'whatsapp_opt_out') is required")
+
+    if opt_in is not None and type(opt_in) is not bool:
+        raise TypeError("Field 'whatsapp_opt_in' must be a boolean")
+
+    if opt_out is not None and type(opt_out) is not bool:
+        raise TypeError("Field 'whatsapp_opt_out' must be a boolean")
+
+    # Contradiction checks
+    if opt_in is not None and opt_out is not None:
+        if opt_in is True and opt_out is True:
+            raise ValueError("Contradictory consent values: 'whatsapp_opt_in' and 'whatsapp_opt_out' cannot both be True")
+        if opt_in is False and opt_out is False:
+            raise ValueError("Contradictory or ambiguous consent values: 'whatsapp_opt_in' and 'whatsapp_opt_out' cannot both be False")
+
+    now_utc = datetime.datetime.utcnow()
+    now_iso = now_utc.isoformat()
+    consent_source = source or "user_settings"
+
+    set_doc = {
+        "updated_at": now_utc,
+    }
+
+    if opt_in is True:
+        # Explicit opt-in clears any prior opt-out flag
+        set_doc["whatsapp_opt_in"] = True
+        set_doc["whatsapp_promotional_consent"] = True
+        set_doc["whatsapp_opt_out"] = False
+        set_doc["whatsapp_opt_in_at"] = now_iso
+        set_doc["whatsapp_opt_in_source"] = consent_source
+    elif opt_out is True or opt_in is False:
+        # Explicit opt-out disables opt-in
+        set_doc["whatsapp_opt_in"] = False
+        set_doc["whatsapp_promotional_consent"] = False
+        set_doc["whatsapp_opt_out"] = True
+        set_doc["whatsapp_opt_out_at"] = now_iso
+        set_doc["whatsapp_opt_out_source"] = consent_source
+    elif opt_out is False:
+        # Clearing opt-out flag without explicit opt-in leaves promotional WhatsApp disabled
+        set_doc["whatsapp_opt_out"] = False
+        set_doc["whatsapp_opt_in"] = False
+        set_doc["whatsapp_promotional_consent"] = False
+
+    if phone is not None:
+        set_doc["phone"] = phone
+
+    queries = [{"user_id": str(user_id)}]
+    try:
+        queries.append({"_id": ObjectId(user_id)})
+    except Exception:
+        pass
+
+    query = {"$or": queries}
+    res = profiles_collection.update_one(query, {"$set": set_doc})
+    if res.matched_count == 0:
+        return None
+
+    return profiles_collection.find_one(query)

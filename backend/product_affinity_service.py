@@ -8,6 +8,7 @@ from collections import Counter
 from bson import ObjectId
 
 from customer_feature_service import _to_object_id
+from product_lookup import resolve_product_doc
 
 
 def compute_product_affinity(customer_id, db):
@@ -25,7 +26,14 @@ def compute_product_affinity(customer_id, db):
 
     events_col = db["events"]
     orders_col = db["orders"]
-    products_col = db["products"]
+    if isinstance(db, dict):
+        products_col = db.get("myntra_products") or db.get("products")
+    else:
+        try:
+            col_names = db.list_collection_names()
+            products_col = db["myntra_products"] if "myntra_products" in col_names else db["products"]
+        except Exception:
+            products_col = db["products"]
 
     c_oid = _to_object_id(customer_id)
 
@@ -115,15 +123,14 @@ def _enrich_product_ids(product_ids, products_col, count_map):
     for pid in product_ids:
         product = None
         try:
-            if ObjectId.is_valid(pid):
-                product = products_col.find_one({"_id": ObjectId(pid)})
+            product = resolve_product_doc(products_col, pid)
         except Exception:
             pass
 
         if product:
             results.append({
                 "product_id": pid,
-                "name": product.get("name", "Unknown"),
+                "name": product.get("title") or product.get("name") or "Unknown Product",
                 "category": product.get("category"),
                 "brand": product.get("brand"),
                 "price": product.get("price"),
@@ -149,18 +156,14 @@ def _get_category_brand_distribution(product_ids, products_col):
 
     for pid in product_ids:
         try:
-            if ObjectId.is_valid(pid):
-                product = products_col.find_one(
-                    {"_id": ObjectId(pid)},
-                    {"category": 1, "brand": 1}
-                )
-                if product:
-                    cat = product.get("category")
-                    brand = product.get("brand")
-                    if cat:
-                        category_counter[cat] += 1
-                    if brand:
-                        brand_counter[brand] += 1
+            product = resolve_product_doc(products_col, pid)
+            if product:
+                cat = product.get("category")
+                brand = product.get("brand")
+                if cat:
+                    category_counter[cat] += 1
+                if brand:
+                    brand_counter[brand] += 1
         except Exception:
             continue
 

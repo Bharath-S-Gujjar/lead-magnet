@@ -21,6 +21,11 @@ from opportunity_engine import (
     _is_within_opportunity_cooldown,
     ensure_marketing_opportunities_indexes,
     build_opportunity_email_content,
+    build_opportunity_whatsapp_content,
+)
+from channel_selector_service import (
+    select_communication_channel,
+    determine_opportunity_preference,
 )
 from marketing_automation_service import (
     dispatch_communication,
@@ -420,7 +425,7 @@ def process_price_drop_event(
 
         # 3. Check opportunity cooldown
         if enforce_cooldown and db is not None:
-            if _is_within_opportunity_cooldown(cid, db, cooldown_hours=OPPORTUNITY_COOLDOWN_HOURS):
+            if _is_within_opportunity_cooldown(cid, db, cooldown_hours=OPPORTUNITY_COOLDOWN_HOURS, current_time=current_time):
                 skipped_reasons.append({
                     "customer_id": str(cid),
                     "reason": f"Customer is within opportunity cooldown period ({OPPORTUNITY_COOLDOWN_HOURS}h).",
@@ -501,6 +506,7 @@ def dispatch_price_drop_opportunity(
     policy: Optional[Dict[str, Any]] = None,
     enforce_cooldown: bool = True,
     current_time: Optional[datetime.datetime] = None,
+    lease_checker: Optional[Callable[[], bool]] = None,
 ) -> Dict[str, Any]:
     """Deterministically dispatch an eligible product_price_drop opportunity via Gmail.
 
@@ -570,31 +576,37 @@ def dispatch_price_drop_opportunity(
     c_oid = _to_object_id(customer_id)
     query_id = c_oid if c_oid else customer_id
 
-    email_idempotency_key = f"{opp_key}:email"
-
     # 1. Idempotency Check
+    existing_sent = comm_col.find_one({
+        "$or": [
+            {"idempotency_key": f"{opp_key}:email"},
+            {"idempotency_key": f"{opp_key}:whatsapp"},
+            {"metadata.opportunity_key": opp_key},
+        ],
+        "status": "sent"
+    })
     if opp_doc.get("opportunity_state") == "communicated":
-        existing_comm = comm_col.find_one({"idempotency_key": email_idempotency_key, "status": "sent"})
         return {
             "success": False,
             "status": "already_communicated",
             "opportunity_key": opp_key,
-            "communication_id": str(existing_comm.get("_id", "")) if existing_comm else None,
-            "provider_message_id": existing_comm.get("provider_message_id") if existing_comm else None,
+            "channel": existing_sent.get("channel") if existing_sent else opp_doc.get("channel"),
+            "communication_id": str(existing_sent.get("_id", "")) if existing_sent else None,
+            "provider_message_id": existing_sent.get("provider_message_id") if existing_sent else None,
             "reason": "Opportunity already communicated",
         }
 
-    existing_sent = comm_col.find_one({"idempotency_key": email_idempotency_key, "status": "sent"})
     if existing_sent:
         now_iso = (current_time or datetime.datetime.now(datetime.timezone.utc)).isoformat()
         opp_col.update_one(
             {"opportunity_key": opp_key},
-            {"$set": {"opportunity_state": "communicated", "communicated_at": now_iso}}
+            {"$set": {"opportunity_state": "communicated", "communicated_at": now_iso, "channel": existing_sent.get("channel")}}
         )
         return {
             "success": False,
             "status": "already_sent",
             "opportunity_key": opp_key,
+            "channel": existing_sent.get("channel"),
             "communication_id": str(existing_sent.get("_id", "")),
             "provider_message_id": existing_sent.get("provider_message_id"),
             "reason": "Communication already sent for this opportunity",
@@ -609,33 +621,40 @@ def dispatch_price_drop_opportunity(
             "reason": f"Customer is within {OPPORTUNITY_COOLDOWN_HOURS}-hour promotional opportunity cooldown",
         }
 
-    # 3. Channel eligibility & Recipient resolution
+    # 3. Channel selection & Recipient resolution
     profiles_col = db["user_profiles"]
     profile = profiles_col.find_one({"_id": c_oid}) if c_oid else None
     if not profile and isinstance(customer_id, str):
         profile = profiles_col.find_one({"_id": customer_id}) or profiles_col.find_one({"user_id": customer_id})
 
-    eligibility = evaluate_channel_eligibility(profile, policy)
-    email_info = eligibility.get("email", {})
-    if not email_info.get("eligible"):
+    pref_policy = determine_opportunity_preference(opp_doc, policy=policy, user_profile=profile)
+    selection = select_communication_channel(
+        user_profile=profile,
+        campaign_type="product_price_drop",
+        classification="promotional",
+        policy=policy,
+        preference_policy=pref_policy,
+    )
+    if not selection.get("eligible") or not selection.get("channel"):
         return {
             "success": False,
             "status": "skipped",
             "opportunity_key": opp_key,
-            "reason": email_info.get("reason", "Customer not eligible for email communication"),
+            "channel": None,
+            "reason": selection.get("reason", "Customer not eligible for communication"),
         }
 
-    recipient_email = email_info.get("recipient")
+    selected_channel = selection["channel"]
+    recipient = selection["recipient"]
     cust_name = (profile.get("full_name") or profile.get("username") or "there") if profile else "there"
     store_url = get_store_url()
 
-    # 4. Generate customer-facing email content
-    subject, body = build_opportunity_email_content(opp_doc, cust_name, store_url)
-
+    # 4. Generate customer-facing content
     opp_meta = opp_doc.get("metadata") or {}
     comm_metadata = {
         "opportunity_key": opp_key,
         "opportunity_type": OPP_PRODUCT_PRICE_DROP,
+        "channel": selected_channel,
         "product_id": str(opp_doc.get("product_id") or ""),
         "primary_image": opp_meta.get("primary_image"),
         "product_url": opp_meta.get("product_url") or opp_meta.get("url"),
@@ -646,6 +665,22 @@ def dispatch_price_drop_opportunity(
         "interest_source": opp_meta.get("interest_source"),
     }
 
+    if selected_channel == "whatsapp":
+        subject = None
+        body = build_opportunity_whatsapp_content(opp_doc, cust_name, store_url)
+    else:
+        subject, body = build_opportunity_email_content(opp_doc, cust_name, store_url)
+
+    idempotency_key = f"{opp_key}:{selected_channel}"
+
+    # Check distributed lease ownership immediately before communication dispatch
+    if lease_checker is not None and not lease_checker():
+        return {
+            "success": False,
+            "status": "skipped",
+            "error": "Distributed lease expired or transferred to another worker",
+        }
+
     # 5. Dispatch via existing communication provider
     if provider is None:
         provider = get_communication_provider()
@@ -654,12 +689,12 @@ def dispatch_price_drop_opportunity(
         db=db,
         customer_id=query_id,
         campaign_type="product_price_drop",
-        channel="email",
-        recipient=recipient_email,
+        channel=selected_channel,
+        recipient=recipient,
         subject=subject,
         body=body,
         metadata=comm_metadata,
-        idempotency_key=email_idempotency_key,
+        idempotency_key=idempotency_key,
         provider=provider,
     )
 
@@ -667,13 +702,15 @@ def dispatch_price_drop_opportunity(
     now_iso = (current_time or datetime.datetime.now(datetime.timezone.utc)).isoformat()
 
     # 6. Update opportunity state based on provider confirmation
+    # Critical: Do NOT retry on another channel if provider fails!
     if success:
         opp_col.update_one(
             {"opportunity_key": opp_key},
-            {"$set": {"opportunity_state": "communicated", "communicated_at": now_iso}}
+            {"$set": {"opportunity_state": "communicated", "communicated_at": now_iso, "channel": selected_channel}}
         )
         opp_doc["opportunity_state"] = "communicated"
         opp_doc["communicated_at"] = now_iso
+        opp_doc["channel"] = selected_channel
     else:
         last_err = comm_res.get("last_error") if comm_res else "Dispatch failed"
         opp_col.update_one(
@@ -687,10 +724,11 @@ def dispatch_price_drop_opportunity(
         "success": success,
         "status": comm_res.get("status") if comm_res else "failed",
         "opportunity_key": opp_key,
+        "channel": selected_channel,
         "communication_id": str(comm_res.get("_id", "")) if comm_res else None,
         "provider": comm_res.get("provider") if comm_res else "unknown",
         "provider_message_id": comm_res.get("provider_message_id") if comm_res else None,
-        "recipient": recipient_email,
+        "recipient": recipient,
         "subject": subject,
         "body": body,
         "error": comm_res.get("last_error") if comm_res else None,

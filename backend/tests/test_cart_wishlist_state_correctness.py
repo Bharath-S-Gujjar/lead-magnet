@@ -362,6 +362,51 @@ class TestCartWishlistStateCorrectness(unittest.TestCase):
         self.assertEqual(bs["cart_current_count"], 1)
         self.assertEqual(bs["cart_total_quantity"], 5)
 
+    def test_order_preserves_unselected_cart_items(self):
+        """Placing an order with a subset of cart items removes only those items and preserves the rest."""
+        cust_id, token = self._create_customer("subset_order@example.com")
+        headers = {"Authorization": f"Bearer {token}"}
+        p1, p2, p3 = self.products[0], self.products[1], self.products[2]
+
+        # Add all three products to cart
+        for p in [p1, p2, p3]:
+            res = self.client.post("/api/cart", json={"product_id": str(p["_id"]), "quantity": 1}, headers=headers)
+            self.assertEqual(res.status_code, 200)
+
+        res_cart = self.client.get("/api/cart", headers=headers)
+        self.assertEqual(len(res_cart.get_json()["data"]), 3)
+
+        # Order only p1 and p2, leaving p3
+        res_order = self.client.post(
+            "/api/orders",
+            json={
+                "customer_id": str(cust_id),
+                "items": [str(p1["_id"]), str(p2["_id"])],
+                "payment_method": "Credit Card",
+            },
+            headers=headers,
+        )
+        self.assertIn(res_order.status_code, [200, 201])
+        order_data = res_order.get_json()["data"]
+        order_id = ObjectId(order_data["order_id"])
+        saved_order = orders_collection.find_one({"_id": order_id})
+        self.assertIsNotNone(saved_order)
+        self.assertEqual(len(saved_order["items"]), 2)
+        saved_prod_ids = [str(item["product_id"]) for item in saved_order["items"]]
+        self.assertIn(str(p1["_id"]), saved_prod_ids)
+        self.assertIn(str(p2["_id"]), saved_prod_ids)
+
+        # Check cart after order
+        res_remaining = self.client.get("/api/cart", headers=headers)
+        remaining_items = res_remaining.get_json()["data"]
+        self.assertEqual(len(remaining_items), 1)
+        self.assertEqual(remaining_items[0]["product_id"], str(p3["_id"]))
+
+        # Database verification
+        self.assertEqual(cart_collection.count_documents({"user_id": cust_id}), 1)
+        db_item = cart_collection.find_one({"user_id": cust_id})
+        self.assertEqual(str(db_item["product_id"]), str(p3["_id"]))
+
 
 if __name__ == "__main__":
     unittest.main()

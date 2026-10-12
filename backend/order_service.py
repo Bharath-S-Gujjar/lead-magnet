@@ -18,11 +18,41 @@ def _owner_query(user_id=None, anonymous_id=None):
     raise ValueError("Authenticated user_id is required")
 
 
-def _validated_cart_items(cart_collection, products_collection, user_id=None, anonymous_id=None):
+def _validated_cart_items(cart_collection, products_collection, user_id=None, anonymous_id=None, selected_items=None):
     owner_query = _owner_query(user_id, anonymous_id)
-    cart_items = list(cart_collection.find(owner_query))
-    if not cart_items:
+    all_cart_items = list(cart_collection.find(owner_query))
+    if not all_cart_items:
         raise ValueError("Cannot create order from an empty cart")
+
+    cart_items = all_cart_items
+    if selected_items:
+        target_ids = set()
+        for item in selected_items:
+            if isinstance(item, dict):
+                pid = item.get("product_id") or item.get("id") or item.get("_id")
+                if pid:
+                    target_ids.add(str(pid))
+            elif item:
+                target_ids.add(str(item))
+
+        matching = []
+        for c in all_cart_items:
+            c_pid = str(c.get("product_id") or "")
+            c_id = str(c.get("_id") or "")
+            if c_pid in target_ids or c_id in target_ids:
+                matching.append(c)
+            else:
+                try:
+                    prod = resolve_product_doc(products_collection, c.get("product_id"))
+                    if prod:
+                        p_prod_id = str(prod.get("product_id") or "")
+                        p_oid = str(prod.get("_id") or "")
+                        if p_prod_id in target_ids or p_oid in target_ids:
+                            matching.append(c)
+                except Exception:
+                    pass
+        if matching:
+            cart_items = matching
 
     order_items = []
     for cart_item in cart_items:
@@ -65,7 +95,7 @@ def _validated_cart_items(cart_collection, products_collection, user_id=None, an
             "url": product.get("url"),
         })
 
-    return owner_query, order_items
+    return owner_query, order_items, cart_items
 
 
 def create_order(
@@ -80,9 +110,10 @@ def create_order(
     payment_method="Credit Card",
     **kwargs,
 ):
-    """Create an order from current cart items, clear the cart, and return the order doc."""
-    owner_query, order_items = _validated_cart_items(
-        cart_collection, products_collection, user_id, anonymous_id
+    """Create an order from current cart items, remove ordered items from the cart, and return the order doc."""
+    selected_items = kwargs.get("selected_items") or kwargs.get("items")
+    owner_query, order_items, ordered_cart_docs = _validated_cart_items(
+        cart_collection, products_collection, user_id, anonymous_id, selected_items=selected_items
     )
     total_amount = sum(item["subtotal"] for item in order_items)
     u_id = ObjectId(user_id) if (user_id and isinstance(user_id, str)) else user_id
@@ -107,8 +138,12 @@ def create_order(
     result = orders_collection.insert_one(order_doc)
     order_doc["_id"] = result.inserted_id
 
-    # Clear user cart after placing order
-    clear_cart(cart_collection, **owner_query)
+    # Remove only the purchased items from the cart; preserve any unselected items
+    ordered_ids = [c["_id"] for c in ordered_cart_docs if "_id" in c]
+    if ordered_ids:
+        cart_collection.delete_many({"_id": {"$in": ordered_ids}})
+    else:
+        clear_cart(cart_collection, **owner_query)
 
     return order_doc
 

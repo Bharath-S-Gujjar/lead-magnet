@@ -21,6 +21,7 @@ from model_explainability_service import explain_lead_score
 from rfm_service import compute_rfm
 from product_affinity_service import compute_product_affinity
 from retention_service import compute_retention_signals
+from product_lookup import resolve_product_doc
 
 
 SENSITIVE_PROFILE_FIELDS = {
@@ -392,22 +393,32 @@ def _resolve_cart(customer_id, db):
         list[dict]: Cart items with resolved product details.
     """
     c_oid = _to_object_id(customer_id)
-    products_col = db["products"]
+    if isinstance(db, dict):
+        products_col = db.get("myntra_products") or db.get("products")
+    else:
+        try:
+            col_names = db.list_collection_names()
+            if "myntra_products" in col_names:
+                products_col = db["myntra_products"]
+            elif "products" in col_names:
+                products_col = db["products"]
+            else:
+                products_col = db["myntra_products"]
+        except Exception:
+            products_col = db["myntra_products"]
 
     def _lookup_product(product_id_raw):
         """Look up product by _id (ObjectId or string) or product_id field."""
         if not product_id_raw:
             return None
-        p_oid = None
-        try:
-            p_oid = ObjectId(str(product_id_raw)) if not isinstance(product_id_raw, ObjectId) else product_id_raw
-        except Exception:
-            pass
-        prod = None
-        if p_oid:
-            prod = products_col.find_one({"_id": p_oid})
-        if not prod:
-            prod = products_col.find_one({"product_id": str(product_id_raw)})
+        prod = resolve_product_doc(products_col, product_id_raw)
+        if not prod and hasattr(db, "__getitem__"):
+            try:
+                alt = db["products"]
+                if alt is not products_col:
+                    prod = resolve_product_doc(alt, product_id_raw)
+            except Exception:
+                pass
         return prod
 
     def _fmt_item(product_id_raw, qty, prod, event_entity=None):
@@ -432,14 +443,14 @@ def _resolve_cart(customer_id, db):
 
             return {
                 "product_id": str(product_id_raw),
-                "name": prod.get("name") or entity.get("name") or "Product unavailable",
-                "brand": prod.get("brand") or "",
-                "category": prod.get("category") or "",
-                "gender": prod.get("gender") or "",
+                "name": prod.get("title") or prod.get("name") or prod.get("product_name") or entity.get("name") or entity.get("title") or "Product unavailable",
+                "brand": prod.get("brand") or entity.get("brand") or "",
+                "category": prod.get("category") or entity.get("category") or "",
+                "gender": prod.get("gender") or entity.get("gender") or "",
                 "price": price,
                 "quantity": qty,
                 "subtotal": subtotal,
-                "image": prod.get("image") or (prod.get("images", [None])[0] if isinstance(prod.get("images"), list) else None),
+                "image": prod.get("primary_image") or prod.get("image") or (prod.get("images", [None])[0] if isinstance(prod.get("images"), list) and prod.get("images") else None) or entity.get("image") or entity.get("primary_image"),
             }
         else:
             # Product not in catalog at all
@@ -493,7 +504,19 @@ def _resolve_wishlist(customer_id, db):
         list[dict]: Active wishlist items with resolved product details.
     """
     c_oid = _to_object_id(customer_id)
-    products_col = db["products"]
+    if isinstance(db, dict):
+        products_col = db.get("myntra_products") or db.get("products")
+    else:
+        try:
+            col_names = db.list_collection_names()
+            if "myntra_products" in col_names:
+                products_col = db["myntra_products"]
+            elif "products" in col_names:
+                products_col = db["products"]
+            else:
+                products_col = db["myntra_products"]
+        except Exception:
+            products_col = db["myntra_products"]
     wishlist_col = db["wishlist"]
 
     id_conds = []
@@ -507,16 +530,14 @@ def _resolve_wishlist(customer_id, db):
     result = []
     for doc in wishlist_docs:
         p_id = doc.get("product_id")
-        p_oid = None
-        try:
-            p_oid = ObjectId(str(p_id)) if not isinstance(p_id, ObjectId) else p_id
-        except Exception:
-            pass
-        prod = None
-        if p_oid:
-            prod = products_col.find_one({"_id": p_oid})
-        if not prod:
-            prod = products_col.find_one({"product_id": str(p_id)})
+        prod = resolve_product_doc(products_col, p_id)
+        if not prod and hasattr(db, "__getitem__"):
+            try:
+                alt = db["products"]
+                if alt is not products_col:
+                    prod = resolve_product_doc(alt, p_id)
+            except Exception:
+                pass
 
         price = None
         if prod:
@@ -531,12 +552,12 @@ def _resolve_wishlist(customer_id, db):
         result.append({
             "wishlist_item_id": str(doc.get("_id", "")),
             "product_id": str(p_id),
-            "name": prod.get("name") if prod else "Product unavailable",
+            "name": (prod.get("title") or prod.get("name") or prod.get("product_name")) if prod else "Product unavailable",
             "brand": prod.get("brand") or "" if prod else "",
             "category": prod.get("category") or "" if prod else "",
             "gender": prod.get("gender") or "" if prod else "",
             "price": price,
-            "image": prod.get("image") or (prod.get("images", [None])[0] if isinstance(prod.get("images"), list) else None) if prod else None,
+            "image": (prod.get("primary_image") or prod.get("image") or (prod.get("images", [None])[0] if isinstance(prod.get("images"), list) and prod.get("images") else None)) if prod else None,
             "added_at": added_at.isoformat() if isinstance(added_at, datetime) else added_at,
         })
     return result
@@ -795,8 +816,10 @@ def get_marketing_activity(db, page=1, limit=25):
             "customer_name": profile.get("full_name") if profile else None,
             "recipient": comm.get("recipient"),
             "event_type": "lead_qualified",
+            "campaign_type": comm.get("campaign_type"),
             "channel": comm.get("channel"),
             "status": comm.get("status"),
+            "last_error": comm.get("last_error"),
             "provider": comm.get("provider"),
             "created_at": comm.get("created_at"),
             "sent_at": comm.get("sent_at")
