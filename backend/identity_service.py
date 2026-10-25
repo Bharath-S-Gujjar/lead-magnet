@@ -91,8 +91,17 @@ def resolve_anonymous_identity(
         customer_features_collection.delete_many({"customer_id": anonymous_id})
 
     if db is not None:
-        from customer_feature_service import upsert_customer_features
-        upsert_customer_features(user_id, db)
+        try:
+            if hasattr(db, "__getitem__"):
+                db["customer_lead_state"].delete_many({"customer_id": anonymous_id})
+        except Exception:
+            pass
+        try:
+            from lead_scoring_engine import rescore_customer
+            rescore_customer(user_id, db)
+        except Exception:
+            from customer_feature_service import upsert_customer_features
+            upsert_customer_features(user_id, db)
 
     return {
         "sessions_merged": sessions_result.modified_count,

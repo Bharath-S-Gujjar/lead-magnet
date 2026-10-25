@@ -54,6 +54,14 @@ FEATURE_LABELS = {
     "form_submit_count": "Form Submissions",
 }
 
+# Polarity of features with respect to conversion propensity:
+# Most engagement and commerce metrics are positive (+1.0).
+# Inactivity (days_since_last_activity) has an inverse relationship (-1.0):
+# prolonged inactivity suppresses conversion probability, whereas recent activity increases it.
+FEATURE_POLARITY = {
+    "days_since_last_activity": -1.0,
+}
+
 
 def explain_lead_score(customer_features):
     """Generate a deterministic feature-contribution explanation for a customer.
@@ -71,6 +79,8 @@ def explain_lead_score(customer_features):
             "negative_contributors": [],
             "top_driving_factors": [],
             "explanation_method": "deterministic_feature_contribution",
+            "is_heuristic": True,
+            "heuristic_basis": "importance_weighted_zscore",
             "error": "No customer features available for explanation",
         }
 
@@ -85,6 +95,8 @@ def explain_lead_score(customer_features):
             "negative_contributors": [],
             "top_driving_factors": [],
             "explanation_method": "deterministic_feature_contribution",
+            "is_heuristic": True,
+            "heuristic_basis": "importance_weighted_zscore",
             "error": f"Could not load model artifacts: {e}",
         }
 
@@ -94,6 +106,8 @@ def explain_lead_score(customer_features):
             "negative_contributors": [],
             "top_driving_factors": [],
             "explanation_method": "deterministic_feature_contribution",
+            "is_heuristic": True,
+            "heuristic_basis": "importance_weighted_zscore",
             "error": "No feature importances available in model metadata",
         }
 
@@ -135,9 +149,11 @@ def explain_lead_score(customer_features):
             if scale > 0:
                 z_score = (val - mean) / scale
 
-        # Contribution = importance × z_score direction
-        # For "days_since_last_activity", higher value = negative for lead score
-        contribution = importance * z_score
+        # Heuristic directional contribution = importance × z_score × polarity.
+        # This approximates directional deviation from the population mean weighted by Gini importance.
+        # It is a heuristic ranking approximation, not a local causal TreeSHAP attribution.
+        polarity = FEATURE_POLARITY.get(col, 1.0)
+        contribution = importance * z_score * polarity
 
         label = FEATURE_LABELS.get(col, col.replace("_", " ").title())
 
@@ -174,9 +190,13 @@ def explain_lead_score(customer_features):
         "negative_contributors": negative[:10],
         "top_driving_factors": top_driving_factors,
         "explanation_method": "deterministic_feature_contribution",
+        "is_heuristic": True,
+        "heuristic_basis": "importance_weighted_zscore",
         "explanation_note": (
-            "Contributions are computed from global feature importances weighted by "
-            "the customer's feature values relative to population means. "
-            "This is a deterministic approximation, not a per-prediction SHAP value."
+            "Contributions are computed from global XGBoost feature importances weighted by "
+            "the customer's normalized feature deviations (z-scores) relative to population means. "
+            "This is a deterministic approximation and heuristic ranking, not a per-prediction TreeSHAP local causal attribution. "
+            "Features with inverse polarity (such as days_since_last_activity) have their signs inverted "
+            "so that prolonged inactivity correctly reflects downward pressure on lead qualification."
         ),
     }

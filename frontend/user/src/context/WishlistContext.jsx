@@ -10,15 +10,22 @@ export const WishlistProvider = ({ children }) => {
   const userId = customer?.user_id || null;
   const anonymousId = userId ? null : getAnonymousId();
   const identityKey = userId || anonymousId;
+  const storageKey = userId ? `leadmagnet_user_wishlist_${userId}` : 'leadmagnet_anon_wishlist';
 
   const [wishlist, setWishlist] = useState(() => {
-    const saved = localStorage.getItem('leadmagnet_user_wishlist');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem(storageKey);
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
   });
 
   useEffect(() => {
-    localStorage.setItem('leadmagnet_user_wishlist', JSON.stringify(wishlist));
-  }, [wishlist]);
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(wishlist));
+    } catch (e) {}
+  }, [wishlist, storageKey]);
 
   // Sync with backend wishlist
   useEffect(() => {

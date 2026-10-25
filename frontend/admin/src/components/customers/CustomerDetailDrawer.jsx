@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { getAdminCustomerIntelligence } from '../../services/api';
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList
 } from 'recharts';
 import {
   X, User, Activity, Target, ShoppingBag, Mail, Send, MessageSquare,
@@ -61,26 +61,25 @@ function getEventColor(item) {
   return colorMap[item?.event_type] || colorMap[item?.type] || '#94a3b8';
 }
 
-function buildChartData(behaviorDistribution) {
-  if (!behaviorDistribution || typeof behaviorDistribution !== 'object') return [];
-  const labelMap = {
-    page_view: 'Page View', product_view: 'Product View', product_click: 'Product Click',
-    search: 'Search', filter_apply: 'Filter',
-    add_to_cart: 'Cart Add', remove_from_cart: 'Cart Remove',
-    wishlist_add: 'Wishlist', add_to_wishlist: 'Wishlist',
-    order_placed: 'Order', order: 'Order', checkout_start: 'Checkout',
-    marketing: 'Marketing',
-  };
-  // Merge synonyms
-  const merged = {};
-  for (const [key, val] of Object.entries(behaviorDistribution)) {
-    const label = labelMap[key] || key.replace(/_/g, ' ');
-    merged[label] = (merged[label] || 0) + val;
+function buildChartData(behaviorSummary, behaviorDistribution) {
+  const bs = behaviorSummary || {};
+  // Derive directly from canonical behavior summary to ensure 100% consistency with KPI cards
+  // and avoid alias double-counting.
+  const categories = [
+    { name: 'Page Views',    value: Number(bs.page_views_count    ?? 0) },
+    { name: 'Product Views', value: Number(bs.product_views_count ?? 0) },
+    { name: 'Cart Adds',     value: Number(bs.cart_adds_count     ?? 0) },
+    { name: 'Wishlist',      value: Number(bs.wishlist_adds_count ?? 0) },
+    { name: 'Orders',        value: Number(bs.orders_count        ?? 0) },
+    { name: 'Searches',      value: Number(bs.searches_count      ?? 0) },
+  ];
+
+  if (Number(bs.checkout_starts_count ?? 0) > 0) {
+    categories.push({ name: 'Checkouts', value: Number(bs.checkout_starts_count) });
   }
-  return Object.entries(merged)
-    .filter(([, v]) => v > 0)
-    .sort((a, b) => b[1] - a[1])
-    .map(([name, value]) => ({ name, value }));
+
+  // Filter out non-positive entries
+  return categories.filter(item => item.value > 0);
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -173,7 +172,7 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
   // Canonical behavior data — from behavior_summary (live events)
   const bs = currentDetail?.behavior_summary || {};
   const bd = currentDetail?.behavior_distribution || {};
-  const chartData = buildChartData(bd);
+  const chartData = buildChartData(bs, bd);
 
   const totalRevenue = orders.reduce((s, o) => s + (o.total_amount || o.total || 0), 0);
   const hasUnavailablePrice = cart.some(i => i.price == null);
@@ -269,14 +268,20 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
                       </div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
-                      <div style={{ marginBottom: '4px' }}>
-                        <span className={`badge ${lead.qualification_status === 'qualified' ? 'badge-emerald' : 'badge-subtle'}`}>
-                          {lead.qualification_status || 'not_qualified'}
-                        </span>
+                      <div style={{ marginBottom: '6px' }}>
+                        {lead.lifecycle_status === 'repeat_customer' ? (
+                          <span className="badge badge-purple" style={{ fontWeight: 700 }}>Repeat Customer</span>
+                        ) : lead.lifecycle_status === 'converted' ? (
+                          <span className="badge badge-blue" style={{ fontWeight: 700 }}>Converted Customer</span>
+                        ) : lead.qualification_status === 'qualified' ? (
+                          <span className="badge badge-emerald" style={{ fontWeight: 700 }}>Qualified Lead</span>
+                        ) : (
+                          <span className="badge badge-subtle">Unqualified Prospect</span>
+                        )}
                       </div>
                       <div>
-                        <span className={`badge ${lead.lead_segment === 'Hot' ? 'badge-rose' : 'badge-indigo'}`}>
-                          {lead.lead_segment || 'Cold'} Segment
+                        <span className={`badge ${lead.lead_segment === 'Hot' ? 'badge-rose' : lead.lead_segment === 'Warm' ? 'badge-indigo' : 'badge-subtle'}`}>
+                          {lead.lead_segment || 'Cold'} Behavior
                         </span>
                       </div>
                     </div>
@@ -359,18 +364,39 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
                     ))}
                   </div>
 
-                  {/* Bar chart from behavior_distribution (same events source) */}
+                  {/* Bar chart from behavior_summary */}
                   {chartData.length > 0 ? (
-                    <ResponsiveContainer width="100%" height={150}>
-                      <BarChart data={chartData} margin={{ top: 4, right: 0, left: -20, bottom: 0 }}>
-                        <XAxis dataKey="name" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
-                        <YAxis tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                    <ResponsiveContainer width="100%" height={210}>
+                      <BarChart data={chartData} margin={{ top: 20, right: 15, left: -10, bottom: 25 }}>
+                        <XAxis
+                          dataKey="name"
+                          tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+                          axisLine={{ stroke: 'var(--panel-border)' }}
+                          tickLine={false}
+                          interval={0}
+                          angle={-20}
+                          textAnchor="end"
+                          height={40}
+                        />
+                        <YAxis
+                          tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+                          axisLine={false}
+                          tickLine={false}
+                          allowDecimals={false}
+                        />
                         <Tooltip
                           contentStyle={{ background: 'var(--panel-solid)', border: '1px solid var(--panel-border)', borderRadius: 8, fontSize: 12 }}
                           labelStyle={{ color: 'var(--text-primary)', fontWeight: 700 }}
                           cursor={{ fill: 'rgba(99,102,241,0.08)' }}
+                          formatter={(val) => [`${val} event${val === 1 ? '' : 's'}`, 'Count']}
                         />
                         <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                          <LabelList
+                            dataKey="value"
+                            position="top"
+                            offset={5}
+                            style={{ fontSize: 11, fill: 'var(--text-secondary)', fontWeight: 700 }}
+                          />
                           {chartData.map((_, idx) => (
                             <Cell key={`c-${idx}`} fill={CHART_COLORS[idx % CHART_COLORS.length]} />
                           ))}
@@ -378,7 +404,7 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
                       </BarChart>
                     </ResponsiveContainer>
                   ) : (
-                    <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.82rem', padding: '12px 0' }}>
+                    <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.82rem', padding: '16px 0' }}>
                       No behavior events recorded yet.
                     </div>
                   )}

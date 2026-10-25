@@ -22,6 +22,7 @@ from rfm_service import compute_rfm
 from product_affinity_service import compute_product_affinity
 from retention_service import compute_retention_signals
 from product_lookup import resolve_product_doc
+from timestamp_utils import parse_and_normalize_timestamp, sort_events_chronological
 
 
 SENSITIVE_PROFILE_FIELDS = {
@@ -64,6 +65,7 @@ def get_intelligence_overview(db):
 
     now = datetime.now(timezone.utc)
     today_prefix = now.strftime("%Y-%m-%d")
+    today_start = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
 
     # Customer counts
     total_customers = profiles_col.count_documents({"role": {"$ne": "admin"}})
@@ -71,30 +73,37 @@ def get_intelligence_overview(db):
         # Fallback if roles are not populated
         total_customers = profiles_col.count_documents({})
 
-    # Active today: last_active_at matches today's date prefix or within last 24 hours
+    # Active today: last_active_at matches today's date (BSON datetime or ISO string)
     active_today = profiles_col.count_documents({
-        "last_active_at": {"$regex": f"^{today_prefix}"}
+        "$or": [
+            {"last_active_at": {"$gte": today_start}},
+            {"last_active_at": {"$regex": f"^{today_prefix}"}},
+        ]
     })
 
-    # New customers created today
+    # New customers created today: created_at matches today's date (BSON datetime or ISO string)
     new_today_count = profiles_col.count_documents({
-        "created_at": {"$regex": f"^{today_prefix}"}
+        "$or": [
+            {"created_at": {"$gte": today_start}},
+            {"created_at": {"$regex": f"^{today_prefix}"}},
+        ]
     })
-    # If no documents have string created_at with today's date, check if any profile has created_at field
+    # If no documents have created_at field at all, surface None
     has_created_at = profiles_col.count_documents({"created_at": {"$exists": True}}) > 0
     new_today = new_today_count if has_created_at else None
 
     # Lead state counts
     total_qualified = lead_state_col.count_documents({"qualification_status": "qualified"})
-    hot_leads = lead_state_col.count_documents({"qualification_status": "qualified", "lead_segment": "Hot"})
-    warm_leads = lead_state_col.count_documents({"qualification_status": "qualified", "lead_segment": "Warm"})
-    cold_leads = lead_state_col.count_documents({"qualification_status": "qualified", "lead_segment": "Cold"})
+    hot_leads = lead_state_col.count_documents({"lead_segment": "Hot"})
+    warm_leads = lead_state_col.count_documents({"lead_segment": "Warm"})
+    cold_leads = lead_state_col.count_documents({"lead_segment": "Cold"})
 
     newly_qualified_today = lead_state_col.count_documents({
         "qualification_status": "qualified",
         "$or": [
             {"is_newly_qualified": True},
-            {"first_qualified_at": {"$regex": f"^{today_prefix}"}}
+            {"first_qualified_at": {"$gte": today_start}},
+            {"first_qualified_at": {"$regex": f"^{today_prefix}"}},
         ]
     })
 
@@ -142,7 +151,16 @@ def get_qualified_leads_list(db, qualification_status="qualified", segment="all"
 
     query = {}
     if qualification_status and qualification_status != "all":
-        query["qualification_status"] = qualification_status
+        if qualification_status == "converted":
+            query["lifecycle_status"] = {"$in": ["converted", "repeat_customer"]}
+        elif qualification_status == "not_qualified":
+            query["qualification_status"] = "not_qualified"
+            query["lifecycle_status"] = "prospect"
+        elif qualification_status == "qualified":
+            query["qualification_status"] = "qualified"
+            query["lifecycle_status"] = "prospect"
+        else:
+            query["qualification_status"] = qualification_status
 
     if segment and segment != "all":
         query["lead_segment"] = segment
@@ -195,6 +213,9 @@ def get_qualified_leads_list(db, qualification_status="qualified", segment="all"
             "lead_probability": lead.get("lead_probability"),
             "lead_segment": lead.get("lead_segment"),
             "qualification_status": lead.get("qualification_status"),
+            "lifecycle_status": lead.get("lifecycle_status", "prospect"),
+            "confidence": lead.get("confidence", "high"),
+            "is_provisional": lead.get("is_provisional", False),
             "first_qualified_at": lead.get("first_qualified_at"),
             "last_scored_at": lead.get("last_scored_at"),
             "communication_status": comm_status
@@ -719,6 +740,11 @@ def get_lead_distribution(db):
         "qualification": {
             "qualified": qualified_count,
             "not_qualified": not_qualified_count
+        },
+        "lifecycle": {
+            "prospect": lead_state_col.count_documents({"lifecycle_status": "prospect"}),
+            "converted": lead_state_col.count_documents({"lifecycle_status": "converted"}),
+            "repeat_customer": lead_state_col.count_documents({"lifecycle_status": "repeat_customer"}),
         }
     }
 
@@ -772,6 +798,9 @@ def get_recent_leads(db, page=1, limit=10):
             "lead_score": lead.get("lead_score"),
             "lead_probability": lead.get("lead_probability"),
             "lead_segment": lead.get("lead_segment"),
+            "lifecycle_status": lead.get("lifecycle_status", "prospect"),
+            "confidence": lead.get("confidence", "high"),
+            "is_provisional": lead.get("is_provisional", False),
             "qualified_at": lead.get("first_qualified_at") or lead.get("updated_at")
         })
 
@@ -1029,8 +1058,7 @@ def _build_journey_timeline(customer_id, db, limit=30):
             for o in orders:
                 oid_str = str(o.get("_id", ""))
                 known_order_ids.add(oid_str)
-                ts = o.get("created_at")
-                ts_str = ts.isoformat() if isinstance(ts, datetime) else (str(ts) if ts else None)
+                _, ts_str = parse_and_normalize_timestamp(o.get("created_at"))
                 if ts_str:
                     known_order_timestamps.add(ts_str)
                     known_order_timestamps.add(ts_str[:19])
@@ -1048,8 +1076,7 @@ def _build_journey_timeline(customer_id, db, limit=30):
         events = list(db["events"].find(base_query).sort("timestamp", -1).limit(limit))
         for e in events:
             evt_type = e.get("event_type")
-            ts = e.get("timestamp")
-            ts_str = ts.isoformat() if isinstance(ts, datetime) else (str(ts) if ts else None)
+            _, ts_str = parse_and_normalize_timestamp(e.get("timestamp"))
 
             if evt_type in ("order_placed", "order", "purchase"):
                 entity = e.get("entity") or {}
@@ -1101,20 +1128,22 @@ def _build_journey_timeline(customer_id, db, limit=30):
             comms = list(db["marketing_communications"].find(comm_query).sort("created_at", -1).limit(10))
             for c in comms:
                 ts = c.get("sent_at") or c.get("created_at")
+                _, ts_str = parse_and_normalize_timestamp(ts)
                 timeline.append({
                     "type": "marketing",
                     "channel": c.get("channel"),
                     "status": c.get("status"),
-                    "timestamp": ts if isinstance(ts, str) else str(ts) if ts else None,
+                    "timestamp": ts_str,
                 })
     except Exception:
         pass
 
-    # Sort by timestamp descending
-    def _sort_key(entry):
-        ts = entry.get("timestamp", "")
-        return ts if isinstance(ts, str) else ""
+    # Sort entries by actual event time, newest first, with deterministic tie-breaking
+    sorted_timeline = sort_events_chronological(
+        timeline,
+        timestamp_key="timestamp",
+        reverse=True,
+        id_keys=["order_id", "_id", "event_type", "type", "channel"]
+    )
 
-    timeline.sort(key=_sort_key, reverse=True)
-
-    return timeline[:limit]
+    return sorted_timeline[:limit]

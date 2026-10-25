@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import { useWishlist } from '../context/WishlistContext';
-import { fetchProductById, fetchProducts } from '../services/api';
+import { fetchProductById, fetchProducts, trackCustomerEvent } from '../services/api';
 import { ProductCard } from '../components/ProductCard';
 import { ProductDetailsSkeleton } from '../components/Skeleton';
 import { AddToCartButton } from '../components/AddToCartButton';
@@ -70,6 +70,18 @@ export const ProductDetails = () => {
           setSelectedImage(norm.image);
           setSelectedSize(norm.sizes[0] || 'M');
           setSelectedColor(norm.colors[0] || 'Classic');
+
+          trackCustomerEvent('product_view', {
+            page: `/product/${id}`,
+            entity: {
+              id: norm.id,
+              product_id: norm.product_id,
+              title: norm.title,
+              category: norm.category,
+              brand: norm.brand,
+              price: norm.price,
+            },
+          });
 
           if (norm.category) {
             fetchProducts({ category: norm.category, limit: 4 })

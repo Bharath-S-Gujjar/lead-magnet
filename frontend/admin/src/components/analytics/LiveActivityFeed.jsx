@@ -67,6 +67,12 @@ function normalizeEvent(raw, source = 'history') {
   };
 }
 
+function getEventTimestampMs(ts) {
+  if (!ts) return 0;
+  const t = new Date(ts).getTime();
+  return isNaN(t) ? 0 : t;
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export const LiveActivityFeed = () => {
@@ -81,7 +87,11 @@ export const LiveActivityFeed = () => {
   const addEvent = useCallback((normalized) => {
     if (!normalized || seenIds.current.has(normalized.id)) return;
     seenIds.current.add(normalized.id);
-    setEvents(prev => [normalized, ...prev].slice(0, MAX_FEED_SIZE));
+    setEvents(prev => {
+      const merged = [normalized, ...prev];
+      merged.sort((a, b) => getEventTimestampMs(b.timestamp) - getEventTimestampMs(a.timestamp));
+      return merged.slice(0, MAX_FEED_SIZE);
+    });
   }, []);
 
   // ── Load initial history ──
@@ -97,6 +107,7 @@ export const LiveActivityFeed = () => {
         const normalized = (history || [])
           .map(e => normalizeEvent(e, 'history'))
           .filter(Boolean);
+        normalized.sort((a, b) => getEventTimestampMs(b.timestamp) - getEventTimestampMs(a.timestamp));
         setEvents(normalized);
         normalized.forEach(e => seenIds.current.add(e.id));
       } catch (err) {
@@ -251,8 +262,12 @@ export const LiveActivityFeed = () => {
                     <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)', flexShrink: 0 }}>
                       {meta.label}
                     </span>
-                    <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', flexShrink: 0 }}>
-                      {formatAge(evt.timestamp)}
+                    <span
+                      title={evt.timestamp ? new Date(evt.timestamp).toLocaleString() : ''}
+                      style={{ fontSize: '0.68rem', color: 'var(--text-muted)', flexShrink: 0 }}
+                    >
+                      {evt.timestamp ? `${new Date(evt.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : ''}
+                      {evt.timestamp && <span style={{ opacity: 0.75, marginLeft: '4px' }}>({formatAge(evt.timestamp)})</span>}
                     </span>
                   </div>
                   {(evt.customer_name || evt.customer_id) && (

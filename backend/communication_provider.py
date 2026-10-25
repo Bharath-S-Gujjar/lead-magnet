@@ -540,8 +540,8 @@ class MultiChannelProvider(CommunicationProvider):
         self.email_provider = email_provider or GmailSMTPProvider()
         self.whatsapp_provider = whatsapp_provider or WhatsAppBusinessProvider()
 
-    def send_email(self, recipient, subject, body, metadata=None):
-        return self.email_provider.send_email(recipient, subject, body, metadata=metadata)
+    def send_email(self, recipient, subject, body, metadata=None, html_body=None, **kwargs):
+        return self.email_provider.send_email(recipient, subject, body, metadata=metadata, html_body=html_body, **kwargs)
 
     def send_whatsapp(self, recipient, body, metadata=None):
         return self.whatsapp_provider.send_whatsapp(recipient, body, metadata=metadata)
@@ -550,32 +550,43 @@ class MultiChannelProvider(CommunicationProvider):
 def get_communication_provider(provider_name=None):
     """Factory function returning configured communication provider instance.
 
+    Safety Guarantee:
+        Defaults strictly to DryRunCommunicationProvider unless:
+        1. An explicit live provider name is configured ('multi_channel', 'gmail_smtp',
+           'whatsapp_business', 'production'), AND
+        2. ALLOW_REAL_DISPATCH is explicitly set to 'true' (or '1', 'yes').
+        Missing, unset, or empty COMMUNICATION_PROVIDER ALWAYS returns DryRunCommunicationProvider,
+        regardless of whether SMTP or WhatsApp credentials are present in the environment.
+
     Args:
-        provider_name (str, optional): Provider name. Auto-detected from env if None.
+        provider_name (str, optional): Provider name override. Read from env if None.
 
     Returns:
         CommunicationProvider: Configured provider instance.
     """
-    if provider_name is None:
-        provider_name = os.getenv("COMMUNICATION_PROVIDER")
-        if not provider_name:
-            has_smtp = bool(os.getenv("SMTP_USERNAME") or os.getenv("GMAIL_USER")) and bool(os.getenv("SMTP_PASSWORD") or os.getenv("GMAIL_APP_PASSWORD"))
-            has_wa = bool(os.getenv("WHATSAPP_API_TOKEN") or os.getenv("META_WHATSAPP_TOKEN")) and bool(os.getenv("WHATSAPP_PHONE_NUMBER_ID") or os.getenv("META_PHONE_NUMBER_ID"))
-            if has_smtp or has_wa:
-                provider_name = "multi_channel"
-            else:
-                provider_name = "dry_run"
+    raw_provider = provider_name
+    if raw_provider is None:
+        raw_provider = os.getenv("COMMUNICATION_PROVIDER", "").strip().lower()
+    else:
+        raw_provider = str(raw_provider).strip().lower()
 
-    if provider_name == "dry_run":
+    if not raw_provider or raw_provider == "dry_run":
         return DryRunCommunicationProvider()
-    elif provider_name == "failing_mock":
+
+    if raw_provider == "failing_mock":
         return FailingCommunicationProvider()
-    elif provider_name == "gmail_smtp":
+
+    # Explicit safety gate: Live dispatch requires ALLOW_REAL_DISPATCH=true
+    allow_real = os.getenv("ALLOW_REAL_DISPATCH", "").strip().lower() in ("true", "1", "yes")
+    if not allow_real:
+        # Fail safe to dry-run if real dispatch is not explicitly authorized
+        return DryRunCommunicationProvider()
+
+    if raw_provider == "gmail_smtp":
         return GmailSMTPProvider()
-    elif provider_name == "whatsapp_business":
+    elif raw_provider == "whatsapp_business":
         return WhatsAppBusinessProvider()
-    elif provider_name in ("multi_channel", "production"):
+    elif raw_provider in ("multi_channel", "production"):
         return MultiChannelProvider()
     else:
-        # Default fallback to dry-run for safety
         return DryRunCommunicationProvider()

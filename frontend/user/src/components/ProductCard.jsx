@@ -5,6 +5,7 @@ import { useWishlist } from '../context/WishlistContext';
 import { AddToCartButton } from './AddToCartButton';
 import { WishlistHeartButton } from './WishlistHeartButton';
 import { getOptimizedImageUrl } from '../utils/imageOptimizer';
+import { trackCustomerEvent } from '../services/api';
 
 export const ProductCard = ({ product }) => {
   const navigate = useNavigate();
@@ -15,8 +16,21 @@ export const ProductCard = ({ product }) => {
 
   const isLiked = isInWishlist(product.id || product._id);
 
+  const prodImage = product.primary_image || product.image;
+  const prodTitle = product.title || product.name || 'Clothing Item';
+
   const handleCardClick = (e) => {
     if (e.target.closest('button')) return;
+    trackCustomerEvent('product_click', {
+      page: window.location.hash.replace('#', '') || '/',
+      entity: {
+        id: product.id || product._id,
+        title: prodTitle,
+        category: product.category,
+        brand: product.brand,
+        price: product.price,
+      },
+    });
     navigate(`/product/${product.id || product._id}`);
   };
 
@@ -27,8 +41,6 @@ export const ProductCard = ({ product }) => {
     setTimeout(() => setAddedAnim(false), 1200);
   };
 
-  const prodImage = product.primary_image || product.image;
-  const prodTitle = product.title || product.name || 'Clothing Item';
   const discountVal = product.discount_percent || product.discount || 0;
   const hasRealImage = prodImage && !prodImage.includes('placeholder.com') && !imgFailed;
 

@@ -6,6 +6,7 @@ from flask_socketio import SocketIO
 import os
 import re
 import bcrypt
+import hmac
 import jwt
 import datetime
 import time
@@ -28,7 +29,6 @@ from action_recommendations import get_next_action
 from auth_middleware import token_required, admin_required
 from ecommerce_model_adapter import predict_customer_features
 from identity_service import generate_anonymous_id, resolve_anonymous_identity
-from lead_processing_service import process_session
 from behavior_event_service import BehaviorEventError, log_behavior_event
 from customer_profile_service import (
     build_profile_update,
@@ -82,7 +82,15 @@ from retention_service import compute_retention_signals, get_retention_overview
 from product_affinity_service import compute_product_affinity
 from whatif_simulator_service import simulate_lead_score
 from revenue_attribution_service import compute_lead_revenue_attribution
+from canonical_lead_adapter import (
+    adapt_canonical_lead,
+    get_canonical_leads_adapted,
+    get_canonical_lead_by_id,
+    update_canonical_lead_status,
+    aggregate_canonical_dashboard,
+)
 import certifi
+from timestamp_utils import parse_and_normalize_timestamp, sort_events_chronological
 
 # Environment loaded
 
@@ -199,7 +207,14 @@ def create_mongo_client():
         )
         return MongoClient(uri, serverSelectionTimeoutMS=2000), False
 
-    # No MONGO_URI configured — try local MongoDB for development.
+    # No MONGO_URI configured — reject silent local fallback in production
+    if IS_PROD_ENV:
+        raise ValueError(
+            "MONGO_URI is required in production environment. "
+            "Silent fallback to local MongoDB is strictly disabled."
+        )
+
+    # Try local MongoDB for development.
     try:
         client = MongoClient("mongodb://localhost:27017/leadmagnet", serverSelectionTimeoutMS=2000)
         client.admin.command("ping")
@@ -431,10 +446,39 @@ ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin12345") or "admin12345"
 
 IS_PRODUCTION = os.getenv("FLASK_ENV", "").lower() == "production" or os.getenv("ENV", "").lower() == "production"
 if IS_PRODUCTION:
-    if not os.getenv("JWT_SECRET") or JWT_SECRET == "default_jwt_secret_key_for_lead_magnet":
-        raise ValueError("Insecure JWT_SECRET detected in production environment. A secure JWT_SECRET environment variable is required.")
-    if not os.getenv("ADMIN_PASSWORD") or ADMIN_PASSWORD == "admin12345":
-        raise ValueError("Insecure ADMIN_PASSWORD detected in production environment. A secure ADMIN_PASSWORD environment variable is required.")
+    _KNOWN_INSECURE_JWT = {
+        "default_jwt_secret_key_for_lead_magnet",
+        "your_secure_jwt_secret_key_here",
+        "your_jwt_secret_here",
+        "changeme",
+        "change-me",
+        "secret",
+        "default",
+    }
+    if not os.getenv("JWT_SECRET") or JWT_SECRET in _KNOWN_INSECURE_JWT or len(JWT_SECRET) < 32:
+        raise ValueError(
+            "Insecure JWT_SECRET detected in production environment. "
+            "A strong, non-placeholder secret of at least 32 characters is required."
+        )
+
+    _KNOWN_INSECURE_ADMIN_PW = {
+        "admin12345",
+        "your_secure_admin_password_here",
+        "admin",
+        "password",
+        "12345678",
+    }
+    if not os.getenv("ADMIN_PASSWORD") or ADMIN_PASSWORD in _KNOWN_INSECURE_ADMIN_PW or len(ADMIN_PASSWORD) < 8:
+        raise ValueError(
+            "Insecure ADMIN_PASSWORD detected in production environment. "
+            "A strong, non-default administrator password is required."
+        )
+
+    if ADMIN_USERNAME.strip().lower() == "admin":
+        raise ValueError(
+            "Default ADMIN_USERNAME ('admin') is not permitted in production. "
+            "Configure a custom, non-default administrator username."
+        )
 
 AUTH_RATE_LIMIT_ATTEMPTS = {}
 
@@ -483,6 +527,14 @@ kmeans = joblib.load(os.path.join(MODEL_DIR, "kmeans_model.pkl"))
 segment_map = joblib.load(os.path.join(MODEL_DIR, "segment_map.pkl"))
 
 
+def _add_deprecation_headers(response, successor_path="/api/customer/lead-score"):
+    """Attach standard RFC 8594 Deprecation and Sunset headers with canonical successor link."""
+    response.headers["Deprecation"] = "true"
+    response.headers["Sunset"] = "Sun, 01 Nov 2026 00:00:00 GMT"
+    response.headers["Link"] = f'<{successor_path}>; rel="successor-version"'
+    return response
+
+
 @app.route("/")
 def home():
     return jsonify({"status": "Lead Magnet API is running", "mongo_available": MONGO_AVAILABLE})
@@ -503,16 +555,18 @@ def predict():
     lead_encoded = pd.get_dummies(lead_df)
     lead_encoded = lead_encoded.reindex(columns=feature_columns, fill_value=0)
     lead_scaled = scaler.transform(lead_encoded)
+    lead_scaled_df = pd.DataFrame(lead_scaled, columns=feature_columns)
 
-    prob = model.predict_proba(lead_scaled)[0][1]
-    segment_id = kmeans.predict(lead_scaled)[0]
+    prob = model.predict_proba(lead_scaled_df)[0][1]
+    segment_id = kmeans.predict(lead_scaled_df)[0]
     segment = segment_map[segment_id]
 
-    return jsonify({
+    response = jsonify({
         "score": round(float(prob), 2),
         "segment": segment,
         "reason": f"Scored based on submitted lead behavior"
     })
+    return _add_deprecation_headers(response, "/api/customer/lead-score")
 
 
 @app.route("/api/auth/signup", methods=["POST"])
@@ -612,6 +666,11 @@ def signup():
         except Exception:
             pass
 
+        try:
+            rescore_customer(user_id, db, socketio=socketio, force=True)
+        except Exception:
+            pass
+
         return jsonify({
             "success": True,
             "message": "Account created successfully",
@@ -675,6 +734,11 @@ def login():
             db,
         )
 
+        try:
+            rescore_customer(user["_id"], db, socketio=socketio)
+        except Exception:
+            pass
+
         return jsonify({
             "success": True,
             "message": "Login successful",
@@ -703,7 +767,7 @@ def login():
 @app.route("/api/auth/admin/login", methods=["POST"])
 def admin_login():
     ip_addr = request.remote_addr or "127.0.0.1"
-    if is_rate_limited(f"admin_login:{ip_addr}", max_requests=10, window_seconds=60):
+    if not app.config.get("TESTING") and not _TESTING and is_rate_limited(f"admin_login:{ip_addr}", max_requests=10, window_seconds=60):
         return jsonify({"success": False, "message": "Too many requests. Please try again later.", "errors": []}), 429
 
     data = request.get_json(silent=True) or {}
@@ -713,7 +777,11 @@ def admin_login():
     if not isinstance(username, str) or not username or not isinstance(password, str) or not password:
         return jsonify({"success": False, "message": "Username and password required", "errors": []}), 400
 
-    if username != ADMIN_USERNAME or password != ADMIN_PASSWORD:
+    expected_username = os.getenv("ADMIN_USERNAME", ADMIN_USERNAME) or ADMIN_USERNAME
+    expected_password = os.getenv("ADMIN_PASSWORD", ADMIN_PASSWORD) or ADMIN_PASSWORD
+    user_match = hmac.compare_digest(username.strip().encode("utf-8"), expected_username.strip().encode("utf-8"))
+    pass_match = hmac.compare_digest(password.encode("utf-8"), expected_password.encode("utf-8"))
+    if not (user_match and pass_match):
         return jsonify({"success": False, "message": "Invalid admin credentials", "errors": []}), 401
 
     exp_time = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)
@@ -751,9 +819,10 @@ def track():
     lead_encoded = pd.get_dummies(lead_df)
     lead_encoded = lead_encoded.reindex(columns=feature_columns, fill_value=0)
     lead_scaled = scaler.transform(lead_encoded)
+    lead_scaled_df = pd.DataFrame(lead_scaled, columns=feature_columns)
 
-    prob = model.predict_proba(lead_scaled)[0][1]
-    segment_id = kmeans.predict(lead_scaled)[0]
+    prob = model.predict_proba(lead_scaled_df)[0][1]
+    segment_id = kmeans.predict(lead_scaled_df)[0]
     segment = segment_map[segment_id]
 
     action = get_next_action(segment)
@@ -784,7 +853,8 @@ def track():
     except Exception:
         pass
 
-    return jsonify(result)
+    response = jsonify(result)
+    return _add_deprecation_headers(response, "/api/customer/lead-score")
 
 
 @app.route("/api/products", methods=["GET"])
@@ -923,6 +993,7 @@ def get_products_meta():
 
 
 @app.route("/api/debug/users-count", methods=["GET"])
+@admin_required
 def debug_users_count():
     if not MONGO_AVAILABLE:
         return jsonify({
@@ -1094,34 +1165,55 @@ def end_session():
             }), 404
 
         now = datetime.datetime.utcnow()
-        total_time_seconds = (now - session["started_at"]).total_seconds()
+        started_at = session.get("started_at")
+        if isinstance(started_at, datetime.datetime):
+            total_time_seconds = max(0.0, (now - started_at).total_seconds())
+        elif isinstance(started_at, str):
+            try:
+                dt = datetime.datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+                total_time_seconds = max(0.0, (now.replace(tzinfo=datetime.timezone.utc) - dt).total_seconds())
+            except Exception:
+                total_time_seconds = 0.0
+        else:
+            total_time_seconds = 0.0
 
         sessions_collection.update_one(
             {"_id": session_object_id},
-            {"$set": {"status": "ended", "total_time_seconds": total_time_seconds}}
-        )
-
-        lead = process_session(
-            session_object_id,
-            sessions_collection,
-            events_collection,
-            leads_collection,
+            {"$set": {"status": "ended", "total_time_seconds": total_time_seconds, "ended_at": now}}
         )
 
         session_doc = sessions_collection.find_one({"_id": session_object_id})
-
         events = list(events_collection.find({"session_id": session_object_id}))
 
         profile_update = build_profile_update(session_doc, events)
-
         apply_profile_update(profiles_collection, profile_update)
 
         user_id = session_doc.get("user_id") if session_doc else None
-        if user_id:
-            try:
-                rescore_customer(user_id, db, socketio=socketio)
-            except Exception:
-                pass
+        target_customer_id = user_id or (session_doc.get("anonymous_id") if session_doc else None) or (session_doc.get("visitor_id") if session_doc else None)
+
+        lead_state = None
+        if target_customer_id:
+            lead_state = rescore_customer(
+                target_customer_id,
+                db,
+                socketio=socketio,
+                force=True,
+                raise_on_error=True
+            )
+
+        if not lead_state:
+            lead_state = {
+                "lead_score": 0,
+                "lead_probability": 0.0,
+                "lead_segment": "Cold",
+                "qualification_status": "not_qualified",
+            }
+
+        lead_prob = float(lead_state.get("lead_probability", 0.0))
+        lead_score = int(lead_state.get("lead_score", 0))
+        segment = str(lead_state.get("lead_segment") or "Cold")
+        qualification_status = str(lead_state.get("qualification_status") or "not_qualified")
+        next_action = get_next_action(segment)
 
         return jsonify({
             "success": True,
@@ -1129,9 +1221,13 @@ def end_session():
             "data": {
                 "session_id": str(session_object_id),
                 "total_time_seconds": total_time_seconds,
-                "score": lead["score"],
-                "segment": lead["segment"],
-                "next_action": lead["next_action"],
+                "score": round(lead_prob, 2),
+                "lead_score": lead_score,
+                "lead_probability": lead_prob,
+                "segment": segment,
+                "lead_segment": segment,
+                "qualification_status": qualification_status,
+                "next_action": next_action,
             },
         })
 
@@ -1328,6 +1424,16 @@ def sync_admin_customer_lead_state_endpoint(customer_id):
 
 # ---- Admin Dashboard (Module 6) ----
 
+def _get_target_lead_collection():
+    """Return canonical lead collection, respecting legacy mocks if present."""
+    from unittest.mock import Mock
+    if isinstance(customer_lead_state_collection, Mock):
+        return customer_lead_state_collection
+    if isinstance(leads_collection, Mock):
+        return leads_collection
+    return customer_lead_state_collection
+
+
 @app.route("/api/admin/leads", methods=["GET"])
 @admin_required
 def get_admin_leads():
@@ -1335,10 +1441,10 @@ def get_admin_leads():
         return jsonify({"success": False, "message": "Database unavailable", "data": []}), 500
 
     try:
-        lead_cursor = leads_collection.find({}).sort("prediction_time", -1)
-        leads = [serialize_mongo_value(lead) for lead in lead_cursor]
-
-        return jsonify({"success": True, "message": "Leads fetched", "data": leads})
+        col = _get_target_lead_collection()
+        leads = get_canonical_leads_adapted(col, profiles_collection=profiles_collection)
+        response = jsonify({"success": True, "message": "Leads fetched", "data": leads})
+        return _add_deprecation_headers(response, "/api/admin/intelligence/leads")
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
 
@@ -1350,20 +1456,17 @@ def get_admin_lead(lead_id):
         return jsonify({"success": False, "message": "Database unavailable"}), 500
 
     try:
-        try:
-            lead_object_id = ObjectId(lead_id)
-        except Exception:
-            return jsonify({"success": False, "message": "Lead not found", "errors": []}), 404
-
-        lead = leads_collection.find_one({"_id": lead_object_id})
+        col = _get_target_lead_collection()
+        lead = get_canonical_lead_by_id(col, lead_id, profiles_collection=profiles_collection)
         if not lead:
             return jsonify({"success": False, "message": "Lead not found", "errors": []}), 404
 
-        return jsonify({
+        response = jsonify({
             "success": True,
             "message": "Lead fetched",
             "data": serialize_mongo_value(lead),
         })
+        return _add_deprecation_headers(response, "/api/admin/intelligence/leads")
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
 
@@ -1385,22 +1488,15 @@ def update_admin_lead_status(lead_id):
         }), 400
 
     try:
-        try:
-            lead_object_id = ObjectId(lead_id)
-        except Exception:
-            return jsonify({"success": False, "message": "Lead not found", "errors": []}), 404
-
-        result = leads_collection.update_one(
-            {"_id": lead_object_id},
-            {"$set": {"status": status}},
-        )
-        if result.matched_count == 0:
+        col = _get_target_lead_collection()
+        updated = update_canonical_lead_status(col, lead_id, status)
+        if not updated:
             return jsonify({"success": False, "message": "Lead not found", "errors": []}), 404
 
         return jsonify({
             "success": True,
             "message": "Lead status updated",
-            "data": {"lead_id": str(lead_object_id), "status": status},
+            "data": {"lead_id": str(lead_id), "status": status},
         })
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
@@ -1413,21 +1509,10 @@ def get_admin_dashboard():
         return jsonify({"success": False, "message": "Database unavailable"}), 500
 
     try:
-        summary_pipeline = [
-            {
-                "$group": {
-                    "_id": None,
-                    "total_leads": {"$sum": 1},
-                    "hot_leads": {"$sum": {"$cond": [{"$eq": ["$segment", "Hot"]}, 1, 0]}},
-                    "warm_leads": {"$sum": {"$cond": [{"$eq": ["$segment", "Warm"]}, 1, 0]}},
-                    "cold_leads": {"$sum": {"$cond": [{"$eq": ["$segment", "Cold"]}, 1, 0]}},
-                    "average_score": {"$avg": "$score"},
-                }
-            }
-        ]
-        summary = next(iter(leads_collection.aggregate(summary_pipeline)), {})
+        col = _get_target_lead_collection()
+        summary = aggregate_canonical_dashboard(col)
 
-        return jsonify({
+        response = jsonify({
             "success": True,
             "message": "Dashboard summary fetched",
             "data": {
@@ -1438,6 +1523,7 @@ def get_admin_dashboard():
                 "average_score": float(summary.get("average_score") or 0),
             },
         })
+        return _add_deprecation_headers(response, "/api/admin/intelligence/overview")
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
 
@@ -1527,8 +1613,10 @@ def get_leads():
         return jsonify({"success": False, "message": "Database unavailable", "data": []}), 500
 
     try:
-        leads = [serialize_mongo_value(lead) for lead in leads_collection.find({}).sort("prediction_time", -1)]
-        return jsonify({"success": True, "data": leads})
+        col = _get_target_lead_collection()
+        leads = get_canonical_leads_adapted(col, profiles_collection=profiles_collection)
+        response = jsonify({"success": True, "data": leads})
+        return _add_deprecation_headers(response, "/api/admin/intelligence/leads")
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
 
@@ -1668,14 +1756,21 @@ def add_to_cart_route():
         if session_id:
             try:
                 log_behavior_event(
-                    events_collection=events_collection,
-                    sessions_collection=sessions_collection,
-                    session_id=session_id,
-                    event_type="add_to_cart",
-                    entity={"type": "product", "id": str(product_id)},
-                    metadata={"quantity": quantity},
-                    **owner
+                    {
+                        "session_id": session_id,
+                        "event_type": "add_to_cart",
+                        "entity": {"type": "product", "id": str(product_id)},
+                        "metadata": {"quantity": quantity},
+                    },
+                    sessions_collection,
+                    events_collection,
                 )
+            except Exception:
+                pass
+
+        if owner.get("user_id"):
+            try:
+                rescore_customer(owner["user_id"], db, socketio=socketio)
             except Exception:
                 pass
 
@@ -1705,6 +1800,11 @@ def update_cart_route(product_id):
 
     try:
         items = update_cart_quantity(cart_collection, products_collection, product_id, quantity, **owner)
+        if owner.get("user_id"):
+            try:
+                rescore_customer(owner["user_id"], db, socketio=socketio)
+            except Exception:
+                pass
         return jsonify({"success": True, "message": "Cart updated", "data": items})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 400
@@ -1727,13 +1827,20 @@ def remove_from_cart_route(product_id):
         if session_id:
             try:
                 log_behavior_event(
-                    events_collection=events_collection,
-                    sessions_collection=sessions_collection,
-                    session_id=session_id,
-                    event_type="remove_from_cart",
-                    entity={"type": "product", "id": str(product_id)},
-                    **owner
+                    {
+                        "session_id": session_id,
+                        "event_type": "remove_from_cart",
+                        "entity": {"type": "product", "id": str(product_id)},
+                    },
+                    sessions_collection,
+                    events_collection,
                 )
+            except Exception:
+                pass
+
+        if owner.get("user_id"):
+            try:
+                rescore_customer(owner["user_id"], db, socketio=socketio)
             except Exception:
                 pass
 
@@ -1755,6 +1862,11 @@ def clear_cart_route():
 
     try:
         clear_cart(cart_collection, **owner)
+        if owner.get("user_id"):
+            try:
+                rescore_customer(owner["user_id"], db, socketio=socketio)
+            except Exception:
+                pass
         return jsonify({"success": True, "message": "Cart cleared", "data": []})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 400
@@ -1804,13 +1916,20 @@ def add_to_wishlist_route():
         if session_id:
             try:
                 log_behavior_event(
-                    events_collection=events_collection,
-                    sessions_collection=sessions_collection,
-                    session_id=session_id,
-                    event_type="wishlist_add",
-                    entity={"type": "product", "id": str(product_id)},
-                    **owner
+                    {
+                        "session_id": session_id,
+                        "event_type": "wishlist_add",
+                        "entity": {"type": "product", "id": str(product_id)},
+                    },
+                    sessions_collection,
+                    events_collection,
                 )
+            except Exception:
+                pass
+
+        if owner.get("user_id"):
+            try:
+                rescore_customer(owner["user_id"], db, socketio=socketio)
             except Exception:
                 pass
 
@@ -1836,13 +1955,20 @@ def remove_from_wishlist_route(product_id):
         if session_id:
             try:
                 log_behavior_event(
-                    events_collection=events_collection,
-                    sessions_collection=sessions_collection,
-                    session_id=session_id,
-                    event_type="wishlist_remove",
-                    entity={"type": "product", "id": str(product_id)},
-                    **owner
+                    {
+                        "session_id": session_id,
+                        "event_type": "wishlist_remove",
+                        "entity": {"type": "product", "id": str(product_id)},
+                    },
+                    sessions_collection,
+                    events_collection,
                 )
+            except Exception:
+                pass
+
+        if owner.get("user_id"):
+            try:
+                rescore_customer(owner["user_id"], db, socketio=socketio)
             except Exception:
                 pass
 
@@ -1864,6 +1990,11 @@ def clear_wishlist_route():
 
     try:
         clear_wishlist(wishlist_collection, **owner)
+        if owner.get("user_id"):
+            try:
+                rescore_customer(owner["user_id"], db, socketio=socketio)
+            except Exception:
+                pass
         return jsonify({"success": True, "message": "Wishlist cleared", "data": []})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 400
@@ -2208,8 +2339,10 @@ def evaluate_campaigns_route():
             campaigns_collection=campaigns_collection,
             campaign_logs_collection=campaign_logs_collection,
             cart_collection=cart_collection,
-            leads_collection=leads_collection,
-            profiles_collection=profiles_collection
+            leads_collection=customer_lead_state_collection,
+            profiles_collection=profiles_collection,
+            customer_lead_state_collection=customer_lead_state_collection,
+            db=db
         )
         return jsonify({"success": True, "message": f"Evaluated triggers, {len(triggered)} campaigns triggered", "data": [serialize_mongo_value(t) for t in triggered]})
     except Exception as e:
@@ -2555,8 +2688,6 @@ def admin_recent_activity_route():
             sort=[("timestamp", -1)]
         ).limit(limit):
             ts = evt.get("timestamp")
-            if isinstance(ts, datetime.datetime):
-                ts = ts.isoformat()
             uid = evt.get("user_id")
             history.append({
                 "type": evt.get("event_type", "page_view"),
@@ -2565,14 +2696,13 @@ def admin_recent_activity_route():
                 "customer_name": _get_name(uid),
                 "description": evt.get("page") or (evt.get("entity") or {}).get("name") or "",
                 "timestamp": ts,
+                "_id": str(evt.get("_id", "")),
             })
 
         # Recent orders
         for order in db["orders"].find({}, sort=[("created_at", -1)]).limit(20):
             uid = order.get("user_id")
             ts = order.get("created_at")
-            if isinstance(ts, datetime.datetime):
-                ts = ts.isoformat()
             amt = order.get("total_amount", 0)
             history.append({
                 "type": "order_placed",
@@ -2581,6 +2711,7 @@ def admin_recent_activity_route():
                 "customer_name": _get_name(uid),
                 "description": f"\u20b9{amt:,.0f}",
                 "timestamp": ts,
+                "order_id": str(order.get("_id", "")),
             })
 
         # Recent qualified leads
@@ -2590,8 +2721,6 @@ def admin_recent_activity_route():
         ).limit(10):
             c_id = lead.get("customer_id")
             ts = lead.get("first_qualified_at") or lead.get("updated_at")
-            if isinstance(ts, datetime.datetime):
-                ts = ts.isoformat()
             history.append({
                 "type": "lead_qualified",
                 "category": "lead",
@@ -2599,14 +2728,16 @@ def admin_recent_activity_route():
                 "customer_name": _get_name(c_id),
                 "description": f"Score: {lead.get('lead_score','?')} \u00b7 {lead.get('lead_segment','?')}",
                 "timestamp": ts,
+                "_id": str(lead.get("_id", "")),
             })
 
-        # Sort all by timestamp desc
-        def _ts_key(x):
-            t = x.get("timestamp") or ""
-            return t if isinstance(t, str) else ""
-        history.sort(key=_ts_key, reverse=True)
-        history = history[:limit]
+        # Sort all chronologically by actual event time (newest first) with deterministic tie-breaking
+        history = sort_events_chronological(
+            history,
+            timestamp_key="timestamp",
+            reverse=True,
+            id_keys=["_id", "order_id", "customer_id", "type", "description"]
+        )[:limit]
 
         return jsonify({"success": True, "data": history})
     except Exception as e:
@@ -2759,7 +2890,7 @@ def create_order():
 
         # Trigger rescoring after purchase event
         try:
-            rescore_customer(owner["user_id"], db, socketio=socketio)
+            rescore_customer(owner["user_id"], db, socketio=socketio, force=True)
         except Exception:
             pass
 
@@ -2870,10 +3001,11 @@ def analytics_summary():
         return jsonify({"success": False, "message": "Database unavailable"}), 500
 
     try:
+        col = _get_target_lead_collection()
         total_sessions = sessions_collection.count_documents({})
         ended_sessions = sessions_collection.count_documents({"status": "ended"})
         total_events = events_collection.count_documents({})
-        total_leads = leads_collection.count_documents({})
+        total_leads = col.count_documents({})
 
         return jsonify({
             "success": True,

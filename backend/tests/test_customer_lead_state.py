@@ -227,15 +227,45 @@ class CustomerLeadStateTests(unittest.TestCase):
         state1 = sync_customer_lead_state(user_id, self.db)
         self.assertEqual(state1["qualification_status"], "not_qualified")
 
-        # Promote to hot
-        doc_high = sample_customer_features(user_id, high_intent=True)
-        self.features.update_one({"customer_id": user_id}, {"$set": doc_high})
+        # Promote to Hot segment WITHOUT converting (no orders):
+        # cart + checkout + sessions enough to reach Hot score (>=70) without orders.
+        doc_hot_no_order = {
+            "customer_id": user_id,
+            "sessions_count": 8,
+            "total_events": 90,
+            "total_time_spent": 1200.0,
+            "average_session_duration": 150.0,
+            "page_views_count": 50,
+            "days_since_last_activity": 0.2,
+            "products_viewed": 20,
+            "unique_products_viewed": 10,
+            "product_interactions": 30,
+            "search_count": 4,
+            "form_submit_count": 1,
+            "high_intent_page_visits": 8,
+            "cart_item_count": 3,
+            "cart_value": 600.0,
+            "wishlist_item_count": 2,
+            "checkout_attempts": 3,
+            "orders_count": 0,           # NOT converted
+            "total_order_value": 0.0,
+            "average_order_value": 0.0,
+            "last_checkout_action_at": None,
+            "last_cart_action_at": None,
+        }
+        self.features.update_one({"customer_id": user_id}, {"$set": doc_hot_no_order})
 
         state2 = sync_customer_lead_state(user_id, self.db)
+        # Must be Hot + not_converted → qualified
+        self.assertEqual(state2["lead_segment"], "Hot",
+                         msg=f"Expected Hot segment, got {state2['lead_segment']} "
+                             f"(score={state2['lead_score']}, reasons={state2.get('score_reasons')})")
+        self.assertFalse(state2.get("is_converted"), "Customer should not be converted")
         self.assertEqual(state2["qualification_status"], "qualified")
         self.assertEqual(state2["previous_qualification_status"], "not_qualified")
         self.assertEqual(state2["qualification_transition"], "not_qualified_to_qualified")
         self.assertTrue(state2["is_newly_qualified"])
+
 
     # 13. Re-qualification updates last_qualified_at
     def test_13_requalification_updates_last_qualified_at(self):

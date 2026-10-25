@@ -15,7 +15,7 @@ Real e-commerce stores lose customers silently — visitors browse, fill carts, 
 | Cart, wishlist, order management | ✅ Implemented |
 | Real-time behavioral telemetry (sessions, events) | ✅ Implemented |
 | Anonymous visitor identity resolution on signup | ✅ Implemented |
-| XGBoost lead scoring — 11-feature behavioral vector | ✅ Implemented |
+| XGBoost lead scoring — 23-feature behavioral vector | ✅ Implemented |
 | Cold / Warm / Hot lead segmentation | ✅ Implemented |
 | ML explainability — feature contribution breakdown | ✅ Implemented |
 | Marketing automation (cart abandon, post-purchase, browse incentive) | ✅ Implemented |

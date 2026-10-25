@@ -96,6 +96,13 @@ export const Cart = () => {
     }
 
     setIsSubmitting(true);
+    trackCustomerEvent('checkout_start', {
+      page: '/cart',
+      metadata: {
+        item_count: selectedItems.length,
+        total_amount: totalPrice,
+      },
+    });
     const customerSession = getCustomerSession();
 
     try {

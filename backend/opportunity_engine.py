@@ -27,6 +27,7 @@ from datetime import datetime, timezone, timedelta
 from bson import ObjectId
 
 from customer_feature_service import _to_object_id
+from scoring_constants import HOT, WARM, HOT_PROBABILITY_EQUIV, WARM_PROBABILITY_EQUIV
 from marketing_automation_service import (
     get_store_url,
     dispatch_communication,
@@ -524,11 +525,11 @@ def detect_opportunities_for_customer(customer_id, db, lead_state_doc=None, curr
     prev_score_val = int(prev_score) if prev_score is not None else None
     prev_segment = str(lead_state_doc.get("previous_segment") or "")
 
-    is_hot = (lead_prob >= 0.70 or lead_segment == "Hot" or lead_score >= 70)
+    is_hot = (lead_prob >= HOT_PROBABILITY_EQUIV or lead_segment == "Hot" or lead_score >= HOT)
 
     # Check Hot -> Warm decline rule
-    was_hot = (prev_segment == "Hot" or (prev_prob_val is not None and prev_prob_val >= 0.70) or (prev_score_val is not None and prev_score_val >= 70))
-    is_warm = (lead_segment == "Warm" or (0.35 <= lead_prob < 0.70) or (35 <= lead_score < 70))
+    was_hot = (prev_segment == "Hot" or (prev_prob_val is not None and prev_prob_val >= HOT_PROBABILITY_EQUIV) or (prev_score_val is not None and prev_score_val >= HOT))
+    is_warm = (lead_segment == "Warm" or (WARM_PROBABILITY_EQUIV <= lead_prob < HOT_PROBABILITY_EQUIV) or (WARM <= lead_score < HOT))
 
     prob_drop = (prev_prob_val - lead_prob) if (prev_prob_val is not None) else 0.0
     score_drop = (prev_score_val - lead_score) if (prev_score_val is not None) else 0

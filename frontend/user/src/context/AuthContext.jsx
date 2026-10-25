@@ -49,6 +49,18 @@ export function AuthProvider({ children }) {
     endCustomerSession();
     setCustomer(null);
     removeStorage(CUSTOMER_SESSION_KEY);
+    try {
+      localStorage.removeItem('leadmagnet_user_cart');
+      localStorage.removeItem('leadmagnet_anon_cart');
+      localStorage.removeItem('leadmagnet_user_wishlist');
+      localStorage.removeItem('leadmagnet_anon_wishlist');
+      // Clear any user-scoped carts
+      Object.keys(localStorage).forEach((k) => {
+        if (k.startsWith('leadmagnet_user_cart_') || k.startsWith('leadmagnet_user_wishlist_')) {
+          localStorage.removeItem(k);
+        }
+      });
+    } catch (e) {}
   }, []);
 
   const adminLogout = useCallback(() => {

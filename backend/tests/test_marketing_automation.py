@@ -34,6 +34,11 @@ from customer_feature_service import ensure_customer_features_indexes
 
 
 def sample_high_intent_features(customer_id):
+    """High-intent, HOT-scoring, NOT converted customer (no orders).
+
+    Qualification rule: segment==Hot AND not converted.
+    This fixture scores Hot via cart+checkout+wishlist+sessions without any orders.
+    """
     return {
         "customer_id": customer_id,
         "sessions_count": 10,
@@ -52,9 +57,11 @@ def sample_high_intent_features(customer_id):
         "cart_value": 850.0,
         "wishlist_item_count": 4,
         "checkout_attempts": 8,
-        "orders_count": 3,
-        "total_order_value": 450.0,
-        "average_order_value": 150.0,
+        "orders_count": 0,          # NOT converted; converted customers are not_qualified
+        "total_order_value": 0.0,
+        "average_order_value": 0.0,
+        "last_checkout_action_at": None,
+        "last_cart_action_at": None,
     }
 
 
@@ -80,6 +87,8 @@ def sample_low_intent_features(customer_id):
         "orders_count": 0,
         "total_order_value": 0.0,
         "average_order_value": 0.0,
+        "last_checkout_action_at": None,
+        "last_cart_action_at": None,
     }
 
 

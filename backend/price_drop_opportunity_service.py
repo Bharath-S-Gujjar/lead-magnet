@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 from bson import ObjectId
 
 from customer_feature_service import _to_object_id
+from scoring_constants import HOT, WARM, HOT_PROBABILITY_EQUIV, WARM_PROBABILITY_EQUIV
 from opportunity_engine import (
     OPP_PRODUCT_PRICE_DROP,
     OPPORTUNITY_COOLDOWN_HOURS,
@@ -241,8 +242,8 @@ def evaluate_customer_lead_state_eligibility(
     # Check Hot
     is_currently_hot = (
         current_segment == "Hot"
-        or prob >= 0.70
-        or score >= 70
+        or prob >= HOT_PROBABILITY_EQUIV
+        or score >= HOT
     )
     if is_currently_hot:
         return True, "Hot", lead_state_doc
@@ -250,7 +251,7 @@ def evaluate_customer_lead_state_eligibility(
     # Check Cold
     is_currently_cold = (
         current_segment == "Cold"
-        or (prob < 0.35 and score < 35 and current_segment != "Warm")
+        or (prob < WARM_PROBABILITY_EQUIV and score < WARM and current_segment != "Warm")
     )
     if is_currently_cold:
         return False, "Cold", lead_state_doc
@@ -258,15 +259,15 @@ def evaluate_customer_lead_state_eligibility(
     # Check Warm
     is_currently_warm = (
         current_segment == "Warm"
-        or (0.35 <= prob < 0.70)
-        or (35 <= score < 70)
+        or (WARM_PROBABILITY_EQUIV <= prob < HOT_PROBABILITY_EQUIV)
+        or (WARM <= score < HOT)
     )
 
     if is_currently_warm:
         was_previously_hot = (
             prev_segment == "Hot"
-            or (prev_prob_val is not None and prev_prob_val >= 0.70)
-            or (prev_score_val is not None and prev_score_val >= 70)
+            or (prev_prob_val is not None and prev_prob_val >= HOT_PROBABILITY_EQUIV)
+            or (prev_score_val is not None and prev_score_val >= HOT)
         )
         if was_previously_hot:
             return True, "Hot_to_Warm", lead_state_doc

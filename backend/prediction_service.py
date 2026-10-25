@@ -6,6 +6,7 @@ from pathlib import Path
 
 import joblib
 
+import pandas as pd
 from action_recommendations import get_next_action
 
 
@@ -28,6 +29,8 @@ def predict_session(model_input):
     """Return a prediction dictionary for one model-ready feature DataFrame."""
     artifacts = load_prediction_artifacts()
     scaled_features = artifacts["scaler"].transform(model_input)
+    if hasattr(model_input, "columns"):
+        scaled_features = pd.DataFrame(scaled_features, columns=model_input.columns)
 
     probability = artifacts["model"].predict_proba(scaled_features)[0][1]
     cluster_id = artifacts["kmeans"].predict(scaled_features)[0]

@@ -39,9 +39,17 @@ export const CustomerTable = ({
     return <span className="badge badge-subtle" style={{ padding: '4px 10px', fontSize: '0.8rem' }}>Cold</span>;
   };
 
-  const getQualificationBadge = (status) => {
-    if (status === 'qualified') return <span className="badge badge-emerald">Qualified</span>;
-    return <span className="badge badge-subtle">Not Qualified</span>;
+  const getQualificationBadge = (status, lifecycle) => {
+    if (lifecycle === 'repeat_customer' || status === 'repeat_customer') {
+      return <span className="badge badge-purple" style={{ padding: '4px 10px', fontSize: '0.8rem', fontWeight: 700 }}>Repeat Customer</span>;
+    }
+    if (lifecycle === 'converted' || status === 'converted') {
+      return <span className="badge badge-blue" style={{ padding: '4px 10px', fontSize: '0.8rem', fontWeight: 700 }}>Converted</span>;
+    }
+    if (status === 'qualified') {
+      return <span className="badge badge-emerald" style={{ padding: '4px 10px', fontSize: '0.8rem', fontWeight: 700 }}>Qualified Lead</span>;
+    }
+    return <span className="badge badge-subtle" style={{ padding: '4px 10px', fontSize: '0.8rem' }}>Not Qualified</span>;
   };
 
   return (
@@ -86,9 +94,10 @@ export const CustomerTable = ({
                 cursor: 'pointer'
               }}
             >
-              <option value="qualified">Qualified Only</option>
-              <option value="not_qualified">Not Qualified Only</option>
-              <option value="all">All Statuses</option>
+              <option value="all">All Customers & Leads</option>
+              <option value="qualified">Qualified Leads Only</option>
+              <option value="not_qualified">Unqualified Prospects Only</option>
+              <option value="converted">Converted Customers Only</option>
             </select>
           </div>
 
@@ -268,7 +277,7 @@ export const CustomerTable = ({
 
                     {/* Qualification Status */}
                     <td style={{ padding: '16px 16px', textAlign: 'center' }}>
-                      {getQualificationBadge(item.qualification_status)}
+                      {getQualificationBadge(item.qualification_status, item.lifecycle_status)}
                     </td>
 
                     {/* Last Scored */}

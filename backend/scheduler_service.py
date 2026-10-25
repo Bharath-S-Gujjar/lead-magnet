@@ -32,6 +32,8 @@ except ImportError:
     ReturnDocument = None
     DuplicateKeyError = Exception
 
+from scoring_constants import HOT, WARM, HOT_PROBABILITY_EQUIV
+
 logger = logging.getLogger("lead_magnet.scheduler")
 if not logger.handlers:
     _handler = logging.StreamHandler(sys.stdout)
@@ -523,10 +525,10 @@ def run_opportunity_pipeline_job(
     candidate_ids = set()
 
     try:
-        # Check customer_lead_state for Hot leads (lead_probability >= 0.70)
+        # Check customer_lead_state for Hot leads (lead_probability >= HOT_PROBABILITY_EQUIV)
         state_col = db["customer_lead_state"]
         hot_docs = list(state_col.find(
-            {"$or": [{"lead_probability": {"$gte": 0.70}}, {"lead_state": "Hot"}]},
+            {"$or": [{"lead_probability": {"$gte": HOT_PROBABILITY_EQUIV}}, {"lead_state": "Hot"}]},
             {"customer_id": 1}
         ).limit(max_customers))
         for d in hot_docs:
@@ -694,6 +696,67 @@ def run_price_drop_pipeline_job(
     }
 
 
+def run_customer_recency_rescore_job(
+    db: Any = None,
+    max_customers: int = 100,
+    owner_id: Optional[str] = None,
+    **kwargs: Any,
+) -> Dict[str, Any]:
+    """Rescore customers active in the last 45 days so recency decay applies automatically.
+
+    Lease-locked to ensure single-worker execution across distributed nodes.
+    Idempotent: Re-scoring with unchanged activity produces identical results.
+    """
+    if db is None:
+        try:
+            import app as app_module
+            db = getattr(app_module, "db", None)
+        except Exception:
+            pass
+
+    if db is None:
+        return {"status": "skipped", "reason": "Database unavailable"}
+
+    from customer_lead_state_service import sync_customer_lead_state
+
+    lease_seconds = int(os.getenv("SCHEDULER_LOCK_LEASE_SECONDS", "300"))
+    if owner_id and not renew_job_lease(db, "customer_recency_rescore", owner_id, extension_seconds=lease_seconds):
+        logger.warning(_sanitize_log("Lease for customer_recency_rescore expired or acquired by another worker. Halting."))
+        return {"status": "skipped_lease_lost"}
+
+    features_col = db["customer_features"]
+    active_docs = list(features_col.find(
+        {"days_since_last_activity": {"$lte": 45.0}},
+        {"customer_id": 1}
+    ).limit(max_customers))
+
+    rescored_count = 0
+    errors_count = 0
+
+    for doc in active_docs:
+        cid = doc.get("customer_id")
+        if not cid:
+            continue
+
+        if owner_id and not renew_job_lease(db, "customer_recency_rescore", owner_id, extension_seconds=lease_seconds):
+            logger.warning(_sanitize_log("Lease lost during customer_recency_rescore. Stopping batch."))
+            break
+
+        try:
+            sync_customer_lead_state(cid, db)
+            rescored_count += 1
+        except Exception as exc:
+            errors_count += 1
+            logger.warning(_sanitize_log(f"Error rescoring customer {cid}: {exc}"))
+
+    return {
+        "status": "completed",
+        "customers_rescored": rescored_count,
+        "errors_count": errors_count,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 # ==============================================================================
 # Global Instance Helper & Registration
 # ==============================================================================
@@ -710,6 +773,7 @@ def get_scheduler(db: Any = None) -> LeadMagnetScheduler:
         # Register default core pipeline jobs
         opp_interval = int(os.getenv("OPPORTUNITY_PIPELINE_INTERVAL_SECONDS", "3600"))  # default 1 hour
         drop_interval = int(os.getenv("PRICE_DROP_PIPELINE_INTERVAL_SECONDS", "1800"))   # default 30 mins
+        rescore_interval = int(os.getenv("CUSTOMER_RESCORE_INTERVAL_SECONDS", "86400")) # default 24 hours
 
         _global_scheduler.register_job(
             job_id="opportunity_pipeline",
@@ -724,6 +788,14 @@ def get_scheduler(db: Any = None) -> LeadMagnetScheduler:
             name="Product Price Drop Dispatch Pipeline",
             interval_seconds=drop_interval,
             func=run_price_drop_pipeline_job,
+            enabled=True,
+        )
+
+        _global_scheduler.register_job(
+            job_id="customer_recency_rescore",
+            name="Customer Recency Decay Rescore Job",
+            interval_seconds=rescore_interval,
+            func=run_customer_recency_rescore_job,
             enabled=True,
         )
 

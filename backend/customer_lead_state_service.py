@@ -11,9 +11,12 @@ from bson import ObjectId
 
 from customer_feature_service import get_customer_features, _to_object_id
 from ecommerce_model_adapter import predict_customer_features
+from scoring_constants import HOT, WARM
 
 
-QUALIFICATION_PROBABILITY_THRESHOLD = 0.70
+# Qualification: customer is in Hot segment AND has not converted.
+# Not a probability test -- see scoring_constants.HOT for the integer threshold.
+QUALIFICATION_PROBABILITY_THRESHOLD = HOT / 100.0  # legacy alias; prefer segment check
 
 
 def ensure_customer_lead_state_indexes(customer_lead_state_collection):
@@ -100,7 +103,21 @@ def sync_customer_lead_state(customer_id, db):
     segment = str(prediction["lead_segment"])
     model_version = str(prediction["model_version"])
 
-    qual_status = "qualified" if prob >= QUALIFICATION_PROBABILITY_THRESHOLD else "not_qualified"
+    is_converted = prediction.get("is_converted", False)
+    orders_count = int(feature_doc.get("orders_count") or 0)
+
+    # Lifecycle status — independent of lead qualification pipeline.
+    # prospect         : no orders placed yet (unconverted lead)
+    # converted        : exactly 1 order (first-time buyer; retention target)
+    # repeat_customer  : 2+ orders (loyal buyer)
+    if orders_count >= 2:
+        lifecycle_status = "repeat_customer"
+    elif orders_count == 1:
+        lifecycle_status = "converted"
+    else:
+        lifecycle_status = "prospect"
+
+    qual_status = "qualified" if (segment == "Hot" and not is_converted) else "not_qualified"
     now_iso = datetime.now(timezone.utc).isoformat()
 
     existing = state_col.find_one({"customer_id": query_id})
@@ -147,6 +164,26 @@ def sync_customer_lead_state(customer_id, db):
         "lead_score": score,
         "lead_segment": segment,
         "qualification_status": qual_status,
+
+        # Behavioral score breakdown (explainability)
+        "behavioral_score": prediction.get("behavioral_score", score),
+        "purchase_intent_score": prediction.get("purchase_intent_score"),
+        "product_interest_score": prediction.get("product_interest_score"),
+        "engagement_score": prediction.get("engagement_score"),
+        "purchase_readiness_score": prediction.get("purchase_readiness_score"),
+        "score_reasons": prediction.get("score_reasons", []),
+        "active_checkout_override": prediction.get("active_checkout_override", False),
+        "is_converted": is_converted,
+        "lifecycle_status": lifecycle_status,
+        "confidence": prediction.get("confidence", "high"),
+        "is_provisional": prediction.get("is_provisional", False),
+        "recency_decay_factor": prediction.get("recency_decay_factor"),
+        "scoring_method": prediction.get("scoring_method", "behavioral_100pt_rule_based"),
+
+        # XGBoost secondary reference
+        "raw_model_score": prediction.get("raw_model_score"),
+        "raw_model_probability": prediction.get("raw_model_probability"),
+        "has_purchase_intent": prediction.get("has_purchase_intent"),
         "model_version": model_version,
 
         "previous_probability": prev_prob,

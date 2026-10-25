@@ -239,7 +239,22 @@ def aggregate_customer_features(customer_id, db):
         if isinstance(page, str) and any(kw in page.lower() for kw in HIGH_INTENT_PAGE_KEYWORDS):
             high_intent_page_visits += 1
 
-    checkout_attempts = sum(1 for e in events if e.get("event_type") == "checkout_start")
+    # Active Checkout Attempts: only count checkout_start events that occurred AFTER the latest completed order
+    latest_order_time = None
+    if orders:
+        order_times = [_to_utc_datetime(o.get("created_at")) for o in orders if o.get("created_at")]
+        order_times = [t for t in order_times if t is not None]
+        if order_times:
+            latest_order_time = max(order_times)
+
+    if latest_order_time:
+        checkout_attempts = sum(
+            1 for e in events
+            if e.get("event_type") == "checkout_start"
+            and (_to_utc_datetime(e.get("timestamp")) or _to_utc_datetime(e.get("created_at")) or datetime.min.replace(tzinfo=timezone.utc)) > latest_order_time
+        )
+    else:
+        checkout_attempts = sum(1 for e in events if e.get("event_type") == "checkout_start")
 
     # Cart Aggregation
     cart_item_count = 0

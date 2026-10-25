@@ -42,11 +42,13 @@ def _build_source_summary(features):
 
 
 def process_session(session_id, sessions_collection, events_collection, leads_collection):
-    """Process a completed session and persist its lead result.
+    """Process a completed session and persist its lead result (Legacy v1.0).
 
-    Collections are passed in by the caller to keep this service independent of
-    Flask. A future ``/api/session/end`` route can supply its module-level
-    PyMongo collections directly.
+    .. deprecated:: Phase-4
+       Preserved strictly for backward compatibility and isolated unit tests.
+       Active production session termination and lead scoring uses canonical
+       rescoring via :func:`lead_scoring_engine.rescore_customer` which stores
+       authoritative state in ``customer_lead_state``.
     """
     session_object_id = _to_object_id(session_id)
     session = sessions_collection.find_one({"_id": session_object_id})

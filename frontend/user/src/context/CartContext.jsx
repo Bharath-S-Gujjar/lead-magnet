@@ -10,25 +10,33 @@ export const CartProvider = ({ children }) => {
   const userId = customer?.user_id || null;
   const anonymousId = userId ? null : getAnonymousId();
   const identityKey = userId || anonymousId;
+  const storageKey = userId ? `leadmagnet_user_cart_${userId}` : 'leadmagnet_anon_cart';
+
   const [cart, setCart] = useState(() => {
-    const saved = localStorage.getItem('leadmagnet_user_cart');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem(storageKey);
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
   });
 
   useEffect(() => {
-    localStorage.setItem('leadmagnet_user_cart', JSON.stringify(cart));
-  }, [cart]);
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(cart));
+    } catch (e) {}
+  }, [cart, storageKey]);
 
   useEffect(() => {
     let active = true;
-    const localCart = cart;
 
     const loadPersistedCart = async () => {
       try {
         const persistedCart = await fetchCart(userId, anonymousId);
         if (!active) return;
 
-        if (persistedCart.length > 0 || userId) {
+        // Server is single source of truth for logged in users
+        if (userId) {
           setCart(persistedCart.map((item) => ({
             id: item.product_id,
             name: item.name,
@@ -43,13 +51,22 @@ export const CartProvider = ({ children }) => {
           return;
         }
 
-        if (localCart.length === 0) return;
-
-        for (const item of localCart) {
-          await addToCartApi(item.id, item.quantity, null, anonymousId, customer?.session_id);
+        // For anonymous sessions with server items
+        if (persistedCart.length > 0) {
+          setCart(persistedCart.map((item) => ({
+            id: item.product_id,
+            name: item.name,
+            price: item.price,
+            image: item.image,
+            category: item.category,
+            brand: item.brand,
+            quantity: item.quantity,
+            selectedSize: item.selectedSize || 'M',
+            selectedColor: item.selectedColor || 'Standard',
+          })));
         }
       } catch (error) {
-        // Keep the local cart available when persistence is temporarily unavailable.
+        // Keep optimistic cart state if network fails
       }
     };
 
@@ -57,7 +74,7 @@ export const CartProvider = ({ children }) => {
     return () => {
       active = false;
     };
-  }, [identityKey]);
+  }, [identityKey, userId, anonymousId]);
 
   const restorePersistedCart = async () => {
     try {
@@ -118,6 +135,13 @@ export const CartProvider = ({ children }) => {
     ));
     removeFromCartApi(id, userId, anonymousId, customer?.session_id)
       .catch(restorePersistedCart);
+    trackCustomerEvent('remove_from_cart', {
+      entity: {
+        type: 'product',
+        id,
+      },
+      metadata: { size: selectedSize, color: selectedColor },
+    });
   };
 
   const updateQuantity = (id, selectedSize, selectedColor, delta) => {

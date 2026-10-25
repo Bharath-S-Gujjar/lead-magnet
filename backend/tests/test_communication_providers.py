@@ -327,10 +327,18 @@ class TestCommunicationProviders(unittest.TestCase):
         self.assertEqual(res_w["provider"], "mock_wa")
 
     def test_get_communication_provider_auto_detection(self):
-        """Factory auto-detects multi_channel when credentials are configured."""
+        """Factory defaults strictly to dry_run even when credentials are configured, unless explicitly opted in."""
         with patch.dict(os.environ, {"COMMUNICATION_PROVIDER": "", "SMTP_USERNAME": "u", "SMTP_PASSWORD": "p"}, clear=False):
             p = get_communication_provider()
+            self.assertIsInstance(p, DryRunCommunicationProvider)
+
+        with patch.dict(os.environ, {"COMMUNICATION_PROVIDER": "multi_channel", "ALLOW_REAL_DISPATCH": "true", "SMTP_USERNAME": "u", "SMTP_PASSWORD": "p"}):
+            p = get_communication_provider()
             self.assertIsInstance(p, MultiChannelProvider)
+
+        with patch.dict(os.environ, {"COMMUNICATION_PROVIDER": "multi_channel", "ALLOW_REAL_DISPATCH": "false"}):
+            p = get_communication_provider()
+            self.assertIsInstance(p, DryRunCommunicationProvider)
 
         with patch.dict(os.environ, {"COMMUNICATION_PROVIDER": "dry_run"}):
             p = get_communication_provider()

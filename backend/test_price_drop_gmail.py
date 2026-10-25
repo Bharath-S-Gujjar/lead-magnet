@@ -22,12 +22,13 @@ from bson import ObjectId
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# Load backend/.env safely
-env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
-if os.path.exists(env_path):
-    dotenv.load_dotenv(env_path, override=True)
-else:
-    dotenv.load_dotenv()
+# Load backend/.env safely (skipped during automated testing to preserve test isolation)
+if os.getenv("TESTING") != "1":
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    if os.path.exists(env_path):
+        dotenv.load_dotenv(env_path, override=True)
+    else:
+        dotenv.load_dotenv()
 
 from communication_provider import GmailSMTPProvider, _build_html_body
 from opportunity_engine import OPP_PRODUCT_PRICE_DROP, build_opportunity_email_content

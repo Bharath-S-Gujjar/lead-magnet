@@ -22,7 +22,7 @@ _LAST_RESCORE_TIMESTAMPS = {}
 DEBOUNCE_SECONDS = 1.0
 
 
-def rescore_customer(customer_id, db, socketio=None):
+def rescore_customer(customer_id, db, socketio=None, force=False, raise_on_error=False):
     """Rescore a customer's lead state after a behavioral event.
 
     This is the central orchestrator that:
@@ -36,18 +36,22 @@ def rescore_customer(customer_id, db, socketio=None):
         customer_id: ObjectId or string customer identifier.
         db: PyMongo database object.
         socketio: Flask-SocketIO instance for live admin events (optional).
+        force: bool, if True bypasses debounce to guarantee scoring execution.
+        raise_on_error: bool, if True re-raises exceptions rather than returning None.
 
     Returns:
         dict or None: Updated lead state document, or None if debounced/skipped.
     """
     if not customer_id or db is None:
+        if raise_on_error:
+            raise ValueError("customer_id and db are required for rescoring")
         return None
 
-    # Debounce check — prevent scoring loops
+    # Debounce check — prevent scoring loops unless forced
     c_key = str(customer_id)
     now = time.time()
     last_scored = _LAST_RESCORE_TIMESTAMPS.get(c_key, 0)
-    if (now - last_scored) < DEBOUNCE_SECONDS:
+    if not force and (now - last_scored) < DEBOUNCE_SECONDS:
         return None
 
     _LAST_RESCORE_TIMESTAMPS[c_key] = now
@@ -56,6 +60,8 @@ def rescore_customer(customer_id, db, socketio=None):
         # 1. Update feature store
         feature_doc = upsert_customer_features(customer_id, db)
         if not feature_doc:
+            if raise_on_error:
+                raise ValueError(f"Could not aggregate features for customer {customer_id}")
             return None
 
         # 2. Run ML inference (for score history recording)
@@ -75,8 +81,10 @@ def rescore_customer(customer_id, db, socketio=None):
         return lead_state
 
     except Exception as e:
-        # Log but don't crash — rescoring failures should not block user operations
+        # Log error; re-raise if caller requested strict error handling
         print(f"[LeadScoringEngine] Rescore failed for {customer_id}: {e}")
+        if raise_on_error:
+            raise
         return None
 
 

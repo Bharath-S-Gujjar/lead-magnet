@@ -23,6 +23,7 @@ from communication_provider import (
     DryRunCommunicationProvider,
     normalize_whatsapp_phone,
 )
+from scoring_constants import HOT, WARM, HOT_PROBABILITY_EQUIV, WARM_PROBABILITY_EQUIV
 
 
 # Configurable cooldown period — prevents repeated marketing sends
@@ -421,7 +422,7 @@ def process_marketing_automation_event(event_id, db, provider=None, policy=None)
         raise ValueError(f"Automation event not found: {event_id}")
 
     if provider is None:
-        provider = DryRunCommunicationProvider()
+        provider = get_communication_provider()
 
     if policy is None:
         policy = DEFAULT_CHANNEL_POLICY
@@ -854,9 +855,9 @@ def trigger_lead_qualification_communication(customer_id, lead_state_doc=None, d
     prob = float(lead_state_doc.get("lead_probability") or 0.0)
     score = int(lead_state_doc.get("lead_score") or 0)
 
-    # Check 1: ONLY Hot / Qualified leads (prob >= 0.70 or score >= 70 or segment == "Hot")
-    if segment != "Hot" and prob < 0.70 and score < 70:
-        return {"skipped": True, "reason": "Customer is not a Hot qualified lead"}
+    # Check 1: ONLY Hot / Qualified leads (segment == Hot OR prob >= HOT_PROBABILITY_EQUIV OR score >= HOT)
+    if segment != "Hot" and prob < HOT_PROBABILITY_EQUIV and score < HOT:
+        return {"skipped": True, "reason": f"Customer is not a Hot qualified lead (score < {HOT})"}
 
     # Check 2: MUST be a transition into qualified (Not Qualified -> Qualified)
     if transition != "not_qualified_to_qualified" and not is_newly:

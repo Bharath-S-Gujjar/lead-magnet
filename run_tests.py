@@ -41,7 +41,7 @@ TEST_DATABASE_NAME = os.environ.get("TEST_MONGO_DB_NAME", "leadmagnet_test")
 os.environ["TESTING"] = "1"
 os.environ["MONGO_URI"] = TEST_MONGO_URI
 os.environ["MONGO_DB_NAME"] = TEST_DATABASE_NAME
-os.environ.setdefault("JWT_SECRET", "test-only-insecure-jwt-secret")
+os.environ.setdefault("JWT_SECRET", "test-only-insecure-jwt-secret-key-32b")
 os.environ.setdefault("ADMIN_USERNAME", "test_admin")
 os.environ.setdefault("ADMIN_PASSWORD", "test_admin_password")
 os.environ.setdefault("COMMUNICATION_PROVIDER", "dry_run")
