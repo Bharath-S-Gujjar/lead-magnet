@@ -104,6 +104,8 @@ from timestamp_utils import parse_and_normalize_timestamp, sort_events_chronolog
 app = Flask(__name__)
 
 DEFAULT_ALLOWED_ORIGINS = [
+    "https://lead-magnet-store.vercel.app",
+    "https://leadmagnetadmin.vercel.app",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:5174",
@@ -145,15 +147,16 @@ if FRONTEND_URL:
             if default_origin not in ALLOWED_ORIGINS:
                 ALLOWED_ORIGINS.append(default_origin)
 else:
-    ALLOWED_ORIGINS = [] if IS_PROD_ENV else DEFAULT_ALLOWED_ORIGINS
+    ALLOWED_ORIGINS = DEFAULT_ALLOWED_ORIGINS
 
+vercel_regex = re.compile(r"^https://[a-zA-Z0-9_\-]+\.vercel\.app$")
 if not IS_PROD_ENV:
-    cors_origins = [re.compile(r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$")]
+    cors_origins = [re.compile(r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"), vercel_regex]
     if ALLOWED_ORIGINS:
         cors_origins.extend([o for o in ALLOWED_ORIGINS if isinstance(o, str)])
     socketio_cors = "*"
 else:
-    cors_origins = ALLOWED_ORIGINS
+    cors_origins = ALLOWED_ORIGINS + [vercel_regex]
     socketio_cors = cors_origins
 
 CORS(app, origins=cors_origins, supports_credentials=True)
