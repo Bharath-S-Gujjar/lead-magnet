@@ -260,3 +260,15 @@ export async function getAdminRecentActivity(token, limit = 50) {
   });
   return res.data || [];
 }
+
+/**
+ * Trigger post-purchase recommendation email to a converted customer via Gmail.
+ */
+export async function triggerPostPurchaseRecommendationEmail({ token, customer_id, force = true } = {}) {
+  const res = await apiFetch('/api/marketing/trigger-post-purchase-email', {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify({ customer_id, force }),
+  });
+  return res.data;
+}

@@ -757,6 +757,47 @@ def run_customer_recency_rescore_job(
     }
 
 
+def run_qualified_cart_recovery_job(
+    db: Any = None,
+    owner_id: Optional[str] = None,
+    inactivity_hours: float = 4.0,
+    **kwargs: Any,
+) -> Dict[str, Any]:
+    """Execute qualified lead 4h inactivity recovery email evaluation across all qualified leads."""
+    if db is None:
+        try:
+            import app as app_module
+            db = getattr(app_module, "db", None)
+        except Exception:
+            pass
+
+    if db is None:
+        return {"status": "skipped", "reason": "Database unavailable"}
+
+    from marketing_automation_service import evaluate_qualified_leads_inactivity_cart_recovery
+    return evaluate_qualified_leads_inactivity_cart_recovery(db=db, inactivity_hours=inactivity_hours)
+
+
+def run_post_purchase_recommendations_job(
+    db: Any = None,
+    owner_id: Optional[str] = None,
+    **kwargs: Any,
+) -> Dict[str, Any]:
+    """Execute periodic post-purchase smart recommendation email evaluation across converted buyers."""
+    if db is None:
+        try:
+            import app as app_module
+            db = getattr(app_module, "db", None)
+        except Exception:
+            pass
+
+    if db is None:
+        return {"status": "skipped", "reason": "Database unavailable"}
+
+    from marketing_automation_service import evaluate_periodic_post_purchase_recommendations
+    return evaluate_periodic_post_purchase_recommendations(db=db)
+
+
 # ==============================================================================
 # Global Instance Helper & Registration
 # ==============================================================================
@@ -774,6 +815,8 @@ def get_scheduler(db: Any = None) -> LeadMagnetScheduler:
         opp_interval = int(os.getenv("OPPORTUNITY_PIPELINE_INTERVAL_SECONDS", "3600"))  # default 1 hour
         drop_interval = int(os.getenv("PRICE_DROP_PIPELINE_INTERVAL_SECONDS", "1800"))   # default 30 mins
         rescore_interval = int(os.getenv("CUSTOMER_RESCORE_INTERVAL_SECONDS", "86400")) # default 24 hours
+        recovery_interval = int(os.getenv("CART_RECOVERY_INTERVAL_SECONDS", "1800"))     # default 30 mins
+        post_purchase_interval = int(os.getenv("POST_PURCHASE_EMAIL_INTERVAL_SECONDS", "7200")) # default 2 hours
 
         _global_scheduler.register_job(
             job_id="opportunity_pipeline",
@@ -796,6 +839,22 @@ def get_scheduler(db: Any = None) -> LeadMagnetScheduler:
             name="Customer Recency Decay Rescore Job",
             interval_seconds=rescore_interval,
             func=run_customer_recency_rescore_job,
+            enabled=True,
+        )
+
+        _global_scheduler.register_job(
+            job_id="qualified_cart_recovery",
+            name="Qualified Lead 4h Inactivity Cart Recovery Job",
+            interval_seconds=recovery_interval,
+            func=run_qualified_cart_recovery_job,
+            enabled=True,
+        )
+
+        _global_scheduler.register_job(
+            job_id="post_purchase_recommendations_email",
+            name="Periodic Post-Purchase Smart Recommendations Email Job",
+            interval_seconds=post_purchase_interval,
+            func=run_post_purchase_recommendations_job,
             enabled=True,
         )
 

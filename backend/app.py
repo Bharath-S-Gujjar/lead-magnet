@@ -48,7 +48,11 @@ from product_lookup import resolve_product_doc, normalize_product_response
 from cart_service import get_user_cart, add_to_cart, update_cart_quantity, remove_from_cart, clear_cart
 from wishlist_service import get_user_wishlist, add_to_wishlist, remove_from_wishlist, clear_wishlist
 from order_service import create_order as create_order_from_cart, get_user_orders, get_order_by_id
-from recommendation_service import get_personalized_recommendations
+from recommendation_service import (
+    get_personalized_recommendations,
+    get_post_purchase_recommendations,
+    get_netflix_style_recommendations,
+)
 from marketing_service import get_all_campaigns, create_campaign, get_campaign_logs, evaluate_campaign_triggers
 from customer_feature_service import ensure_customer_features_indexes, aggregate_customer_features, upsert_customer_features, get_customer_features
 from customer_lead_state_service import ensure_customer_lead_state_indexes, get_customer_lead_state, sync_customer_lead_state
@@ -60,6 +64,8 @@ from marketing_automation_service import (
     trigger_order_confirmation_communication,
     trigger_cart_abandonment_communication,
     trigger_wishlist_reminder_communication,
+    send_qualified_lead_category_best_recovery_email,
+    evaluate_qualified_leads_inactivity_cart_recovery,
 )
 from admin_intelligence_service import (
     get_intelligence_overview,
@@ -2554,6 +2560,106 @@ def get_recommendations_route():
         return jsonify({"success": True, "data": serialized})
     except Exception as e:
         return jsonify({"success": False, "message": str(e), "data": []}), 400
+
+
+@app.route("/api/recommendations/post-purchase", methods=["GET"])
+@app.route("/api/recommendations/netflix-style", methods=["GET"])
+def get_post_purchase_recommendations_route():
+    """Return post-purchase clothing recommendations based on purchased items."""
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable", "data": {"carousels": []}}), 500
+
+    # Extract user identity from query param or Auth JWT token
+    user_id = request.args.get("user_id")
+    if not user_id:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header.split(" ", 1)[1]
+            try:
+                decoded = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+                user_id = decoded.get("sub") or decoded.get("user_id")
+            except Exception:
+                pass
+
+    anonymous_id = request.args.get("anonymous_id") or request.args.get("visitor_id")
+    limit_per_anchor = int(request.args.get("limit_per_anchor", 6))
+    max_anchors = int(request.args.get("max_anchors", 4))
+
+    try:
+        recs = get_netflix_style_recommendations(
+            products_collection=products_collection,
+            orders_collection=orders_collection,
+            user_id=user_id,
+            anonymous_id=anonymous_id,
+            limit_per_anchor=limit_per_anchor,
+            max_anchors=max_anchors,
+        )
+        return jsonify({"success": True, "data": recs})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e), "data": {"carousels": []}}), 400
+
+
+@app.route("/api/marketing/trigger-cart-recovery", methods=["POST"])
+def trigger_cart_recovery_route():
+    """Trigger or evaluate 4h inactivity recovery emails with top-rated category picks for qualified leads."""
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable"}), 500
+
+    body = request.get_json(silent=True) or {}
+    customer_id = body.get("customer_id") or request.args.get("customer_id")
+    inactivity_hours = float(body.get("inactivity_hours") or request.args.get("inactivity_hours") or 4.0)
+    force = bool(body.get("force", False))
+
+    try:
+        if customer_id:
+            res = send_qualified_lead_category_best_recovery_email(
+                customer_id=customer_id,
+                db=db,
+                inactivity_hours=inactivity_hours,
+                force=force,
+            )
+            return jsonify({"success": True, "data": res})
+        else:
+            res = evaluate_qualified_leads_inactivity_cart_recovery(
+                db=db,
+                inactivity_hours=inactivity_hours,
+            )
+            return jsonify({"success": True, "data": res})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+
+
+@app.route("/api/marketing/trigger-post-purchase-email", methods=["POST"])
+def trigger_post_purchase_email_route():
+    """Trigger periodic or individual smart post-purchase recommendation emails."""
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable"}), 500
+
+    from marketing_automation_service import (
+        send_post_purchase_smart_recommendation_email,
+        evaluate_periodic_post_purchase_recommendations,
+    )
+
+    body = request.get_json(silent=True) or {}
+    customer_id = body.get("customer_id") or request.args.get("customer_id")
+    force = bool(body.get("force", False) or str(request.args.get("force", "")).lower() in ("true", "1"))
+
+    try:
+        from admin_intelligence_service import _sanitize_doc
+        if customer_id:
+            res = send_post_purchase_smart_recommendation_email(
+                customer_id=customer_id,
+                db=db,
+                force=force,
+            )
+            return jsonify({"success": True, "data": _sanitize_doc(res)})
+        else:
+            res = evaluate_periodic_post_purchase_recommendations(
+                db=db,
+            )
+            return jsonify({"success": True, "data": _sanitize_doc(res)})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 400
 
 
 # --- Marketing Automation APIs (V2.7) ---

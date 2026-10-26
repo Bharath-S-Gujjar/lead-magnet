@@ -160,7 +160,6 @@ def get_qualified_leads_list(db, qualification_status="qualified", segment="all"
             query["lifecycle_status"] = "prospect"
         elif qualification_status == "qualified":
             query["qualification_status"] = "qualified"
-            query["lifecycle_status"] = "prospect"
         else:
             query["qualification_status"] = qualification_status
 

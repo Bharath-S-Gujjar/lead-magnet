@@ -1,6 +1,7 @@
 import React from 'react';
 import { ProductCard } from './ProductCard';
 import { ProductGridSkeleton } from './Skeleton';
+import { PurchasedProductRecommendations } from './PurchasedProductRecommendations';
 
 export const ProductGrid = ({ products, loading, error, onRetry, onResetFilters }) => {
   // 1. Skeletal Loading State
@@ -56,12 +57,30 @@ export const ProductGrid = ({ products, loading, error, onRetry, onResetFilters 
     );
   }
 
-  // 4. Success State (Render real product cards)
+  // 4. Success State (Render first 2 rows, then post-purchase recommendations, then remaining products)
+  const firstTwoRows = products.slice(0, 8);
+  const remainingProducts = products.slice(8);
+
   return (
-    <div className="grid-4" style={{ rowGap: '24px', columnGap: '20px' }}>
-      {products.map(product => (
-        <ProductCard key={product.id || product._id} product={product} />
-      ))}
+    <div className="product-catalog-flow">
+      {/* First 2 rows of products (4-column grid = 8 items) */}
+      <div className="grid-4" style={{ rowGap: '24px', columnGap: '20px' }}>
+        {firstTwoRows.map(product => (
+          <ProductCard key={product.id || product._id} product={product} />
+        ))}
+      </div>
+
+      {/* Post-Purchase Recommendations: displayed strictly after 2 rows of products */}
+      <PurchasedProductRecommendations />
+
+      {/* Remaining products continuation */}
+      {remainingProducts.length > 0 && (
+        <div className="grid-4" style={{ rowGap: '24px', columnGap: '20px' }}>
+          {remainingProducts.map(product => (
+            <ProductCard key={product.id || product._id} product={product} />
+          ))}
+        </div>
+      )}
     </div>
   );
 };

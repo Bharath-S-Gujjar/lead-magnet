@@ -40,11 +40,11 @@ export const CustomerTable = ({
   };
 
   const getQualificationBadge = (status, lifecycle) => {
-    if (lifecycle === 'repeat_customer' || lifecycle === 'converted') {
-      return <span className="badge badge-subtle" style={{ padding: '4px 8px', fontSize: '0.78rem', opacity: 0.75 }}>Excluded</span>;
-    }
     if (status === 'qualified') {
       return <span className="badge badge-emerald" style={{ padding: '4px 10px', fontSize: '0.8rem', fontWeight: 700 }}>Qualified Lead</span>;
+    }
+    if (lifecycle === 'repeat_customer' || lifecycle === 'converted') {
+      return <span className="badge badge-subtle" style={{ padding: '4px 10px', fontSize: '0.8rem' }}>Unqualified Lead</span>;
     }
     return <span className="badge badge-subtle" style={{ padding: '4px 10px', fontSize: '0.8rem' }}>Unqualified Prospect</span>;
   };

@@ -28,6 +28,7 @@ WIPE = [
     'marketing_automation_events',
     'marketing_opportunities',
     'admin_notifications',
+    'whatsapp_webhook_events',
 ]
 
 total = 0

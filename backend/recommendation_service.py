@@ -108,3 +108,156 @@ def get_personalized_recommendations(
                     break
 
     return recommended
+
+
+def get_post_purchase_recommendations(
+    products_collection,
+    orders_collection,
+    user_id=None,
+    anonymous_id=None,
+    limit_per_anchor=4,
+    max_anchors=3,
+):
+    """Generate post-purchase clothing recommendations.
+
+    Header: "Because you purchased '{Product name}':"
+    Excludes already purchased items and ranks by category, brand affinity, and rating.
+    """
+    if products_collection is None or orders_collection is None:
+        return {"has_purchases": False, "anchor_count": 0, "carousels": []}
+
+    # 1. Fetch completed orders
+    order_query = []
+    if user_id:
+        try:
+            order_query.append({"user_id": ObjectId(user_id)})
+        except Exception:
+            pass
+        order_query.append({"user_id": str(user_id)})
+    if anonymous_id:
+        order_query.append({"anonymous_id": str(anonymous_id)})
+
+    if not order_query:
+        return {"has_purchases": False, "anchor_count": 0, "carousels": []}
+
+    raw_orders = list(orders_collection.find({"$or": order_query}).sort("created_at", -1))
+    from customer_feature_service import is_completed_order
+    completed_orders = [o for o in raw_orders if is_completed_order(o)]
+
+    if not completed_orders:
+        return {"has_purchases": False, "anchor_count": 0, "carousels": []}
+
+    # 2. Extract all purchased product IDs and anchor items
+    purchased_product_ids = set()
+    anchor_candidates = []
+    seen_anchor_keys = set()
+
+    for order in completed_orders:
+        items = order.get("items") or []
+        for it in items:
+            raw_pid = str(it.get("product_id") or it.get("id") or it.get("_id") or "")
+            if raw_pid:
+                purchased_product_ids.add(raw_pid)
+
+            cat = str(it.get("category") or "").strip()
+            name = str(it.get("name") or it.get("title") or "").strip()
+            brand = str(it.get("brand") or "").strip()
+
+            anchor_key = f"{cat}::{name}".lower()
+            if anchor_key not in seen_anchor_keys and (cat or name):
+                seen_anchor_keys.add(anchor_key)
+                anchor_candidates.append({
+                    "product_id": raw_pid,
+                    "title": name or "Product",
+                    "category": cat,
+                    "brand": brand,
+                })
+
+    if not anchor_candidates:
+        return {"has_purchases": False, "anchor_count": 0, "carousels": []}
+
+    carousels = []
+
+    for anchor in anchor_candidates[:max_anchors]:
+        anchor_title = anchor["title"]
+        anchor_cat = anchor["category"]
+        anchor_brand = anchor["brand"]
+
+        # Efficiently fetch matching candidate products directly from MongoDB
+        # instead of downloading all 120k+ catalog products
+        or_clauses = []
+        if anchor_cat:
+            or_clauses.append({"category": anchor_cat})
+        if anchor_brand:
+            or_clauses.append({"brand": anchor_brand})
+
+        cand_query = {"$or": or_clauses} if or_clauses else {}
+        candidate_products = list(products_collection.find(cand_query).limit(50))
+
+        if len(candidate_products) < limit_per_anchor:
+            extra = list(products_collection.find({}).limit(50))
+            candidate_products.extend([p for p in extra if str(p.get("_id")) not in {str(cp.get("_id")) for cp in candidate_products}])
+
+        scored = []
+        for prod in candidate_products:
+            p_norm = normalize_product_response(prod)
+            p_id = str(p_norm.get("product_id") or p_norm.get("id") or "")
+
+            # Exclude already purchased products!
+            if p_id in purchased_product_ids or str(prod.get("_id") or "") in purchased_product_ids:
+                continue
+
+            p_cat = str(prod.get("category") or "").strip()
+            p_brand = str(prod.get("brand") or "").strip()
+
+            score = 0.0
+            # Same category boost (strongest link: e.g. bought a Shirt -> other Shirts)
+            if anchor_cat and p_cat.casefold() == anchor_cat.casefold():
+                score += 15.0
+
+            # Same brand boost
+            if anchor_brand and p_brand.casefold() == anchor_brand.casefold():
+                score += 8.0
+
+            if score <= 0.0:
+                continue
+
+            # Rating boost
+            try:
+                r_val = float(prod.get("rating") or 4.0)
+            except (TypeError, ValueError):
+                r_val = 4.0
+            score += r_val * 2.0
+
+            # Discount boost
+            try:
+                disc_val = float(prod.get("discount_percent") or prod.get("discount") or 0.0)
+            except (TypeError, ValueError):
+                disc_val = 0.0
+            score += disc_val / 10.0
+
+            scored.append((score, p_norm))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        top_recs = [item[1] for item in scored[:limit_per_anchor]]
+
+        if top_recs:
+            carousels.append({
+                "anchor_product_id": anchor["product_id"],
+                "anchor_title": anchor_title,
+                "anchor_category": anchor_cat or "Fashion",
+                "anchor_brand": anchor_brand or "Top Brand",
+                "headline": f"Because you purchased '{anchor_title}':",
+                "subtitle": f"Top-rated styles in {anchor_cat or 'Fashion'} recommended for you",
+                "recommendations": top_recs,
+            })
+
+    return {
+        "has_purchases": True,
+        "anchor_count": len(carousels),
+        "carousels": carousels,
+    }
+
+
+# Backwards compatibility alias
+get_netflix_style_recommendations = get_post_purchase_recommendations

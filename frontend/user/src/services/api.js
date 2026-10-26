@@ -440,3 +440,18 @@ export async function fetchRecommendations(userId, anonymousId, limit = 8) {
   const payload = await parseJsonResponse(response);
   return payload.data || [];
 }
+
+export async function fetchPostPurchaseRecommendations(userId, anonymousId, limitPerAnchor = 4, maxAnchors = 3) {
+  const query = userId
+    ? `user_id=${userId}&limit_per_anchor=${limitPerAnchor}&max_anchors=${maxAnchors}`
+    : `anonymous_id=${anonymousId}&limit_per_anchor=${limitPerAnchor}&max_anchors=${maxAnchors}`;
+  const response = await fetch(`${API_BASE_URL}/api/recommendations/post-purchase?${query}`, {
+    headers: customerAuthHeaders(userId),
+  });
+  const payload = await parseJsonResponse(response);
+  return payload.data || { has_purchases: false, anchor_count: 0, carousels: [] };
+}
+
+// Backwards compatibility alias
+export const fetchNetflixRecommendations = fetchPostPurchaseRecommendations;
+

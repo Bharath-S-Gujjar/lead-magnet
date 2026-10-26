@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { io } from 'socket.io-client';
 import { useAdminAuth } from '../../context/AdminAuthContext';
-import { getAdminCustomerIntelligence } from '../../services/api';
+import { getAdminCustomerIntelligence, triggerPostPurchaseRecommendationEmail } from '../../services/api';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList
 } from 'recharts';
@@ -163,6 +163,31 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
   const [error, setError] = useState('');
   const [shouldRender, setShouldRender] = useState(isOpen);
   const [isSlideOpen, setIsSlideOpen] = useState(false);
+  const [emailStatus, setEmailStatus] = useState(null);
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+
+  const handleSendPostPurchaseEmail = async () => {
+    if (!customerId) return;
+    setIsSendingEmail(true);
+    setEmailStatus(null);
+    try {
+      const res = await triggerPostPurchaseRecommendationEmail({
+        token: admin?.token,
+        customer_id: customerId,
+        force: true,
+      });
+      if (res?.status === 'sent') {
+        setEmailStatus({ type: 'success', message: 'Recommendations email sent via Gmail!' });
+      } else {
+        setEmailStatus({ type: 'info', message: res?.reason || 'Email completed or skipped.' });
+      }
+    } catch (err) {
+      setEmailStatus({ type: 'error', message: err.message || 'Failed to send recommendations email.' });
+    } finally {
+      setIsSendingEmail(false);
+      setTimeout(() => setEmailStatus(null), 6000);
+    }
+  };
 
   // Manage mounting for smooth slide-in / slide-out CSS transitions
   useEffect(() => {
@@ -379,6 +404,8 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
                         </span>
                         {lead.qualification_status === 'qualified' ? (
                           <span className="badge badge-emerald" style={{ fontWeight: 700 }}>Qualified Lead</span>
+                        ) : (lead.lifecycle_status === 'converted' || lead.lifecycle_status === 'repeat_customer') ? (
+                          <span className="badge badge-subtle">Unqualified Lead</span>
                         ) : (
                           <span className="badge badge-subtle">Unqualified Prospect</span>
                         )}
@@ -579,15 +606,56 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
 
               {/* ── SECTION 7: Recent Orders ── */}
               <div>
-                <h3 className="heading-md" style={{ color: 'var(--text-primary)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <ShoppingBag size={18} style={{ color: 'var(--accent-indigo)' }} />
-                  <span>Recent Orders ({orders.length})</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
+                  <h3 className="heading-md" style={{ color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <ShoppingBag size={18} style={{ color: 'var(--accent-indigo)' }} />
+                    <span>Recent Orders ({orders.length})</span>
+                    {orders.length > 0 && (
+                      <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginLeft: '6px' }}>
+                        Total: <strong style={{ color: '#10b981' }}>₹{totalRevenue.toLocaleString('en-IN')}</strong>
+                      </span>
+                    )}
+                  </h3>
                   {orders.length > 0 && (
-                    <span style={{ marginLeft: 'auto', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                      Total: <strong style={{ color: '#10b981' }}>₹{totalRevenue.toLocaleString('en-IN')}</strong>
-                    </span>
+                    <button
+                      onClick={handleSendPostPurchaseEmail}
+                      disabled={isSendingEmail}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        fontSize: '0.78rem',
+                        fontWeight: 600,
+                        padding: '5px 12px',
+                        background: 'rgba(99, 102, 241, 0.12)',
+                        color: 'var(--color-primary, #6366f1)',
+                        border: '1px solid rgba(99, 102, 241, 0.3)',
+                        borderRadius: '6px',
+                        cursor: isSendingEmail ? 'not-allowed' : 'pointer',
+                        transition: 'all 0.15s ease'
+                      }}
+                      title="Send customer interest post-purchase email via Gmail (same brand + quality lower price alternative)"
+                    >
+                      <Mail size={13} />
+                      <span>{isSendingEmail ? 'Sending Gmail...' : 'Send Recommendation Email'}</span>
+                    </button>
                   )}
-                </h3>
+                </div>
+
+                {emailStatus && (
+                  <div style={{
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    marginBottom: '10px',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    background: emailStatus.type === 'success' ? 'rgba(16, 185, 129, 0.15)' : (emailStatus.type === 'error' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(99, 102, 241, 0.15)'),
+                    color: emailStatus.type === 'success' ? '#10b981' : (emailStatus.type === 'error' ? '#ef4444' : '#818cf8'),
+                    border: `1px solid ${emailStatus.type === 'success' ? 'rgba(16, 185, 129, 0.3)' : (emailStatus.type === 'error' ? 'rgba(239, 68, 68, 0.3)' : 'rgba(99, 102, 241, 0.3)')}`,
+                  }}>
+                    {emailStatus.message}
+                  </div>
+                )}
                 {orders.length === 0 ? (
                   <div style={{ padding: '16px', background: 'var(--table-header-bg)', borderRadius: 'var(--radius-md)', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
                     No purchase history recorded yet.

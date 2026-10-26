@@ -517,11 +517,25 @@ class LeadScoringAndDataSyncTests(unittest.TestCase):
         st1 = sync_customer_lead_state(user_id, self.db)
         self.assertEqual(st1["qualification_status"], "qualified")
 
-        # Permutation 2: Converted customer (orders > 0) -> NOT qualified
+        # Permutation 2: Converted customer without active post-order checkout -> not_qualified
         self.features.delete_many({})
-        self.features.insert_one(base_doc(orders_count=1, total_order_value=200.0))
+        self.features.insert_one(base_doc(
+            orders_count=1,
+            total_order_value=200.0,
+            checkout_attempts=0,
+            checkout_started_within_24h=False,
+            last_checkout_action_at=None,
+        ))
         st2 = sync_customer_lead_state(user_id, self.db)
         self.assertEqual(st2["qualification_status"], "not_qualified")
+        self.assertEqual(st2["lifecycle_status"], "converted")
+
+        # Dynamic Re-qualification: Converted customer returns with new active checkout & cart -> dynamically qualified!
+        self.features.delete_many({})
+        self.features.insert_one(base_doc(orders_count=1, total_order_value=200.0, checkout_started_within_24h=True))
+        st2_re = sync_customer_lead_state(user_id, self.db)
+        self.assertEqual(st2_re["qualification_status"], "qualified")
+        self.assertEqual(st2_re["lifecycle_status"], "converted")
 
         # Permutation 3: Empty cart (cart_item_count = 0) -> NOT qualified
         self.features.delete_many({})

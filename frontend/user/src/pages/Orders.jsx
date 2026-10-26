@@ -4,6 +4,7 @@ import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
 import { fetchCustomerOrders, getCustomerSession, trackCustomerEvent } from '../services/api';
 import { getOptimizedImageUrl } from '../utils/imageOptimizer';
+import { PurchasedProductRecommendations } from '../components/PurchasedProductRecommendations';
 
 export const Orders = () => {
   const navigate = useNavigate();
@@ -134,6 +135,9 @@ export const Orders = () => {
           );
         })}
       </div>
+
+      {/* Recommendations based on purchased products */}
+      <PurchasedProductRecommendations />
     </div>
   );
 };
