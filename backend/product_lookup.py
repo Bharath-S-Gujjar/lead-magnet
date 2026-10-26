@@ -5,8 +5,20 @@ Supports both:
   2. Legacy MongoDB ObjectId values where required by test fixtures or historical data.
 """
 
+import time
 from typing import Any, Dict, Optional, Union
 from bson import ObjectId
+
+_PRODUCT_CACHE: Dict[str, Any] = {}
+_PRODUCT_CACHE_TIME: Dict[str, float] = {}
+_PRODUCT_CACHE_TTL = 300.0  # 5 minutes
+_MAX_CACHE_SIZE = 5000
+
+
+def clear_product_cache():
+    """Clear in-memory product lookup cache."""
+    _PRODUCT_CACHE.clear()
+    _PRODUCT_CACHE_TIME.clear()
 
 
 def resolve_product_doc(
@@ -27,51 +39,75 @@ def resolve_product_doc(
     if product_id is None or products_collection is None:
         return None
 
+    cache_key = str(product_id).strip()
+    if not cache_key:
+        return None
+
+    now = time.time()
+    if cache_key in _PRODUCT_CACHE and (now - _PRODUCT_CACHE_TIME.get(cache_key, 0) < _PRODUCT_CACHE_TTL):
+        return _PRODUCT_CACHE[cache_key]
+
+    def _cache_and_return(doc):
+        if not doc:
+            return None
+        if len(_PRODUCT_CACHE) >= _MAX_CACHE_SIZE:
+            _PRODUCT_CACHE.clear()
+            _PRODUCT_CACHE_TIME.clear()
+        _PRODUCT_CACHE[cache_key] = doc
+        _PRODUCT_CACHE_TIME[cache_key] = now
+        p_id = str(doc.get("product_id") or "")
+        raw_id = str(doc.get("_id") or "")
+        if p_id:
+            _PRODUCT_CACHE[p_id] = doc
+            _PRODUCT_CACHE_TIME[p_id] = now
+        if raw_id:
+            _PRODUCT_CACHE[raw_id] = doc
+            _PRODUCT_CACHE_TIME[raw_id] = now
+        return doc
+
     # Handle ObjectId directly
     if isinstance(product_id, ObjectId):
         doc = products_collection.find_one({"_id": product_id})
         if doc:
-            return doc
-        return products_collection.find_one({"product_id": str(product_id)})
+            return _cache_and_return(doc)
+        return _cache_and_return(products_collection.find_one({"product_id": str(product_id)}))
 
-    pid_str = str(product_id).strip()
-    if not pid_str:
-        return None
+    pid_str = cache_key
 
     # 1. Myntra ID string lookup
     if pid_str.startswith("myntra_"):
         doc = products_collection.find_one({"product_id": pid_str})
         if doc:
-            return doc
+            return _cache_and_return(doc)
         source_id = pid_str.replace("myntra_", "", 1)
         doc = products_collection.find_one({"source_product_id": source_id})
         if doc:
-            return doc
+            return _cache_and_return(doc)
 
     # 2. Direct product_id match
     doc = products_collection.find_one({"product_id": pid_str})
     if doc:
-        return doc
+        return _cache_and_return(doc)
 
     # 3. Legacy ObjectId match (24 hex characters)
     if ObjectId.is_valid(pid_str):
         try:
             doc = products_collection.find_one({"_id": ObjectId(pid_str)})
             if doc:
-                return doc
+                return _cache_and_return(doc)
         except Exception:
             pass
 
     # 4. Source product ID match
     doc = products_collection.find_one({"source_product_id": pid_str})
     if doc:
-        return doc
+        return _cache_and_return(doc)
 
     # 5. Prefixed 'myntra_{pid_str}' match
     if not pid_str.startswith("myntra_"):
         doc = products_collection.find_one({"product_id": f"myntra_{pid_str}"})
         if doc:
-            return doc
+            return _cache_and_return(doc)
 
     return None
 

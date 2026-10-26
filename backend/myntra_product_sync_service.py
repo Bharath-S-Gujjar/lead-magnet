@@ -38,7 +38,7 @@ def ensure_myntra_product_indexes(collection: Any) -> None:
                     existing.add(idx["name"])
 
         indexes_to_create = [
-            ("product_id_1", [("product_id", 1)], {"unique": True}),
+            ("product_id_1", [("product_id", 1)], {"unique": True, "sparse": True}),
             ("source_product_id_1", [("source_product_id", 1)], {}),
             ("category_1", [("category", 1)], {}),
             ("brand_1", [("brand", 1)], {}),

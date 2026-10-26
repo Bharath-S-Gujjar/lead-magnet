@@ -74,8 +74,17 @@ def _session_duration_seconds(session):
     return 0.0
 
 
+_ENSURED_FEATURE_INDEXES = set()
+_CACHED_PROD_COL_NAME = {}
+
+
 def ensure_customer_features_indexes(customer_features_collection):
     """Safely ensure unique index on customer_id in customer_features collection."""
+    if customer_features_collection is None:
+        return
+    col_id = id(customer_features_collection)
+    if col_id in _ENSURED_FEATURE_INDEXES:
+        return
     try:
         existing = {idx["name"] for idx in customer_features_collection.list_indexes()}
         if "customer_id_1" not in existing:
@@ -85,9 +94,29 @@ def ensure_customer_features_indexes(customer_features_collection):
                 name="customer_id_1",
                 background=True
             )
+        _ENSURED_FEATURE_INDEXES.add(col_id)
     except Exception:
         # Ignore indexing error if caller provides a mock or lightweight collection
         pass
+
+
+def _resolve_products_col(db):
+    if isinstance(db, dict):
+        return db.get("myntra_products") or db.get("products")
+    db_id = getattr(db, "name", id(db))
+    if db_id in _CACHED_PROD_COL_NAME:
+        return db[_CACHED_PROD_COL_NAME[db_id]]
+    try:
+        col_names = db.list_collection_names()
+        if "myntra_products" in col_names:
+            _CACHED_PROD_COL_NAME[db_id] = "myntra_products"
+        elif "products" in col_names:
+            _CACHED_PROD_COL_NAME[db_id] = "products"
+        else:
+            _CACHED_PROD_COL_NAME[db_id] = "myntra_products"
+        return db[_CACHED_PROD_COL_NAME[db_id]]
+    except Exception:
+        return db["myntra_products"]
 
 
 def _extract_product_id(event):
@@ -115,19 +144,7 @@ def aggregate_customer_features(customer_id, db):
     cart_col = db["cart"]
     wishlist_col = db["wishlist"]
     orders_col = db["orders"]
-    if isinstance(db, dict):
-        products_col = db.get("myntra_products") or db.get("products")
-    else:
-        try:
-            col_names = db.list_collection_names()
-            if "myntra_products" in col_names:
-                products_col = db["myntra_products"]
-            elif "products" in col_names:
-                products_col = db["products"]
-            else:
-                products_col = db["myntra_products"]
-        except Exception:
-            products_col = db["myntra_products"]
+    products_col = _resolve_products_col(db)
 
     c_oid = _to_object_id(customer_id)
     profile = None

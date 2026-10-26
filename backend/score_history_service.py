@@ -15,8 +15,16 @@ from bson import ObjectId
 from customer_feature_service import _to_object_id
 
 
+_ENSURED_SCORE_HISTORY_INDEXES = set()
+
+
 def ensure_score_history_indexes(db):
     """Create compound index on (customer_id, timestamp) for efficient queries."""
+    if db is None:
+        return
+    db_id = getattr(db, "name", id(db))
+    if db_id in _ENSURED_SCORE_HISTORY_INDEXES:
+        return
     try:
         col = db["lead_score_history"]
         existing = {idx["name"] for idx in col.list_indexes()}
@@ -26,6 +34,7 @@ def ensure_score_history_indexes(db):
                 name="customer_id_1_timestamp_-1",
                 background=True,
             )
+        _ENSURED_SCORE_HISTORY_INDEXES.add(db_id)
     except Exception:
         pass
 

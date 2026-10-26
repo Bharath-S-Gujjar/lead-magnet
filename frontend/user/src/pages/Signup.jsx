@@ -19,6 +19,7 @@ function Signup() {
   });
   const [errors, setErrors] = useState({});
   const [message, setMessage] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const validateForm = (data) => {
     const nextErrors = {};
@@ -70,29 +71,36 @@ function Signup() {
       return;
     }
 
-    const result = await signup({
-      fullName: formData.fullName.trim(),
-      username: formData.fullName.trim().toLowerCase().replace(/\s+/g, ''),
-      age: Number(formData.age),
-      gender: formData.gender,
-      dob: formData.dob,
-      phone: formData.phone.trim(),
-      email: formData.email.trim(),
-      password: formData.password,
-    });
-
-    if (!result.success) {
-      setMessage(result.message);
-      return;
-    }
-
-    setMessage('');
-    navigate('/login', {
-      state: {
+    setSubmitting(true);
+    try {
+      const result = await signup({
+        fullName: formData.fullName.trim(),
+        username: formData.fullName.trim().toLowerCase().replace(/\s+/g, ''),
+        age: Number(formData.age),
+        gender: formData.gender,
+        dob: formData.dob,
+        phone: formData.phone.trim(),
         email: formData.email.trim(),
-        message: 'Account created successfully! Please log in with your credentials.',
-      },
-    });
+        password: formData.password,
+      });
+
+      if (!result.success) {
+        setMessage(result.message);
+        setSubmitting(false);
+        return;
+      }
+
+      setMessage('');
+      navigate('/login', {
+        state: {
+          email: formData.email.trim(),
+          message: 'Account created successfully! Please log in with your credentials.',
+        },
+      });
+    } catch (e) {
+      setMessage('Registration failed. Please try again.');
+      setSubmitting(false);
+    }
   };
 
   const updateField = (field, value) => {
@@ -208,9 +216,10 @@ function Signup() {
           {message ? <div className="error-text">{message}</div> : null}
           <NavPillButton
             variant="register"
-            label="Register Account"
+            label={submitting ? "Creating Account..." : "Register Account"}
+            disabled={submitting}
             onClick={handleSubmit}
-            style={{ width: '100%', marginTop: '12px' }}
+            style={{ width: '100%', marginTop: '12px', opacity: submitting ? 0.7 : 1 }}
           />
         </form>
 

@@ -21,6 +21,7 @@ def resolve_anonymous_identity(
     wishlist_collection=None,
     customer_features_collection=None,
     db=None,
+    sync_score=True,
 ):
     """Associate existing anonymous records with an authenticated user.
 
@@ -104,12 +105,13 @@ def resolve_anonymous_identity(
                 db["customer_lead_state"].delete_many({"customer_id": anonymous_id})
         except Exception:
             pass
-        try:
-            from lead_scoring_engine import rescore_customer
-            rescore_customer(user_id, db)
-        except Exception:
-            from customer_feature_service import upsert_customer_features
-            upsert_customer_features(user_id, db)
+        if sync_score:
+            try:
+                from lead_scoring_engine import rescore_customer
+                rescore_customer(user_id, db)
+            except Exception:
+                from customer_feature_service import upsert_customer_features
+                upsert_customer_features(user_id, db)
 
     return {
         "sessions_merged": sessions_result.modified_count,

@@ -14,6 +14,7 @@ function Login() {
   const [customerForm, setCustomerForm] = useState({ identifier: '', password: '' });
   const [error, setError] = useState('');
   const [successNotice, setSuccessNotice] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (location.state?.message) {
@@ -39,22 +40,30 @@ function Login() {
       return;
     }
 
-    if (isAdminMode) {
-      const result = await adminLogin(customerForm.identifier, customerForm.password);
-      if (!result.success) {
-        setError(result.message);
+    setSubmitting(true);
+    try {
+      if (isAdminMode) {
+        const result = await adminLogin(customerForm.identifier, customerForm.password);
+        if (!result.success) {
+          setError(result.message);
+          setSubmitting(false);
+          return;
+        }
+        navigate('/admin');
         return;
       }
-      navigate('/admin');
-      return;
-    }
 
-    const result = await login(customerForm.identifier, customerForm.password);
-    if (!result.success) {
-      setError(result.message);
-      return;
+      const result = await login(customerForm.identifier, customerForm.password);
+      if (!result.success) {
+        setError(result.message);
+        setSubmitting(false);
+        return;
+      }
+      navigate('/');
+    } catch (e) {
+      setError('Login failed. Please try again.');
+      setSubmitting(false);
     }
-    navigate('/');
   };
 
   return (
@@ -97,10 +106,10 @@ function Login() {
           </label>
           {error ? <div className="error-text">{error}</div> : null}
           <UserLoginButton
-            label={isAdminMode ? 'Admin Sign In' : 'Sign In'}
+            label={submitting ? 'Signing In...' : (isAdminMode ? 'Admin Sign In' : 'Sign In')}
             onClick={handleCustomerSubmit}
-            disabled={!isCustomerValid}
-            style={{ width: '100%', marginTop: '8px' }}
+            disabled={!isCustomerValid || submitting}
+            style={{ width: '100%', marginTop: '8px', opacity: submitting ? 0.7 : 1 }}
           />
         </form>
 

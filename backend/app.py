@@ -11,6 +11,7 @@ import jwt
 import datetime
 import time
 import math
+import threading
 from dotenv import load_dotenv
 from pymongo import MongoClient
 
@@ -301,7 +302,32 @@ def bind_collections(client):
     ensure_customer_features_indexes(customer_features_collection)
     ensure_customer_lead_state_indexes(customer_lead_state_collection)
     ensure_marketing_automation_indexes(db)
-    ensure_score_history_indexes(db)
+    ensure_customer_performance_indexes(db)
+    try:
+        threading.Thread(target=get_cached_catalog, daemon=True).start()
+    except Exception:
+        pass
+
+
+def ensure_customer_performance_indexes(database):
+    """Ensure high-performance query indexes on customer collections."""
+    if database is None:
+        return
+    try:
+        database["user_profiles"].create_index([("email", 1)], sparse=True, background=True)
+        database["user_profiles"].create_index([("username", 1)], sparse=True, background=True)
+        database["user_profiles"].create_index([("phone", 1)], sparse=True, background=True)
+        database["user_profiles"].create_index([("visitor_id", 1)], sparse=True, background=True)
+        database["sessions"].create_index([("anonymous_id", 1)], background=True)
+        database["sessions"].create_index([("visitor_id", 1)], background=True)
+        database["sessions"].create_index([("user_id", 1)], background=True)
+        database["events"].create_index([("user_id", 1), ("timestamp", -1)], background=True)
+        database["events"].create_index([("session_id", 1)], background=True)
+        database["events"].create_index([("anonymous_id", 1)], background=True)
+        database["orders"].create_index([("user_id", 1), ("created_at", -1)], background=True)
+        database["cart"].create_index([("user_id", 1)], background=True)
+    except Exception:
+        pass
 
 
 mongo_client, MONGO_AVAILABLE = create_mongo_client()
@@ -326,6 +352,20 @@ def ensure_mongo_connection():
 from bson import ObjectId
 
 LEAD_STATUSES = {"New", "Contacted", "Qualified", "Converted", "Lost"}
+
+
+def async_rescore_customer(customer_id, force=False):
+    """Run rescore_customer asynchronously in a daemon thread, or synchronously in testing mode."""
+    if not customer_id or not MONGO_AVAILABLE:
+        return None
+    def _run():
+        try:
+            rescore_customer(customer_id, db, socketio=socketio, force=force)
+        except Exception as e:
+            print(f"[AsyncRescore] Background rescore exception for {customer_id}: {e}")
+    if app.config.get("TESTING"):
+        return _run()
+    threading.Thread(target=_run, daemon=True).start()
 
 
 def serialize_mongo_value(value):
@@ -668,6 +708,7 @@ def signup():
             wishlist_collection,
             customer_features_collection,
             db,
+            sync_score=bool(app.config.get("TESTING")),
         )
 
         try:
@@ -693,29 +734,34 @@ def signup():
             pass
 
         try:
-            name_display = full_name or email
+            user_full_name = user_doc.get("full_name") or email
             create_admin_notification(
                 db,
                 notif_type="new_customer",
                 title="New Customer",
-                message=f"Customer registered: {name_display}",
+                message=f"Customer registered: {user_full_name}",
                 customer_id=str(user_id),
-                metadata={"email": email, "full_name": full_name},
+                metadata={"email": email, "full_name": user_full_name},
                 socketio=socketio
             )
         except Exception:
             pass
 
-        try:
-            if not app.config.get("TESTING"):
-                trigger_registration_communication(str(user_id), db)
-        except Exception:
-            pass
+        def _async_signup_tasks(u_id_str, u_id_obj):
+            try:
+                if not app.config.get("TESTING"):
+                    trigger_registration_communication(u_id_str, db)
+            except Exception:
+                pass
+            try:
+                rescore_customer(u_id_obj, db, socketio=socketio, force=True)
+            except Exception:
+                pass
 
-        try:
-            rescore_customer(user_id, db, socketio=socketio, force=True)
-        except Exception:
-            pass
+        if app.config.get("TESTING"):
+            _async_signup_tasks(str(user_id), user_id)
+        else:
+            threading.Thread(target=_async_signup_tasks, args=(str(user_id), user_id), daemon=True).start()
 
         return jsonify({
             "success": True,
@@ -778,6 +824,7 @@ def login():
             wishlist_collection,
             customer_features_collection,
             db,
+            sync_score=bool(app.config.get("TESTING")),
         )
 
         try:
@@ -801,10 +848,16 @@ def login():
         except Exception:
             pass
 
-        try:
-            rescore_customer(user["_id"], db, socketio=socketio)
-        except Exception:
-            pass
+        def _async_login_tasks(u_id_obj):
+            try:
+                rescore_customer(u_id_obj, db, socketio=socketio)
+            except Exception:
+                pass
+
+        if app.config.get("TESTING"):
+            _async_login_tasks(user["_id"])
+        else:
+            threading.Thread(target=_async_login_tasks, args=(user["_id"],), daemon=True).start()
 
         return jsonify({
             "success": True,
@@ -929,6 +982,49 @@ def track():
     return _add_deprecation_headers(response, "/api/customer/lead-score")
 
 
+_catalog_cache = {
+    "items": None,
+    "by_id": {},
+    "cached_at": 0,
+    "lock": threading.Lock(),
+}
+
+
+def get_cached_catalog(force_refresh=False):
+    """Retrieve catalog products from memory cache, refreshing from MongoDB every 15 minutes."""
+    global _catalog_cache
+    now = time.time()
+    if not force_refresh and _catalog_cache["items"] is not None and (now - _catalog_cache["cached_at"] < 900):
+        return _catalog_cache["items"], _catalog_cache["by_id"]
+
+    with _catalog_cache["lock"]:
+        if not force_refresh and _catalog_cache["items"] is not None and (now - _catalog_cache["cached_at"] < 900):
+            return _catalog_cache["items"], _catalog_cache["by_id"]
+
+        try:
+            if not MONGO_AVAILABLE or products_collection is None:
+                return _catalog_cache["items"] or [], _catalog_cache["by_id"] or {}
+            raw_items = list(products_collection.find({}))
+            norm_items = [normalize_product_response(item) for item in raw_items]
+            by_id = {}
+            for item in norm_items:
+                pid = str(item.get("product_id") or "")
+                raw_id = str(item.get("_id") or "")
+                if pid:
+                    by_id[pid] = item
+                if raw_id:
+                    by_id[raw_id] = item
+
+            _catalog_cache["items"] = norm_items
+            _catalog_cache["by_id"] = by_id
+            _catalog_cache["cached_at"] = now
+            return norm_items, by_id
+        except Exception:
+            if _catalog_cache["items"] is not None:
+                return _catalog_cache["items"], _catalog_cache["by_id"]
+            return [], {}
+
+
 @app.route("/api/products", methods=["GET"])
 def get_products():
     if not MONGO_AVAILABLE:
@@ -940,8 +1036,16 @@ def get_products():
         }), 500
 
     try:
-        page_arg = request.args.get("page", 1)
-        limit_arg = request.args.get("limit", 24)
+        try:
+            page = max(1, int(request.args.get("page", 1)))
+        except (ValueError, TypeError):
+            page = 1
+
+        try:
+            limit = max(1, min(int(request.args.get("limit", 24)), 100))
+        except (ValueError, TypeError):
+            limit = 24
+
         category = request.args.get("category")
         gender = request.args.get("gender")
         brand = request.args.get("brand")
@@ -949,72 +1053,64 @@ def get_products():
         min_rating = request.args.get("min_rating")
         max_price = request.args.get("max_price")
 
-        try:
-            page = max(1, int(page_arg))
-        except (ValueError, TypeError):
-            page = 1
+        all_items, _ = get_cached_catalog()
+        if not all_items:
+            try:
+                all_items = [normalize_product_response(item) for item in products_collection.find({})]
+            except Exception:
+                all_items = []
 
-        try:
-            limit = max(1, min(int(limit_arg), 100))
-        except (ValueError, TypeError):
-            limit = 24
+        filtered = all_items
 
-        query = {}
         if category and category.lower() != "all":
-            # Match exact or prefix (e.g. "Kurtas" -> "Kurtas & Kurta Sets")
-            query["category"] = {"$regex": f"^{re.escape(category)}(?:\\s*&.*)?$", "$options": "i"}
+            c_low = category.lower().strip()
+            filtered = [
+                x for x in filtered
+                if str(x.get("category") or "").lower().startswith(c_low)
+                or c_low in str(x.get("category") or "").lower()
+            ]
+
         if gender and gender.lower() != "all":
-            query["gender"] = {"$regex": f"^{re.escape(gender)}$", "$options": "i"}
+            g_low = gender.lower().strip()
+            filtered = [x for x in filtered if str(x.get("gender") or "").lower() == g_low]
+
         if brand and brand.lower() != "all":
-            query["brand"] = {"$regex": f"^{re.escape(brand)}$", "$options": "i"}
+            b_low = brand.lower().strip()
+            filtered = [x for x in filtered if str(x.get("brand") or "").lower() == b_low]
+
         if min_rating:
             try:
                 min_r = float(min_rating)
                 if min_r > 0:
-                    query["rating"] = {"$gte": min_r}
+                    filtered = [x for x in filtered if float(x.get("rating") or 0) >= min_r]
             except (ValueError, TypeError):
                 pass
+
         if max_price:
             try:
                 max_p = float(max_price)
                 if max_p > 0:
-                    query["$or"] = [
-                        {"price": {"$lte": max_p}},
-                        {"current_price": {"$lte": max_p}},
+                    filtered = [
+                        x for x in filtered
+                        if float(x.get("price") or x.get("current_price") or 0) <= max_p
                     ]
             except (ValueError, TypeError):
                 pass
-        if search and search.strip():
-            s = search.strip()
-            search_cond = [
-                {"title": {"$regex": re.escape(s), "$options": "i"}},
-                {"name": {"$regex": re.escape(s), "$options": "i"}},
-                {"brand": {"$regex": re.escape(s), "$options": "i"}},
-                {"category": {"$regex": re.escape(s), "$options": "i"}},
-            ]
-            if "$or" in query:
-                query["$and"] = [{"$or": query.pop("$or")}, {"$or": search_cond}]
-            else:
-                query["$or"] = search_cond
 
-        total = products_collection.count_documents(query)
+        if search and search.strip():
+            s_low = search.strip().lower()
+            filtered = [
+                x for x in filtered
+                if s_low in str(x.get("title") or "").lower()
+                or s_low in str(x.get("name") or "").lower()
+                or s_low in str(x.get("brand") or "").lower()
+                or s_low in str(x.get("category") or "").lower()
+            ]
+
+        total = len(filtered)
         pages = math.ceil(total / limit) if total > 0 else 1
         skip = (page - 1) * limit
-
-        if total == 0:
-            return jsonify({
-                "success": True,
-                "data": [],
-                "pagination": {
-                    "page": page,
-                    "limit": limit,
-                    "total": 0,
-                    "pages": 0
-                }
-            })
-
-        cursor = products_collection.find(query).sort("_id", 1).skip(skip).limit(limit)
-        items = [normalize_product_response(item) for item in cursor]
+        items = filtered[skip:skip + limit]
 
         return jsonify({
             "success": True,
@@ -1026,7 +1122,6 @@ def get_products():
                 "pages": pages
             }
         })
-
     except Exception as e:
         return jsonify({
             "success": False,
@@ -1038,30 +1133,33 @@ def get_products():
 
 @app.route("/api/products/meta", methods=["GET"])
 def get_products_meta():
-    if not MONGO_AVAILABLE:
-        return jsonify({"success": False, "message": "Database unavailable"}), 500
+    all_items, _ = get_cached_catalog()
+    if not all_items:
+        try:
+            all_items = [normalize_product_response(item) for item in products_collection.find({})]
+        except Exception:
+            all_items = []
 
-    try:
-        categories = sorted([c for c in products_collection.distinct("category") if c])
-        genders = sorted([g for g in products_collection.distinct("gender") if g])
-        top_brands_pipeline = [
-            {"$group": {"_id": "$brand", "count": {"$sum": 1}}},
-            {"$sort": {"count": -1}},
-            {"$limit": 30}
-        ]
-        top_brands = [b["_id"] for b in products_collection.aggregate(top_brands_pipeline) if b.get("_id")]
+    categories = sorted(list({str(x.get("category")).strip() for x in all_items if x.get("category")}))
+    genders = sorted(list({str(x.get("gender")).strip() for x in all_items if x.get("gender")}))
 
-        return jsonify({
-            "success": True,
-            "data": {
-                "categories": categories,
-                "genders": genders,
-                "brands": top_brands,
-                "total": products_collection.count_documents({})
-            }
-        })
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)}), 500
+    brand_counts = {}
+    for x in all_items:
+        b = str(x.get("brand") or "").strip()
+        if b:
+            brand_counts[b] = brand_counts.get(b, 0) + 1
+    top_brands = [b for b, _ in sorted(brand_counts.items(), key=lambda item: item[1], reverse=True)[:30]]
+
+    return jsonify({
+        "success": True,
+        "data": {
+            "categories": categories,
+            "genders": genders,
+            "brands": top_brands,
+            "total": len(all_items),
+            "total_catalog": len(all_items),
+        }
+    })
 
 
 @app.route("/api/debug/users-count", methods=["GET"])
@@ -1090,8 +1188,10 @@ def debug_users_count():
 
 @app.route("/api/products/<product_id>", methods=["GET"])
 def get_product(product_id):
-    if not MONGO_AVAILABLE:
-        return jsonify({"success": False, "message": "Database unavailable", "errors": []}), 500
+    _, by_id = get_cached_catalog()
+    p = by_id.get(str(product_id))
+    if p:
+        return jsonify({"success": True, "message": "Product fetched", "data": p})
 
     try:
         item = resolve_product_doc(products_collection, product_id)
@@ -1123,10 +1223,7 @@ def update_profile_from_event(session_id, event_id):
 
     user_id = session_doc.get("user_id") or event_doc.get("user_id")
     if user_id:
-        try:
-            rescore_customer(user_id, db, socketio=socketio)
-        except Exception:
-            pass
+        async_rescore_customer(user_id)
 
 
 # ---- Session Tracking (Module 3) ----
@@ -1844,10 +1941,7 @@ def add_to_cart_route():
                 pass
 
         if owner.get("user_id"):
-            try:
-                rescore_customer(owner["user_id"], db, socketio=socketio)
-            except Exception:
-                pass
+            async_rescore_customer(owner["user_id"])
 
         try:
             target_id = str(owner.get("user_id") or owner.get("anonymous_id"))
@@ -1914,10 +2008,7 @@ def update_cart_route(product_id):
                 pass
 
         if owner.get("user_id"):
-            try:
-                rescore_customer(owner["user_id"], db, socketio=socketio)
-            except Exception:
-                pass
+            async_rescore_customer(owner["user_id"])
 
         try:
             target_id = str(owner.get("user_id") or owner.get("anonymous_id"))
@@ -1977,10 +2068,7 @@ def remove_from_cart_route(product_id):
                 pass
 
         if owner.get("user_id"):
-            try:
-                rescore_customer(owner["user_id"], db, force=True, socketio=socketio)
-            except Exception:
-                pass
+            async_rescore_customer(owner["user_id"], force=True)
 
         try:
             target_id = str(owner.get("user_id") or owner.get("anonymous_id"))
@@ -2041,10 +2129,7 @@ def clear_cart_route():
                 pass
 
         if owner.get("user_id"):
-            try:
-                rescore_customer(owner["user_id"], db, force=True, socketio=socketio)
-            except Exception:
-                pass
+            async_rescore_customer(owner["user_id"], force=True)
 
         try:
             target_id = str(owner.get("user_id") or owner.get("anonymous_id"))
@@ -2131,10 +2216,7 @@ def add_to_wishlist_route():
                 pass
 
         if owner.get("user_id"):
-            try:
-                rescore_customer(owner["user_id"], db, socketio=socketio)
-            except Exception:
-                pass
+            async_rescore_customer(owner["user_id"])
 
         try:
             target_id = str(owner.get("user_id") or owner.get("anonymous_id"))
@@ -2193,10 +2275,7 @@ def remove_from_wishlist_route(product_id):
                 pass
 
         if owner.get("user_id"):
-            try:
-                rescore_customer(owner["user_id"], db, socketio=socketio)
-            except Exception:
-                pass
+            async_rescore_customer(owner["user_id"])
 
         try:
             target_id = str(owner.get("user_id") or owner.get("anonymous_id"))
@@ -2255,10 +2334,7 @@ def clear_wishlist_route():
                 pass
 
         if owner.get("user_id"):
-            try:
-                rescore_customer(owner["user_id"], db, force=True, socketio=socketio)
-            except Exception:
-                pass
+            async_rescore_customer(owner["user_id"], force=True)
 
         try:
             target_id = str(owner.get("user_id") or owner.get("anonymous_id"))
@@ -3274,15 +3350,16 @@ def create_order():
 
         event_result = events_collection.insert_one(event_doc)
         if session_id:
-            update_profile_from_event(session_id, event_result.inserted_id)
+            if app.config.get("TESTING"):
+                update_profile_from_event(session_id, event_result.inserted_id)
+            else:
+                threading.Thread(
+                    target=update_profile_from_event,
+                    args=(session_id, event_result.inserted_id),
+                    daemon=True
+                ).start()
 
-        # Trigger rescoring after purchase event
-        try:
-            rescore_customer(owner["user_id"], db, socketio=socketio, force=True)
-        except Exception:
-            pass
-
-        # Emit real-time order and cart update events
+        # Emit real-time order and cart update events immediately
         try:
             socketio.emit("order_placed", {
                 "customer_id": str(owner["user_id"]),
@@ -3311,11 +3388,22 @@ def create_order():
         except Exception:
             pass
 
-        try:
-            if not app.config.get("TESTING"):
-                trigger_order_confirmation_communication(str(order_doc["_id"]), db)
-        except Exception:
-            pass
+        # Asynchronously run order confirmation email & rescoring in a background thread
+        def _async_order_tasks(order_id_str, cust_id_val):
+            try:
+                rescore_customer(cust_id_val, db, socketio=socketio, force=True)
+            except Exception:
+                pass
+            try:
+                if not app.config.get("TESTING"):
+                    trigger_order_confirmation_communication(order_id_str, db)
+            except Exception:
+                pass
+
+        if app.config.get("TESTING"):
+            _async_order_tasks(str(order_doc["_id"]), owner["user_id"])
+        else:
+            threading.Thread(target=_async_order_tasks, args=(str(order_doc["_id"]), owner["user_id"]), daemon=True).start()
 
         return jsonify({
             "success": True,

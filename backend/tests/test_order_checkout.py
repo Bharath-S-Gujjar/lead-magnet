@@ -6,12 +6,15 @@ from bson import ObjectId
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from app import app, cart_collection, events_collection, orders_collection, products_collection
+from app import app, cart_collection, events_collection, orders_collection, products_collection, profiles_collection
 
 
 class OrderCheckoutTests(unittest.TestCase):
     def setUp(self):
         self.client = app.test_client()
+        orders_collection.delete_many({})
+        cart_collection.delete_many({})
+        profiles_collection.delete_many({})
         self.product_one = ObjectId()
         self.product_two = ObjectId()
         products_collection.insert_many([

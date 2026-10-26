@@ -57,6 +57,15 @@ export const UserDashboard = ({ searchQuery, selectedGender, setSelectedGender }
       });
   }, []);
 
+  const [debouncedSearch, setDebouncedSearch] = useState(searchQuery || '');
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery || '');
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
   // Fetch products with server-side pagination & filtering
   const loadProducts = useCallback(async (currentPage = page) => {
     setLoading(true);
@@ -76,8 +85,8 @@ export const UserDashboard = ({ searchQuery, selectedGender, setSelectedGender }
       if (selectedBrand && selectedBrand !== 'all') {
         params.brand = selectedBrand;
       }
-      if (searchQuery && searchQuery.trim()) {
-        params.search = searchQuery.trim();
+      if (debouncedSearch && debouncedSearch.trim()) {
+        params.search = debouncedSearch.trim();
       }
       if (maxPrice && maxPrice < 10000) {
         params.max_price = maxPrice;
@@ -107,22 +116,22 @@ export const UserDashboard = ({ searchQuery, selectedGender, setSelectedGender }
     } finally {
       setLoading(false);
     }
-  }, [page, selectedGender, selectedCategory, selectedBrand, searchQuery, maxPrice, minRating]);
+  }, [page, selectedGender, selectedCategory, selectedBrand, debouncedSearch, maxPrice, minRating]);
 
   // When filters or search change, reset to page 1 and fetch
   useEffect(() => {
     setPage(1);
     loadProducts(1);
-  }, [selectedGender, selectedCategory, selectedBrand, searchQuery, maxPrice, minRating]);
+  }, [selectedGender, selectedCategory, selectedBrand, debouncedSearch, maxPrice, minRating]);
 
   // Trigger search tracking event
   useEffect(() => {
-    if (searchQuery && searchQuery.trim()) {
+    if (debouncedSearch && debouncedSearch.trim()) {
       trackCustomerEvent('search', {
-        metadata: { query: searchQuery.trim() },
+        metadata: { query: debouncedSearch.trim() },
       });
     }
-  }, [searchQuery]);
+  }, [debouncedSearch]);
 
   const handlePageChange = (newPage) => {
     if (newPage < 1 || (pagination.pages && newPage > pagination.pages) || newPage === page) return;

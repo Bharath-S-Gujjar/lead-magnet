@@ -19,8 +19,16 @@ from scoring_constants import HOT, WARM
 QUALIFICATION_PROBABILITY_THRESHOLD = HOT / 100.0  # legacy alias; prefer segment check
 
 
+_ENSURED_LEAD_STATE_INDEXES = set()
+
+
 def ensure_customer_lead_state_indexes(customer_lead_state_collection):
     """Safely ensure unique index on customer_id in customer_lead_state collection."""
+    if customer_lead_state_collection is None:
+        return
+    col_id = id(customer_lead_state_collection)
+    if col_id in _ENSURED_LEAD_STATE_INDEXES:
+        return
     try:
         existing = {idx["name"] for idx in customer_lead_state_collection.list_indexes()}
         if "customer_id_1" not in existing:
@@ -30,6 +38,7 @@ def ensure_customer_lead_state_indexes(customer_lead_state_collection):
                 name="customer_id_1",
                 background=True
             )
+        _ENSURED_LEAD_STATE_INDEXES.add(col_id)
     except Exception:
         # Ignore indexing errors when testing with mock collections
         pass
