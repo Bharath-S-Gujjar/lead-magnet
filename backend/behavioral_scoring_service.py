@@ -294,8 +294,7 @@ def compute_behavioral_score(features: dict) -> dict:
     raw_total = intent_decayed + interest_decayed + engagement_decayed + readiness_decayed
     behavioral_score = max(0, min(100, int(round(raw_total))))
 
-    # -- Final Segment Classification -----------------------------------------------
-    # Primary: score-based
+    # -- Final Segment Classification (strictly score-based: Cold 0-34, Warm 35-69, Hot 70-100)
     if behavioral_score >= THRESHOLD_HOT:
         segment = "Hot"
     elif behavioral_score >= THRESHOLD_WARM:
@@ -304,77 +303,8 @@ def compute_behavioral_score(features: dict) -> dict:
         segment = "Cold"
 
     segment_reason: str = ""
-
-    # -- Minimum-Segment Floor Rules (unconverted customers only) ---------------
-    # These rules raise the segment when a strong recency signal exists that the
-    # score alone (after decay) may not fully reflect. THE SCORE IS NOT CHANGED.
-    # All floors expire as their time-windows pass. Never apply to converted
-    # customers (is_converted==True).
-
-    if not is_converted:
-        eff_checkout_days = days_since_checkout if days_since_checkout is not None else days_since
-        eff_cart_days     = days_since_cart if days_since_cart is not None else days_since
-        eff_wishlist_days = days_since_wishlist if days_since_wishlist is not None else days_since
-
-        # Floor 1: Active checkout within 24h -> Hot override
-        if active_checkout_override and segment != "Hot":
-            segment = "Hot"
-            segment_reason = "OVERRIDE: Active checkout within 24h (segment promoted; score unchanged)"
-            reasons.append(segment_reason)
-
-        # Floor 2: Checkout started 24-72h ago -> at least Warm
-        elif (
-            not active_checkout_override
-            and checkout_att >= 1
-            and eff_checkout_days <= (CHECKOUT_WARM_FLOOR_HOURS / 24.0)
-            and segment == "Cold"
-        ):
-            segment = "Warm"
-            segment_reason = (
-                f"FLOOR: Checkout started {eff_checkout_days*24:.0f}h ago "
-                f"(within {CHECKOUT_WARM_FLOOR_HOURS}h window) -- at least Warm"
-            )
-            reasons.append(segment_reason)
-
-        # Floor 3: Cart add/update within 72h -> at least Warm
-        elif (
-            cart_count >= 1
-            and eff_cart_days <= (CART_WARM_FLOOR_HOURS / 24.0)
-            and segment == "Cold"
-        ):
-            segment = "Warm"
-            segment_reason = (
-                f"FLOOR: Cart updated {eff_cart_days*24:.0f}h ago "
-                f"(within {CART_WARM_FLOOR_HOURS}h window) -- at least Warm"
-            )
-            reasons.append(segment_reason)
-
-        # Floor 4: Wishlist add within 7 days -> at least Warm
-        elif (
-            wishlist_count >= 1
-            and eff_wishlist_days <= WISHLIST_WARM_FLOOR_DAYS
-            and segment == "Cold"
-        ):
-            segment = "Warm"
-            segment_reason = (
-                f"FLOOR: {wishlist_count} wishlist item(s) within "
-                f"{WISHLIST_WARM_FLOOR_DAYS} days -- at least Warm"
-            )
-            reasons.append(segment_reason)
-
-        # Floor 5: >=2 distinct searches AND >=2 distinct product views within 7 days -> at least Warm
-        elif (
-            search_count >= 2
-            and unique_viewed >= 2
-            and days_since <= WISHLIST_WARM_FLOOR_DAYS
-            and segment == "Cold"
-        ):
-            segment = "Warm"
-            segment_reason = (
-                f"FLOOR: {search_count} searches + {unique_viewed} product views "
-                f"within {WISHLIST_WARM_FLOOR_DAYS} days -- at least Warm"
-            )
-            reasons.append(segment_reason)
+    if active_checkout_override:
+        reasons.append("Active checkout within 24h")
 
     # -- Confidence and Provisional Status ----------------------------------------
     # Low confidence when sessions <= 1 and few meaningful events.

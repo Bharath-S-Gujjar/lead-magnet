@@ -372,22 +372,25 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
                         {lead.lead_score !== undefined && lead.lead_score !== null ? lead.lead_score : 'N/A'}
                       </div>
                     </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ marginBottom: '6px' }}>
-                        {lead.lifecycle_status === 'repeat_customer' ? (
-                          <span className="badge badge-purple" style={{ fontWeight: 700 }}>Repeat Customer</span>
-                        ) : lead.lifecycle_status === 'converted' ? (
-                          <span className="badge badge-blue" style={{ fontWeight: 700 }}>Converted Customer</span>
-                        ) : lead.qualification_status === 'qualified' ? (
+                    <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-end' }}>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <span className={`badge ${lead.lead_segment === 'Hot' ? 'badge-rose' : lead.lead_segment === 'Warm' ? 'badge-indigo' : 'badge-subtle'}`}>
+                          {lead.lead_segment || 'Cold'} Behavior
+                        </span>
+                        {lead.qualification_status === 'qualified' ? (
                           <span className="badge badge-emerald" style={{ fontWeight: 700 }}>Qualified Lead</span>
                         ) : (
                           <span className="badge badge-subtle">Unqualified Prospect</span>
                         )}
                       </div>
                       <div>
-                        <span className={`badge ${lead.lead_segment === 'Hot' ? 'badge-rose' : lead.lead_segment === 'Warm' ? 'badge-indigo' : 'badge-subtle'}`}>
-                          {lead.lead_segment || 'Cold'} Behavior
-                        </span>
+                        {lead.lifecycle_status === 'repeat_customer' ? (
+                          <span className="badge badge-purple" style={{ fontWeight: 700 }}>Repeat Customer</span>
+                        ) : lead.lifecycle_status === 'converted' ? (
+                          <span className="badge badge-blue" style={{ fontWeight: 700 }}>Converted Customer</span>
+                        ) : (
+                          <span className="badge badge-subtle" style={{ color: 'var(--text-secondary)' }}>Prospect</span>
+                        )}
                       </div>
                     </div>
                   </div>

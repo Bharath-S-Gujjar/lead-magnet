@@ -381,8 +381,16 @@ def aggregate_customer_features(customer_id, db):
             wishlist_action_times.append(w_time)
     last_wishlist_action_at = max(wishlist_action_times) if wishlist_action_times else None
 
-    checkout_start_events = [e for e in events if e.get("event_type") == "checkout_start"]
-    checkout_start_times = [_to_utc_datetime(e.get("timestamp")) for e in checkout_start_events if _to_utc_datetime(e.get("timestamp"))]
+    if latest_order_time:
+        active_checkout_start_events = [
+            e for e in events
+            if e.get("event_type") == "checkout_start"
+            and (_to_utc_datetime(e.get("timestamp")) or _to_utc_datetime(e.get("created_at")) or datetime.min.replace(tzinfo=timezone.utc)) > latest_order_time
+        ]
+    else:
+        active_checkout_start_events = [e for e in events if e.get("event_type") == "checkout_start"]
+
+    checkout_start_times = [_to_utc_datetime(e.get("timestamp")) for e in active_checkout_start_events if _to_utc_datetime(e.get("timestamp"))]
     last_checkout_start_at = max(checkout_start_times) if checkout_start_times else None
 
     checkout_events = [e for e in events if e.get("event_type") in ("checkout_start", "purchase", "order_placed")]
@@ -394,7 +402,7 @@ def aggregate_customer_features(customer_id, db):
     last_checkout_action_at = max(checkout_action_times) if checkout_action_times else None
 
     checkout_started_within_24h = False
-    if last_checkout_start_at and (now - last_checkout_start_at).total_seconds() <= 86400:
+    if checkout_attempts > 0 and last_checkout_start_at and (now - last_checkout_start_at).total_seconds() <= 86400:
         checkout_started_within_24h = True
     elif checkout_attempts > 0 and (days_since_last_activity is not None and days_since_last_activity <= 1.0):
         checkout_started_within_24h = True

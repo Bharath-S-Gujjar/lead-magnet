@@ -144,12 +144,13 @@ def sync_customer_lead_state(customer_id, db):
             if days_since <= 1.0:
                 checkout_within_24h = True
 
-    is_unconverted = (orders_count == 0 and not is_converted)
-    is_score_hot = (score >= HOT or segment == "Hot")
-    has_cart_items = (cart_item_count > 0)
+    is_unconverted = bool(orders_count == 0 and not is_converted and lifecycle_status == "prospect")
+    is_score_hot = bool(score >= HOT)
+    has_cart_items = bool(cart_item_count > 0)
+    has_active_checkout_24h = bool(checkout_within_24h and int(feature_doc.get("checkout_attempts") or 0) > 0)
 
     # 4 strict conditions: unconverted, score >= 70, active cart items, checkout within 24h
-    is_qualified = bool(is_unconverted and is_score_hot and has_cart_items and checkout_within_24h)
+    is_qualified = bool(is_unconverted and is_score_hot and has_cart_items and has_active_checkout_24h)
     qual_status = "qualified" if is_qualified else "not_qualified"
     now_iso = datetime.now(timezone.utc).isoformat()
 

@@ -40,16 +40,23 @@ export const CustomerTable = ({
   };
 
   const getQualificationBadge = (status, lifecycle) => {
-    if (lifecycle === 'repeat_customer' || status === 'repeat_customer') {
-      return <span className="badge badge-purple" style={{ padding: '4px 10px', fontSize: '0.8rem', fontWeight: 700 }}>Repeat Customer</span>;
-    }
-    if (lifecycle === 'converted' || status === 'converted') {
-      return <span className="badge badge-blue" style={{ padding: '4px 10px', fontSize: '0.8rem', fontWeight: 700 }}>Converted</span>;
+    if (lifecycle === 'repeat_customer' || lifecycle === 'converted') {
+      return <span className="badge badge-subtle" style={{ padding: '4px 8px', fontSize: '0.78rem', opacity: 0.75 }}>Excluded</span>;
     }
     if (status === 'qualified') {
       return <span className="badge badge-emerald" style={{ padding: '4px 10px', fontSize: '0.8rem', fontWeight: 700 }}>Qualified Lead</span>;
     }
-    return <span className="badge badge-subtle" style={{ padding: '4px 10px', fontSize: '0.8rem' }}>Not Qualified</span>;
+    return <span className="badge badge-subtle" style={{ padding: '4px 10px', fontSize: '0.8rem' }}>Unqualified Prospect</span>;
+  };
+
+  const getLifecycleBadge = (lifecycle) => {
+    if (lifecycle === 'repeat_customer') {
+      return <span className="badge badge-purple" style={{ padding: '4px 10px', fontSize: '0.8rem', fontWeight: 700 }}>Repeat Customer</span>;
+    }
+    if (lifecycle === 'converted') {
+      return <span className="badge badge-blue" style={{ padding: '4px 10px', fontSize: '0.8rem', fontWeight: 700 }}>Converted</span>;
+    }
+    return <span className="badge badge-subtle" style={{ padding: '4px 10px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Prospect</span>;
   };
 
   return (
@@ -207,10 +214,11 @@ export const CustomerTable = ({
               <thead>
                 <tr style={{ background: 'var(--table-header-bg)', color: 'var(--text-secondary)' }}>
                   <th style={{ padding: '16px 20px', borderRadius: 'var(--radius-md) 0 0 var(--radius-md)', fontWeight: 700 }}>Customer</th>
-                  <th style={{ padding: '16px 16px', fontWeight: 700, textAlign: 'center' }}>Lead Score</th>
-                  <th style={{ padding: '16px 16px', fontWeight: 700, textAlign: 'center' }}>Segment</th>
-                  <th style={{ padding: '16px 16px', fontWeight: 700, textAlign: 'center' }}>Status</th>
-                  <th style={{ padding: '16px 16px', fontWeight: 700 }}>Last Scored</th>
+                  <th style={{ padding: '16px 12px', fontWeight: 700, textAlign: 'center' }}>Score</th>
+                  <th style={{ padding: '16px 12px', fontWeight: 700, textAlign: 'center' }}>Segment</th>
+                  <th style={{ padding: '16px 12px', fontWeight: 700, textAlign: 'center' }}>Qualification</th>
+                  <th style={{ padding: '16px 12px', fontWeight: 700, textAlign: 'center' }}>Lifecycle</th>
+                  <th style={{ padding: '16px 12px', fontWeight: 700 }}>Last Scored</th>
                   <th style={{ padding: '16px 20px', borderRadius: '0 var(--radius-md) var(--radius-md) 0', fontWeight: 700 }}>Last Communication</th>
                 </tr>
               </thead>
@@ -260,7 +268,7 @@ export const CustomerTable = ({
                     </td>
 
                     {/* Lead Score & Prob */}
-                    <td style={{ padding: '16px 16px', textAlign: 'center' }}>
+                    <td style={{ padding: '16px 12px', textAlign: 'center' }}>
                       <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center' }}>
                         <span style={{ fontFamily: 'var(--font-heading)', fontSize: '1.2rem', fontWeight: 800, color: 'var(--accent-indigo)' }}>
                           {item.lead_score !== null && item.lead_score !== undefined ? item.lead_score : 'N/A'}
@@ -272,13 +280,18 @@ export const CustomerTable = ({
                     </td>
 
                     {/* Segment */}
-                    <td style={{ padding: '16px 16px', textAlign: 'center' }}>
+                    <td style={{ padding: '16px 12px', textAlign: 'center' }}>
                       {getSegmentBadge(item.lead_segment)}
                     </td>
 
                     {/* Qualification Status */}
-                    <td style={{ padding: '16px 16px', textAlign: 'center' }}>
+                    <td style={{ padding: '16px 12px', textAlign: 'center' }}>
                       {getQualificationBadge(item.qualification_status, item.lifecycle_status)}
+                    </td>
+
+                    {/* Lifecycle Status */}
+                    <td style={{ padding: '16px 12px', textAlign: 'center' }}>
+                      {getLifecycleBadge(item.lifecycle_status)}
                     </td>
 
                     {/* Last Scored */}

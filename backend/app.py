@@ -101,10 +101,16 @@ DEFAULT_ALLOWED_ORIGINS = [
     "http://127.0.0.1:5173",
     "http://localhost:5174",
     "http://127.0.0.1:5174",
+    "http://localhost:5175",
+    "http://127.0.0.1:5175",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:3001",
     "http://127.0.0.1:3001",
+    "http://localhost:3002",
+    "http://127.0.0.1:3002",
+    "http://localhost:3003",
+    "http://127.0.0.1:3003",
 ]
 
 IS_PROD_ENV = os.getenv("FLASK_ENV", "").lower() == "production" or os.getenv("ENV", "").lower() == "production"
@@ -121,7 +127,6 @@ if IS_PROD_ENV and FRONTEND_URL and FRONTEND_URL.strip() == "*":
 
 if FRONTEND_URL:
     _raw_origins = [origin.strip() for origin in FRONTEND_URL.split(",") if origin.strip()]
-    # Reject wildcard entries inside a comma-separated list in production.
     if IS_PROD_ENV and "*" in _raw_origins:
         raise ValueError(
             "FRONTEND_URL contains a wildcard origin \"*\" which is not permitted "
@@ -135,9 +140,17 @@ if FRONTEND_URL:
 else:
     ALLOWED_ORIGINS = [] if IS_PROD_ENV else DEFAULT_ALLOWED_ORIGINS
 
-cors_origins = ALLOWED_ORIGINS if (ALLOWED_ORIGINS or IS_PROD_ENV) else DEFAULT_ALLOWED_ORIGINS
-CORS(app, origins=cors_origins)
-socketio = SocketIO(app, cors_allowed_origins=cors_origins)
+if not IS_PROD_ENV:
+    cors_origins = [re.compile(r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$")]
+    if ALLOWED_ORIGINS:
+        cors_origins.extend([o for o in ALLOWED_ORIGINS if isinstance(o, str)])
+    socketio_cors = "*"
+else:
+    cors_origins = ALLOWED_ORIGINS
+    socketio_cors = cors_origins
+
+CORS(app, origins=cors_origins, supports_credentials=True)
+socketio = SocketIO(app, cors_allowed_origins=socketio_cors)
 
 
 @app.after_request

@@ -195,15 +195,51 @@ class LeadScoringAndDataSyncTests(unittest.TestCase):
             "timestamp": now - timedelta(hours=2),
         })
 
-        # Product views
-        for i in range(3):
+        # Product views (with repeat views)
+        for p in ["p1", "p2", "p3", "p1", "p2"]:
             self.events.insert_one({
                 "session_id": sess_id,
                 "user_id": user_id,
                 "event_type": "product_view",
-                "entity": {"id": f"p_{i}"},
+                "entity": {"id": p},
                 "timestamp": now,
             })
+        for _ in range(5):
+            self.events.insert_one({
+                "session_id": sess_id,
+                "user_id": user_id,
+                "event_type": "product_click",
+                "timestamp": now,
+            })
+        self.events.insert_one({
+            "session_id": sess_id,
+            "user_id": user_id,
+            "event_type": "form_submit",
+            "timestamp": now,
+        })
+        # Wishlist, search, high-intent page, and repeat session to reach genuine score >= 70 (Hot)
+        self.wishlist.insert_one({"user_id": user_id, "product_id": "prod_2", "added_at": now})
+        self.events.insert_one({
+            "session_id": sess_id,
+            "user_id": user_id,
+            "event_type": "search",
+            "metadata": {"query": "clothing"},
+            "timestamp": now,
+        })
+        self.events.insert_one({
+            "session_id": sess_id,
+            "user_id": user_id,
+            "event_type": "page_view",
+            "page": "/pricing",
+            "timestamp": now,
+        })
+        self.sessions.insert_one({
+            "user_id": user_id,
+            "started_at": now - timedelta(hours=1),
+            "last_active_at": now - timedelta(hours=1),
+            "total_time_seconds": 300,
+            "page_views": 4,
+        })
 
         feat = aggregate_customer_features(user_id, self.db)
         self.assertEqual(feat["cart_item_count"], 2)
@@ -213,6 +249,7 @@ class LeadScoringAndDataSyncTests(unittest.TestCase):
         self.features.insert_one(feat)
         state = sync_customer_lead_state(user_id, self.db)
 
+        self.assertGreaterEqual(state["lead_score"], 70)
         self.assertEqual(state["lead_segment"], "Hot")
         self.assertEqual(state["qualification_status"], "qualified")
         self.assertEqual(state["lifecycle_status"], "prospect")
@@ -461,6 +498,12 @@ class LeadScoringAndDataSyncTests(unittest.TestCase):
                 "checkout_attempts": 2,
                 "orders_count": 0,
                 "total_order_value": 0.0,
+                "unique_products_viewed": 4,
+                "products_viewed": 6,
+                "wishlist_item_count": 1,
+                "search_count": 2,
+                "high_intent_page_visits": 3,
+                "total_time_spent": 600.0,
                 "days_since_last_activity": 0.2,
                 "checkout_started_within_24h": True,
                 "last_checkout_action_at": (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(),
