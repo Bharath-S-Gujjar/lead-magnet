@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { addToWishlistApi, fetchWishlist, getAnonymousId, getCustomerSession, removeFromWishlistApi, trackCustomerEvent } from '../services/api';
+import { addToWishlistApi, fetchWishlist, getActiveSessionId, getAnonymousId, getCustomerSession, removeFromWishlistApi } from '../services/api';
 import { useAuth } from './AuthContext';
 
 const WishlistContext = createContext();
@@ -60,20 +60,15 @@ export const WishlistProvider = ({ children }) => {
   const toggleWishlist = (product) => {
     const prodId = product.id || product._id;
     const exists = wishlist.some(item => item.id === prodId);
+    const sessionId = customer?.session_id || getActiveSessionId();
 
     if (exists) {
       setWishlist(prev => prev.filter(item => item.id !== prodId));
-      removeFromWishlistApi(prodId, userId, anonymousId, customer?.session_id).catch(() => {});
-      trackCustomerEvent('wishlist_remove', {
-        entity: { type: 'product', id: prodId, name: product.name, category: product.category, brand: product.brand },
-      });
+      removeFromWishlistApi(prodId, userId, anonymousId, sessionId).catch(() => {});
     } else {
       const newItem = { ...product, id: prodId, dateLiked: 'Just now' };
       setWishlist(prev => [...prev, newItem]);
-      addToWishlistApi(prodId, userId, anonymousId, customer?.session_id).catch(() => {});
-      trackCustomerEvent('wishlist_add', {
-        entity: { type: 'product', id: prodId, name: product.name, category: product.category, brand: product.brand },
-      });
+      addToWishlistApi(prodId, userId, anonymousId, sessionId).catch(() => {});
     }
   };
 
@@ -83,10 +78,8 @@ export const WishlistProvider = ({ children }) => {
 
   const removeFromWishlist = (id) => {
     setWishlist(prev => prev.filter(item => item.id !== id));
-    removeFromWishlistApi(id, userId, anonymousId, customer?.session_id).catch(() => {});
-    trackCustomerEvent('wishlist_remove', {
-      entity: { type: 'product', id },
-    });
+    const sessionId = customer?.session_id || getActiveSessionId();
+    removeFromWishlistApi(id, userId, anonymousId, sessionId).catch(() => {});
   };
 
   return (

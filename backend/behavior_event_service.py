@@ -1,3 +1,4 @@
+
 """Rich behavior event ingestion for visitor sessions.
 
 This service keeps Flask routes thin while preserving the existing event
@@ -23,11 +24,18 @@ SUPPORTED_EVENT_TYPES = {
     "sort_apply": ("search", "sort"),
     "add_to_cart": ("commerce", "add"),
     "remove_from_cart": ("commerce", "remove"),
+    "cart_update": ("commerce", "update"),
+    "cart_clear": ("commerce", "clear"),
     "wishlist_add": ("commerce", "add"),
     "wishlist_remove": ("commerce", "remove"),
+    "wishlist_clear": ("commerce", "clear"),
     "checkout_start": ("commerce", "start"),
     "purchase": ("commerce", "purchase"),
     "order_placed": ("commerce", "purchase"),
+    "order_status_update": ("commerce", "status"),
+    "registration": ("auth", "signup"),
+    "signup": ("auth", "signup"),
+    "login": ("auth", "login"),
     "recommendation_view": ("recommendation", "view"),
     "recommendation_click": ("recommendation", "click"),
     "banner_view": ("engagement", "view"),
@@ -99,11 +107,17 @@ def build_behavior_event(data, session):
 
     default_category, default_action = SUPPORTED_EVENT_TYPES[event_type]
 
+    raw_user_id = session.get("user_id") or data.get("user_id")
+    if raw_user_id and isinstance(raw_user_id, str) and ObjectId.is_valid(raw_user_id):
+        user_id = ObjectId(raw_user_id)
+    else:
+        user_id = raw_user_id
+
     return {
         "session_id": _session_object_id(session_id),
-        "visitor_id": session.get("visitor_id"),
-        "anonymous_id": session.get("anonymous_id"),
-        "user_id": session.get("user_id"),
+        "visitor_id": session.get("visitor_id") or data.get("visitor_id"),
+        "anonymous_id": session.get("anonymous_id") or data.get("anonymous_id"),
+        "user_id": user_id,
         "event_type": event_type,
         "event_category": data.get("event_category") or default_category,
         "event_action": data.get("event_action") or default_action,
@@ -136,6 +150,10 @@ def log_behavior_event(data, sessions_collection, events_collection):
     result = events_collection.insert_one(event_doc)
 
     update_fields = {"last_active_at": datetime.datetime.utcnow()}
+    if event_doc.get("user_id") and not session.get("user_id"):
+        update_fields["user_id"] = event_doc["user_id"]
+        update_fields["identity_status"] = "authenticated"
+
     inc_fields = {}
     if event_type == "page_view":
         inc_fields["page_views"] = 1

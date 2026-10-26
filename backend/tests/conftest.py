@@ -68,10 +68,21 @@ import app as app_module  # noqa: E402
 app_module.app.config["TESTING"] = True
 app_module.app.testing = True
 
-try:
-    _test_db = app_module.mongo_client[TEST_DATABASE_NAME]
-except Exception:
-    _test_db = None
+_mongo_available = getattr(app_module, "MONGO_AVAILABLE", False)
+if not _mongo_available:
+    try:
+        import mongomock
+        _mock_client = mongomock.MongoClient()
+        app_module.mongo_client = _mock_client
+        app_module.MONGO_AVAILABLE = True
+        _test_db = _mock_client[TEST_DATABASE_NAME]
+    except Exception:
+        _test_db = None
+else:
+    try:
+        _test_db = app_module.mongo_client[TEST_DATABASE_NAME]
+    except Exception:
+        _test_db = None
 
 if _test_db is not None:
     app_module.db = _test_db

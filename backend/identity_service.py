@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 from uuid import uuid4
+from bson import ObjectId
 
 
 def generate_anonymous_id():
@@ -32,6 +33,8 @@ def resolve_anonymous_identity(
     if not anonymous_id or not user_id:
         return {"sessions_merged": 0, "events_merged": 0, "leads_merged": 0, "cart_merged": 0, "wishlist_merged": 0}
 
+    u_oid = ObjectId(user_id) if isinstance(user_id, str) and ObjectId.is_valid(user_id) else user_id
+
     session_query = {
         "$or": [
             {"anonymous_id": anonymous_id},
@@ -46,20 +49,25 @@ def resolve_anonymous_identity(
         session_query,
         {
             "$set": {
-                "user_id": user_id,
+                "user_id": u_oid,
                 "identity_status": "authenticated",
                 "identity_resolved_at": now,
             }
         },
     )
 
-    events_merged = 0
+    event_query_conditions = [
+        {"anonymous_id": anonymous_id},
+        {"visitor_id": anonymous_id},
+    ]
     if session_ids:
-        events_result = events_collection.update_many(
-            {"session_id": {"$in": session_ids}},
-            {"$set": {"user_id": user_id, "identity_resolved_at": now}},
-        )
-        events_merged = events_result.modified_count
+        event_query_conditions.append({"session_id": {"$in": session_ids}})
+
+    events_result = events_collection.update_many(
+        {"$or": event_query_conditions},
+        {"$set": {"user_id": u_oid, "identity_resolved_at": now}},
+    )
+    events_merged = events_result.modified_count
 
     leads_result = leads_collection.update_many(
         {"visitor_id": anonymous_id},

@@ -230,55 +230,22 @@ def predict_customer_features(customer_features):
         if math.isnan(val_float) or math.isinf(val_float):
             raise ValueError(f"Invalid numeric value (NaN/Inf) for feature '{col}': {val}")
 
-    # ── PRIMARY: Direct XGBoost Model Scoring ─────────────────────────────────
-    scaler = load_ecommerce_scaler()
-    model = load_ecommerce_model()
-    metadata = load_ecommerce_metadata()
+    # ── PRIMARY (Authoritative): Rule-based 100-point Behavioral Scoring ──────
+    from behavioral_scoring_service import compute_behavioral_score
+    from scoring_constants import HOT, WARM
+    behavioral_res = compute_behavioral_score(merged_features)
 
-    # Converted status
+    lead_score = behavioral_res["lead_score"]
+    lead_probability = behavioral_res["lead_probability"]
+    lead_segment = behavioral_res["lead_segment"]
+    segment_reason = behavioral_res.get("segment_reason", "")
+    confidence = behavioral_res.get("confidence", "medium")
+    is_provisional = behavioral_res.get("is_provisional", False)
+    is_converted = behavioral_res.get("is_converted", False)
+    active_checkout_override = behavioral_res.get("active_checkout_override", False)
+
     orders_count = int(merged_features.get("orders_count", 0) or 0)
-    total_order_val = float(merged_features.get("total_order_value", 0) or 0)
-    is_converted = orders_count > 0 or total_order_val > 0
-
-    # Evaluate active behavioral shopping intent:
-    # A customer's lead score reflects current pre-purchase shopping behavior (cart, checkout, browsing).
-    # Past completed orders do not artificially force a converted customer to remain "Hot".
-    eval_features = dict(merged_features)
-    if is_converted:
-        eval_features["orders_count"] = 0
-        eval_features["total_order_value"] = 0.0
-        eval_features["average_order_value"] = 0.0
-
-    vector = [float(eval_features[col]) for col in feature_cols]
-    X_raw = pd.DataFrame([vector], columns=feature_cols)
-    X_scaled = scaler.transform(X_raw)
-
-    prob = float(model.predict_proba(X_scaled)[0][1])
-    prob = max(0.0, min(1.0, prob))
-    lead_score = int(round(prob * 100))
-    lead_probability = round(prob, 4)
-
-    # Segment mapping from scoring_constants
-    from scoring_constants import HOT, WARM, CHECKOUT_OVERRIDE_HOURS
-    if lead_score >= HOT:
-        lead_segment = "Hot"
-    elif lead_score >= WARM:
-        lead_segment = "Warm"
-    else:
-        lead_segment = "Cold"
-
-    # Active Checkout Override: unconverted customer with checkout within 24h
-    active_checkout_override = False
     checkout_attempts = int(merged_features.get("checkout_attempts", 0) or 0)
-    days_since = float(merged_features.get("days_since_last_activity", 0) or 0)
-    segment_reason = ""
-    if not is_converted and checkout_attempts > 0 and days_since <= (CHECKOUT_OVERRIDE_HOURS / 24.0):
-        active_checkout_override = True
-        lead_segment = "Hot"
-        segment_reason = "OVERRIDE: Active checkout within 24h (segment promoted by XGBoost model pipeline)"
-
-    # Confidence and provisional status
-    sessions_count = int(merged_features.get("sessions_count", 1) or 1)
     has_purchase_intent = bool(
         float(merged_features.get("cart_item_count", 0) or 0) > 0
         or float(merged_features.get("cart_value", 0) or 0) > 0
@@ -286,24 +253,17 @@ def predict_customer_features(customer_features):
         or orders_count > 0
         or checkout_attempts > 0
     )
-    products_viewed = int(merged_features.get("products_viewed", 0) or 0)
 
-    if sessions_count <= 1 and not has_purchase_intent and products_viewed == 0:
-        is_provisional = True
-        confidence = "low"
-    elif sessions_count <= 1:
-        is_provisional = False
-        confidence = "medium"
-    else:
-        is_provisional = False
-        confidence = "high"
+    # ── SECONDARY (Reference only): XGBoost ML Model Probability ──────────────
+    metadata = load_ecommerce_metadata()
+    ml_result = _run_xgboost_inference(merged_features)
 
     customer_id = customer_features.get("customer_id", customer_features.get("_id", ""))
 
     return {
         "customer_id": str(customer_id) if customer_id else None,
 
-        # Authoritative XGBoost model outputs
+        # Authoritative behavioral scoring outputs
         "lead_score": lead_score,
         "lead_probability": lead_probability,
         "lead_segment": lead_segment,
@@ -311,21 +271,35 @@ def predict_customer_features(customer_features):
         "confidence": confidence,
         "is_provisional": is_provisional,
 
+        # Full behavioral breakdown (for inspection and explanation)
+        "behavioral_score": lead_score,
+        "purchase_intent_score": behavioral_res.get("purchase_intent_score", 0),
+        "product_interest_score": behavioral_res.get("product_interest_score", 0),
+        "engagement_score": behavioral_res.get("engagement_score", 0),
+        "purchase_readiness_score": behavioral_res.get("purchase_readiness_score", 0),
+        "purchase_intent_score_decayed": behavioral_res.get("purchase_intent_score_decayed", 0),
+        "product_interest_score_decayed": behavioral_res.get("product_interest_score_decayed", 0),
+        "engagement_score_decayed": behavioral_res.get("engagement_score_decayed", 0),
+        "purchase_readiness_score_decayed": behavioral_res.get("purchase_readiness_score_decayed", 0),
+        "score_reasons": behavioral_res.get("score_reasons", []),
+
         # Model and Lifecycle metadata
         "is_converted": is_converted,
         "active_checkout_override": active_checkout_override,
         "has_purchase_intent": has_purchase_intent,
-        "ml_model_probability": lead_probability,
-        "raw_model_probability": lead_probability,
-        "ml_model_score": lead_score,
-        "raw_model_score": lead_score,
-        "ml_model_available": True,
-        "ml_model_error": None,
+
+        # Secondary ML signal (XGBoost reference)
+        "ml_model_probability": ml_result.get("ml_model_probability"),
+        "raw_model_probability": ml_result.get("ml_model_probability"),
+        "ml_model_score": ml_result.get("ml_model_score"),
+        "raw_model_score": ml_result.get("ml_model_score"),
+        "ml_model_available": ml_result.get("ml_model_available", False),
+        "ml_model_error": ml_result.get("ml_model_error"),
 
         # Operational metadata
         "model_version": metadata.get("model_version", "v2.0_ecommerce_xgb"),
         "scored_at": datetime.now(timezone.utc).isoformat(),
-        "scoring_method": "xgboost_direct_ml_model",
-        "threshold_disclaimer": f"XGBoost direct inference: Hot>={HOT}, Warm>={WARM}, Cold<{WARM}.",
+        "scoring_method": "behavioral_100pt_rule_based",
+        "threshold_disclaimer": f"Behavioral 100pt system: Hot>={HOT}, Warm>={WARM}, Cold<{WARM}. XGBoost reported as secondary reference.",
     }
 

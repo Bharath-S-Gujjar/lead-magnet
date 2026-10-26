@@ -98,6 +98,7 @@ export const CustomerTable = ({
               <option value="qualified">Qualified Leads Only</option>
               <option value="not_qualified">Unqualified Prospects Only</option>
               <option value="converted">Converted Customers Only</option>
+              <option value="repeat_customer">Repeat Customers Only</option>
             </select>
           </div>
 

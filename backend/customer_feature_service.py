@@ -16,6 +16,28 @@ from product_lookup import resolve_product_doc
 HIGH_INTENT_PAGE_KEYWORDS = ("pricing", "demo", "contact", "checkout")
 
 
+VALID_COMPLETED_ORDER_STATUSES = {"placed", "completed", "paid", "delivered", "shipped"}
+EXCLUDED_ORDER_STATUSES = {"pending", "failed", "cancelled", "canceled"}
+
+
+def is_completed_order(order):
+    """Return True if an order document represents a successfully completed purchase."""
+    if not isinstance(order, dict):
+        return False
+    status = str(order.get("status") or order.get("order_status") or "").strip().lower()
+    if status in EXCLUDED_ORDER_STATUSES:
+        return False
+    payment_status = str(order.get("payment_status") or "").strip().lower()
+    if payment_status in {"failed", "cancelled", "canceled"}:
+        return False
+    if status in VALID_COMPLETED_ORDER_STATUSES or payment_status in {"paid", "completed", "success"}:
+        return True
+    # If neither status nor payment_status is specified, default to True for backwards compatibility
+    if not status and not payment_status:
+        return True
+    return False
+
+
 def _to_object_id(val):
     if isinstance(val, ObjectId):
         return val
@@ -203,7 +225,15 @@ def aggregate_customer_features(customer_id, db):
         order_query_conditions.append({"customer_email": profile_email})
 
     order_query = {"$or": order_query_conditions} if order_query_conditions else {"_id": None}
-    orders = list(orders_col.find(order_query))
+    raw_orders = list(orders_col.find(order_query))
+    seen_order_ids = set()
+    orders = []
+    for o in raw_orders:
+        oid = o.get("_id")
+        if oid not in seen_order_ids:
+            seen_order_ids.add(oid)
+            if is_completed_order(o):
+                orders.append(o)
 
     # --- AGGREGATION COMPUTATION ---
 
@@ -335,7 +365,7 @@ def aggregate_customer_features(customer_id, db):
     prod_view_times = [_to_utc_datetime(e.get("timestamp")) for e in product_view_events if _to_utc_datetime(e.get("timestamp"))]
     last_product_view_at = max(prod_view_times) if prod_view_times else None
 
-    cart_events = [e for e in events if e.get("event_type") in ("add_to_cart", "remove_from_cart")]
+    cart_events = [e for e in events if e.get("event_type") in ("add_to_cart", "remove_from_cart", "cart_update")]
     cart_action_times = [_to_utc_datetime(e.get("timestamp")) for e in cart_events if _to_utc_datetime(e.get("timestamp"))]
     for c_item in cart_items:
         c_time = _to_utc_datetime(c_item.get("updated_at") or c_item.get("added_at"))
@@ -351,6 +381,10 @@ def aggregate_customer_features(customer_id, db):
             wishlist_action_times.append(w_time)
     last_wishlist_action_at = max(wishlist_action_times) if wishlist_action_times else None
 
+    checkout_start_events = [e for e in events if e.get("event_type") == "checkout_start"]
+    checkout_start_times = [_to_utc_datetime(e.get("timestamp")) for e in checkout_start_events if _to_utc_datetime(e.get("timestamp"))]
+    last_checkout_start_at = max(checkout_start_times) if checkout_start_times else None
+
     checkout_events = [e for e in events if e.get("event_type") in ("checkout_start", "purchase", "order_placed")]
     checkout_action_times = [_to_utc_datetime(e.get("timestamp")) for e in checkout_events if _to_utc_datetime(e.get("timestamp"))]
     for o in orders:
@@ -358,6 +392,12 @@ def aggregate_customer_features(customer_id, db):
         if o_time:
             checkout_action_times.append(o_time)
     last_checkout_action_at = max(checkout_action_times) if checkout_action_times else None
+
+    checkout_started_within_24h = False
+    if last_checkout_start_at and (now - last_checkout_start_at).total_seconds() <= 86400:
+        checkout_started_within_24h = True
+    elif checkout_attempts > 0 and (days_since_last_activity is not None and days_since_last_activity <= 1.0):
+        checkout_started_within_24h = True
 
     order_times = [_to_utc_datetime(o.get("created_at")) for o in orders if _to_utc_datetime(o.get("created_at"))]
     last_order_at = max(order_times) if order_times else None
@@ -395,7 +435,9 @@ def aggregate_customer_features(customer_id, db):
         "last_product_view_at": last_product_view_at,
         "last_cart_action_at": last_cart_action_at,
         "last_wishlist_action_at": last_wishlist_action_at,
+        "last_checkout_start_at": last_checkout_start_at.isoformat() if last_checkout_start_at else None,
         "last_checkout_action_at": last_checkout_action_at,
+        "checkout_started_within_24h": checkout_started_within_24h,
 
         "first_seen_at": first_seen_at,
         "updated_at": now,

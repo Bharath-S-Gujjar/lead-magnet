@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { trackCustomerEvent } from '../services/api';
 
 const UserTrackingContext = createContext();
 
@@ -18,12 +19,16 @@ export const UserTrackingProvider = ({ children }) => {
     };
   });
 
+  const lastTrackedSearchRef = useRef('');
+
   useEffect(() => {
     localStorage.setItem('leadmagnet_user_telemetry', JSON.stringify(telemetry));
   }, [telemetry]);
 
   const trackProductView = (product) => {
     if (!product) return;
+    const prodId = product.id || product._id || product.product_id;
+    const prodTitle = product.title || product.name || 'Product';
     setTelemetry(prev => {
       const categoryCount = (prev.categoryHistory[product.category] || 0) + 1;
       const brandCount = (prev.brandHistory[product.brand] || 0) + 1;
@@ -31,13 +36,26 @@ export const UserTrackingProvider = ({ children }) => {
       return {
         ...prev,
         productsViewed: [
-          { id: product.id, name: product.name, timestamp: new Date().toISOString() },
-          ...prev.productsViewed.filter(p => p.id !== product.id).slice(0, 20)
+          { id: prodId, name: prodTitle, timestamp: new Date().toISOString() },
+          ...prev.productsViewed.filter(p => p.id !== prodId).slice(0, 20)
         ],
         categoryHistory: { ...prev.categoryHistory, [product.category]: categoryCount },
         brandHistory: { ...prev.brandHistory, [product.brand]: brandCount }
       };
     });
+
+    trackCustomerEvent('product_view', {
+      page: `/product/${prodId}`,
+      entity: {
+        type: 'product',
+        id: prodId,
+        name: prodTitle,
+        title: prodTitle,
+        price: product.price,
+        category: product.category,
+        brand: product.brand,
+      },
+    }).catch(() => {});
   };
 
   const trackProductTimeSpent = (productId, seconds) => {
@@ -52,10 +70,18 @@ export const UserTrackingProvider = ({ children }) => {
 
   const trackSearch = (query) => {
     if (!query || query.trim() === '') return;
+    const cleanQuery = query.trim();
     setTelemetry(prev => ({
       ...prev,
-      searchQueries: [query.trim(), ...prev.searchQueries.filter(q => q !== query.trim()).slice(0, 15)]
+      searchQueries: [cleanQuery, ...prev.searchQueries.filter(q => q !== cleanQuery).slice(0, 15)]
     }));
+
+    if (lastTrackedSearchRef.current !== cleanQuery) {
+      lastTrackedSearchRef.current = cleanQuery;
+      trackCustomerEvent('search', {
+        metadata: { query: cleanQuery }
+      }).catch(() => {});
+    }
   };
 
   const trackCartAction = (product, action) => {

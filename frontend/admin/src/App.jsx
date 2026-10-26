@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { io } from 'socket.io-client';
 import { AdminAuthProvider, useAdminAuth } from './context/AdminAuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { AdminLogin } from './pages/AdminLogin';
@@ -35,9 +36,9 @@ function ProtectedAdminDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const loadLeads = async () => {
+  const loadLeads = async (showSpinner = true) => {
     if (!isAdminAuthenticated) return;
-    setIsLoading(true);
+    if (showSpinner) setIsLoading(true);
     setError('');
     try {
       const data = await getAdminIntelligenceLeads({
@@ -56,16 +57,50 @@ function ProtectedAdminDashboard() {
       } else if (err.status === 403) {
         setError('You are not authorized to access admin intelligence.');
       } else {
-        setError(err.message || 'Unable to load customer directory.');
+        if (showSpinner) setError(err.message || 'Unable to load customer directory.');
       }
-      setLeadsData(null);
+      if (showSpinner) setLeadsData(null);
     } finally {
-      setIsLoading(false);
+      if (showSpinner) setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    loadLeads();
+    loadLeads(true);
+
+    // Dynamic background polling every 10 seconds
+    const interval = setInterval(() => {
+      loadLeads(false);
+    }, 10000);
+
+    // Real-time socket.io updates
+    let socket = null;
+    let debounceTimer = null;
+    try {
+      const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:5000').replace(/\/$/, '');
+      socket = io(API_BASE, { transports: ['websocket', 'polling'] });
+      const triggerReload = () => {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+          loadLeads(false);
+        }, 600);
+      };
+      socket.on('customer_activity', triggerReload);
+      socket.on('cart_update', triggerReload);
+      socket.on('wishlist_update', triggerReload);
+      socket.on('order_placed', triggerReload);
+      socket.on('order_status_update', triggerReload);
+      socket.on('lead_update', triggerReload);
+      socket.on('admin_notification', triggerReload);
+    } catch (e) {
+      // Non-blocking socket fallback
+    }
+
+    return () => {
+      clearInterval(interval);
+      clearTimeout(debounceTimer);
+      if (socket) socket.disconnect();
+    };
   }, [isAdminAuthenticated, admin?.token, qualificationFilter, segmentFilter, sortBy, sortOrder, page]);
 
   if (!isAdminAuthenticated) {

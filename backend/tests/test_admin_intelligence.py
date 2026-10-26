@@ -51,9 +51,9 @@ def sample_high_intent_features(customer_id):
         "cart_value": 850.0,
         "wishlist_item_count": 4,
         "checkout_attempts": 8,
-        "orders_count": 3,
-        "total_order_value": 450.0,
-        "average_order_value": 150.0,
+        "orders_count": 0,
+        "total_order_value": 0.0,
+        "average_order_value": 0.0,
     }
 
 

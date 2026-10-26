@@ -557,7 +557,12 @@ def predict():
     lead_scaled = scaler.transform(lead_encoded)
     lead_scaled_df = pd.DataFrame(lead_scaled, columns=feature_columns)
 
-    prob = model.predict_proba(lead_scaled_df)[0][1]
+    try:
+        prob = model.predict_proba(lead_scaled_df)[0][1]
+    except ValueError:
+        import xgboost as xgb
+        dm = xgb.DMatrix(lead_scaled, feature_names=list(feature_columns))
+        prob = float(model.get_booster().predict(dm)[0])
     segment_id = kmeans.predict(lead_scaled_df)[0]
     segment = segment_map[segment_id]
 
@@ -645,6 +650,28 @@ def signup():
             customer_features_collection,
             db,
         )
+
+        try:
+            reg_event = {
+                "user_id": user_id,
+                "anonymous_id": anonymous_id,
+                "visitor_id": anonymous_id or email,
+                "event_type": "registration",
+                "event_category": "auth",
+                "event_action": "signup",
+                "page": "/signup",
+                "timestamp": now_utc,
+                "entity": {"type": "user", "id": str(user_id)},
+                "metadata": {
+                    "email": email,
+                    "full_name": user_doc.get("full_name"),
+                    "method": "email",
+                },
+                "schema_version": 2,
+            }
+            events_collection.insert_one(reg_event)
+        except Exception:
+            pass
 
         try:
             name_display = full_name or email
@@ -735,6 +762,27 @@ def login():
         )
 
         try:
+            login_event = {
+                "user_id": user["_id"],
+                "anonymous_id": anonymous_id,
+                "visitor_id": anonymous_id or user_email,
+                "event_type": "login",
+                "event_category": "auth",
+                "event_action": "login",
+                "page": "/login",
+                "timestamp": datetime.datetime.utcnow(),
+                "entity": {"type": "user", "id": str(user["_id"])},
+                "metadata": {
+                    "email": user_email,
+                    "role": user.get("role", "user"),
+                },
+                "schema_version": 2,
+            }
+            events_collection.insert_one(login_event)
+        except Exception:
+            pass
+
+        try:
             rescore_customer(user["_id"], db, socketio=socketio)
         except Exception:
             pass
@@ -821,7 +869,12 @@ def track():
     lead_scaled = scaler.transform(lead_encoded)
     lead_scaled_df = pd.DataFrame(lead_scaled, columns=feature_columns)
 
-    prob = model.predict_proba(lead_scaled_df)[0][1]
+    try:
+        prob = model.predict_proba(lead_scaled_df)[0][1]
+    except ValueError:
+        import xgboost as xgb
+        dm = xgb.DMatrix(lead_scaled, feature_names=list(feature_columns))
+        prob = float(model.get_booster().predict(dm)[0])
     segment_id = kmeans.predict(lead_scaled_df)[0]
     segment = segment_map[segment_id]
 
@@ -1071,7 +1124,8 @@ def start_session():
 
     anonymous_id = supplied_anonymous_id or generate_anonymous_id()
     visitor_id = data.get("visitor_id") or anonymous_id
-    owner, error = resolve_persistence_identity(None, anonymous_id)
+    req_user_id = data.get("user_id") if ("user_id" in data and request.headers.get("Authorization")) else None
+    owner, error = resolve_persistence_identity(req_user_id, anonymous_id)
     if error:
         return error
 
@@ -1753,14 +1807,16 @@ def add_to_cart_route():
 
     try:
         items = add_to_cart(cart_collection, products_collection, product_id, quantity, **owner)
+        prod_title = product_doc.get("title") or product_doc.get("name") or "Product"
+        prod_price = product_doc.get("price")
         if session_id:
             try:
                 log_behavior_event(
                     {
                         "session_id": session_id,
                         "event_type": "add_to_cart",
-                        "entity": {"type": "product", "id": str(product_id)},
-                        "metadata": {"quantity": quantity},
+                        "entity": {"type": "product", "id": str(product_id), "name": prod_title, "title": prod_title, "price": prod_price},
+                        "metadata": {"quantity": quantity, "price": prod_price},
                     },
                     sessions_collection,
                     events_collection,
@@ -1773,6 +1829,27 @@ def add_to_cart_route():
                 rescore_customer(owner["user_id"], db, socketio=socketio)
             except Exception:
                 pass
+
+        try:
+            target_id = str(owner.get("user_id") or owner.get("anonymous_id"))
+            socketio.emit("cart_update", {
+                "customer_id": target_id,
+                "user_id": str(owner.get("user_id") or ""),
+                "anonymous_id": owner.get("anonymous_id") or "",
+                "cart_current_count": len(items),
+                "item_count": sum(int(it.get("quantity", 1)) for it in items),
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            })
+            socketio.emit("customer_activity", {
+                "customer_id": target_id,
+                "event": "add_to_cart",
+                "page": "/cart",
+                "product_id": str(product_id),
+                "product_name": prod_title,
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            })
+        except Exception:
+            pass
 
         return jsonify({"success": True, "message": "Added to cart", "data": items})
     except Exception as e:
@@ -1800,11 +1877,50 @@ def update_cart_route(product_id):
 
     try:
         items = update_cart_quantity(cart_collection, products_collection, product_id, quantity, **owner)
+        prod_title = product_doc.get("title") or product_doc.get("name") or "Product"
+        session_id = data.get("session_id")
+        if session_id:
+            try:
+                log_behavior_event(
+                    {
+                        "session_id": session_id,
+                        "event_type": "cart_update",
+                        "entity": {"type": "product", "id": str(product_id), "name": prod_title, "title": prod_title},
+                        "metadata": {"quantity": quantity},
+                    },
+                    sessions_collection,
+                    events_collection,
+                )
+            except Exception:
+                pass
+
         if owner.get("user_id"):
             try:
                 rescore_customer(owner["user_id"], db, socketio=socketio)
             except Exception:
                 pass
+
+        try:
+            target_id = str(owner.get("user_id") or owner.get("anonymous_id"))
+            socketio.emit("cart_update", {
+                "customer_id": target_id,
+                "user_id": str(owner.get("user_id") or ""),
+                "anonymous_id": owner.get("anonymous_id") or "",
+                "cart_current_count": len(items),
+                "item_count": sum(int(it.get("quantity", 1)) for it in items),
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            })
+            socketio.emit("customer_activity", {
+                "customer_id": target_id,
+                "event": "cart_update",
+                "page": "/cart",
+                "product_id": str(product_id),
+                "product_name": prod_title,
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            })
+        except Exception:
+            pass
+
         return jsonify({"success": True, "message": "Cart updated", "data": items})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 400
@@ -1822,6 +1938,9 @@ def remove_from_cart_route(product_id):
     if error:
         return error
 
+    product_doc = resolve_product_doc(products_collection, product_id)
+    prod_title = (product_doc.get("title") or product_doc.get("name") or "Product") if product_doc else "Product"
+
     try:
         items = remove_from_cart(cart_collection, products_collection, product_id, **owner)
         if session_id:
@@ -1830,7 +1949,7 @@ def remove_from_cart_route(product_id):
                     {
                         "session_id": session_id,
                         "event_type": "remove_from_cart",
-                        "entity": {"type": "product", "id": str(product_id)},
+                        "entity": {"type": "product", "id": str(product_id), "name": prod_title, "title": prod_title},
                     },
                     sessions_collection,
                     events_collection,
@@ -1840,9 +1959,31 @@ def remove_from_cart_route(product_id):
 
         if owner.get("user_id"):
             try:
-                rescore_customer(owner["user_id"], db, socketio=socketio)
+                rescore_customer(owner["user_id"], db, force=True, socketio=socketio)
             except Exception:
                 pass
+
+        try:
+            target_id = str(owner.get("user_id") or owner.get("anonymous_id"))
+            socketio.emit("cart_update", {
+                "customer_id": target_id,
+                "user_id": str(owner.get("user_id") or ""),
+                "anonymous_id": owner.get("anonymous_id") or "",
+                "cart_current_count": len(items),
+                "cart_items": items,
+                "item_count": sum(int(it.get("quantity", 1)) for it in items),
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            })
+            socketio.emit("customer_activity", {
+                "customer_id": target_id,
+                "event": "remove_from_cart",
+                "page": "/cart",
+                "product_id": str(product_id),
+                "product_name": prod_title,
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            })
+        except Exception:
+            pass
 
         return jsonify({"success": True, "message": "Item removed from cart", "data": items})
     except Exception as e:
@@ -1856,17 +1997,58 @@ def clear_cart_route():
 
     user_id = request.args.get("user_id")
     anonymous_id = request.args.get("anonymous_id")
+    session_id = request.args.get("session_id")
     owner, error = resolve_persistence_identity(user_id, anonymous_id)
     if error:
         return error
 
     try:
+        old_items = get_user_cart(cart_collection, products_collection, **owner)
         clear_cart(cart_collection, **owner)
-        if owner.get("user_id"):
+
+        if session_id:
             try:
-                rescore_customer(owner["user_id"], db, socketio=socketio)
+                log_behavior_event(
+                    {
+                        "session_id": session_id,
+                        "event_type": "remove_from_cart",
+                        "entity": {"type": "cart", "item_count": 0},
+                        "metadata": {"cleared_all": True, "removed_count": len(old_items)},
+                    },
+                    sessions_collection,
+                    events_collection,
+                )
             except Exception:
                 pass
+
+        if owner.get("user_id"):
+            try:
+                rescore_customer(owner["user_id"], db, force=True, socketio=socketio)
+            except Exception:
+                pass
+
+        try:
+            target_id = str(owner.get("user_id") or owner.get("anonymous_id"))
+            socketio.emit("cart_update", {
+                "customer_id": target_id,
+                "user_id": str(owner.get("user_id") or ""),
+                "anonymous_id": owner.get("anonymous_id") or "",
+                "cart_current_count": 0,
+                "cart_total_quantity": 0,
+                "cart_items": [],
+                "item_count": 0,
+                "total_value": 0,
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            })
+            socketio.emit("customer_activity", {
+                "customer_id": target_id,
+                "event": "cart_cleared",
+                "page": "/cart",
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            })
+        except Exception:
+            pass
+
         return jsonify({"success": True, "message": "Cart cleared", "data": []})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 400
@@ -1911,6 +2093,8 @@ def add_to_wishlist_route():
     if not product_doc:
         return jsonify({"success": False, "message": "Product not found", "errors": []}), 400
 
+    prod_title = product_doc.get("title") or product_doc.get("name") or "Product"
+
     try:
         items = add_to_wishlist(wishlist_collection, products_collection, product_id, **owner)
         if session_id:
@@ -1919,7 +2103,7 @@ def add_to_wishlist_route():
                     {
                         "session_id": session_id,
                         "event_type": "wishlist_add",
-                        "entity": {"type": "product", "id": str(product_id)},
+                        "entity": {"type": "product", "id": str(product_id), "name": prod_title, "title": prod_title, "price": product_doc.get("price")},
                     },
                     sessions_collection,
                     events_collection,
@@ -1932,6 +2116,26 @@ def add_to_wishlist_route():
                 rescore_customer(owner["user_id"], db, socketio=socketio)
             except Exception:
                 pass
+
+        try:
+            target_id = str(owner.get("user_id") or owner.get("anonymous_id"))
+            socketio.emit("wishlist_update", {
+                "customer_id": target_id,
+                "user_id": str(owner.get("user_id") or ""),
+                "anonymous_id": owner.get("anonymous_id") or "",
+                "wishlist_current_count": len(items),
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            })
+            socketio.emit("customer_activity", {
+                "customer_id": target_id,
+                "event": "wishlist_add",
+                "page": "/wishlist",
+                "product_id": str(product_id),
+                "product_name": prod_title,
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            })
+        except Exception:
+            pass
 
         return jsonify({"success": True, "message": "Added to wishlist", "data": items})
     except Exception as e:
@@ -1950,6 +2154,9 @@ def remove_from_wishlist_route(product_id):
     if error:
         return error
 
+    product_doc = resolve_product_doc(products_collection, product_id)
+    prod_title = (product_doc.get("title") or product_doc.get("name") or "Product") if product_doc else "Product"
+
     try:
         items = remove_from_wishlist(wishlist_collection, products_collection, product_id, **owner)
         if session_id:
@@ -1958,7 +2165,7 @@ def remove_from_wishlist_route(product_id):
                     {
                         "session_id": session_id,
                         "event_type": "wishlist_remove",
-                        "entity": {"type": "product", "id": str(product_id)},
+                        "entity": {"type": "product", "id": str(product_id), "name": prod_title, "title": prod_title},
                     },
                     sessions_collection,
                     events_collection,
@@ -1972,6 +2179,26 @@ def remove_from_wishlist_route(product_id):
             except Exception:
                 pass
 
+        try:
+            target_id = str(owner.get("user_id") or owner.get("anonymous_id"))
+            socketio.emit("wishlist_update", {
+                "customer_id": target_id,
+                "user_id": str(owner.get("user_id") or ""),
+                "anonymous_id": owner.get("anonymous_id") or "",
+                "wishlist_current_count": len(items),
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            })
+            socketio.emit("customer_activity", {
+                "customer_id": target_id,
+                "event": "wishlist_remove",
+                "page": "/wishlist",
+                "product_id": str(product_id),
+                "product_name": prod_title,
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            })
+        except Exception:
+            pass
+
         return jsonify({"success": True, "message": "Removed from wishlist", "data": items})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 400
@@ -1984,17 +2211,54 @@ def clear_wishlist_route():
 
     user_id = request.args.get("user_id")
     anonymous_id = request.args.get("anonymous_id")
+    session_id = request.args.get("session_id")
     owner, error = resolve_persistence_identity(user_id, anonymous_id)
     if error:
         return error
 
     try:
+        old_items = get_user_wishlist(wishlist_collection, products_collection, **owner)
         clear_wishlist(wishlist_collection, **owner)
-        if owner.get("user_id"):
+
+        if session_id:
             try:
-                rescore_customer(owner["user_id"], db, socketio=socketio)
+                log_behavior_event(
+                    {
+                        "session_id": session_id,
+                        "event_type": "wishlist_remove",
+                        "entity": {"type": "wishlist", "item_count": 0},
+                        "metadata": {"cleared_all": True, "removed_count": len(old_items)},
+                    },
+                    sessions_collection,
+                    events_collection,
+                )
             except Exception:
                 pass
+
+        if owner.get("user_id"):
+            try:
+                rescore_customer(owner["user_id"], db, force=True, socketio=socketio)
+            except Exception:
+                pass
+
+        try:
+            target_id = str(owner.get("user_id") or owner.get("anonymous_id"))
+            socketio.emit("wishlist_update", {
+                "customer_id": target_id,
+                "user_id": str(owner.get("user_id") or ""),
+                "anonymous_id": owner.get("anonymous_id") or "",
+                "wishlist_current_count": 0,
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            })
+            socketio.emit("customer_activity", {
+                "customer_id": target_id,
+                "event": "wishlist_cleared",
+                "page": "/wishlist",
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            })
+        except Exception:
+            pass
+
         return jsonify({"success": True, "message": "Wishlist cleared", "data": []})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 400
@@ -2869,7 +3133,12 @@ def create_order():
             "page": "/orders",
             "timestamp": now,
             "entity": {"type": "order", "id": str(order_doc["_id"])},
-            "metadata": {"total_amount": order_doc["total_amount"], "item_count": len(order_doc["items"])},
+            "metadata": {
+                "order_id": str(order_doc["_id"]),
+                "total_amount": order_doc["total_amount"],
+                "item_count": len(order_doc["items"]),
+                "items": [{"product_id": str(i.get("product_id")), "name": i.get("name"), "price": i.get("price"), "quantity": i.get("quantity")} for i in order_doc.get("items", [])],
+            },
             "context": {},
             "schema_version": 2,
         }
@@ -2894,12 +3163,20 @@ def create_order():
         except Exception:
             pass
 
-        # Emit real-time order event
+        # Emit real-time order and cart update events
         try:
             socketio.emit("order_placed", {
                 "customer_id": str(owner["user_id"]),
                 "order_id": str(order_doc["_id"]),
                 "total_amount": order_doc["total_amount"],
+                "timestamp": str(now),
+            })
+            socketio.emit("cart_update", {
+                "customer_id": str(owner["user_id"]),
+                "user_id": str(owner["user_id"]),
+                "item_count": 0,
+                "cart_current_count": 0,
+                "total_value": 0,
                 "timestamp": str(now),
             })
             amt = float(order_doc.get("total_amount", 0))
@@ -2992,6 +3269,60 @@ def get_order_detail(order_id):
         return jsonify({"success": False, "message": "Order not found", "errors": []}), 404
     except Exception as e:
         return jsonify({"success": False, "message": str(e), "errors": []}), 500
+
+
+@app.route("/api/orders/<order_id>/status", methods=["PUT", "PATCH"])
+def update_order_status(order_id):
+    if not MONGO_AVAILABLE:
+        return jsonify({"success": False, "message": "Database unavailable"}), 500
+
+    data = request.get_json(silent=True) or {}
+    new_status = data.get("status") or data.get("order_status")
+    if not new_status:
+        return jsonify({"success": False, "message": "status is required"}), 400
+
+    if not ObjectId.is_valid(order_id):
+        return jsonify({"success": False, "message": "Order not found"}), 404
+
+    order = orders_collection.find_one({"_id": ObjectId(order_id)})
+    if not order:
+        return jsonify({"success": False, "message": "Order not found"}), 404
+
+    now = datetime.datetime.utcnow()
+    orders_collection.update_one(
+        {"_id": ObjectId(order_id)},
+        {"$set": {"order_status": new_status, "status": new_status.lower(), "updated_at": now}}
+    )
+
+    status_event = {
+        "user_id": order.get("user_id"),
+        "visitor_id": order.get("customer_email"),
+        "event_type": "order_status_update",
+        "event_category": "commerce",
+        "event_action": "status_update",
+        "page": "/orders",
+        "timestamp": now,
+        "entity": {"type": "order", "id": str(order_id)},
+        "metadata": {
+            "order_id": str(order_id),
+            "status": new_status,
+            "previous_status": order.get("order_status") or order.get("status"),
+        },
+        "schema_version": 2,
+    }
+    events_collection.insert_one(status_event)
+
+    try:
+        socketio.emit("order_status_update", {
+            "order_id": str(order_id),
+            "customer_id": str(order.get("user_id")),
+            "status": new_status,
+            "timestamp": now.isoformat(),
+        })
+    except Exception:
+        pass
+
+    return jsonify({"success": True, "message": "Order status updated", "data": {"order_id": str(order_id), "status": new_status}})
 
 
 @app.route("/api/analytics/summary", methods=["GET"])

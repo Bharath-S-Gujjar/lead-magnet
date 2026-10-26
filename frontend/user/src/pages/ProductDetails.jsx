@@ -54,6 +54,7 @@ export const ProductDetails = () => {
   const [selectedSize, setSelectedSize] = useState('M');
   const [selectedColor, setSelectedColor] = useState('Classic');
   const [quantity, setQuantity] = useState(1);
+  const trackedProductRef = React.useRef(null);
 
   useEffect(() => {
     let active = true;
@@ -71,17 +72,20 @@ export const ProductDetails = () => {
           setSelectedSize(norm.sizes[0] || 'M');
           setSelectedColor(norm.colors[0] || 'Classic');
 
-          trackCustomerEvent('product_view', {
-            page: `/product/${id}`,
-            entity: {
-              id: norm.id,
-              product_id: norm.product_id,
-              title: norm.title,
-              category: norm.category,
-              brand: norm.brand,
-              price: norm.price,
-            },
-          });
+          if (trackedProductRef.current !== id) {
+            trackedProductRef.current = id;
+            trackCustomerEvent('product_view', {
+              page: `/product/${id}`,
+              entity: {
+                id: norm.id,
+                product_id: norm.product_id,
+                title: norm.title,
+                category: norm.category,
+                brand: norm.brand,
+                price: norm.price,
+              },
+            });
+          }
 
           if (norm.category) {
             fetchProducts({ category: norm.category, limit: 4 })

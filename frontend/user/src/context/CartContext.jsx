@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { addToCartApi, clearCartApi, fetchCart, getAnonymousId, getCustomerSession, removeFromCartApi, trackCustomerEvent, updateCartApi } from '../services/api';
+import { addToCartApi, clearCartApi, fetchCart, getActiveSessionId, getAnonymousId, getCustomerSession, removeFromCartApi, trackCustomerEvent, updateCartApi } from '../services/api';
 import { useAuth } from './AuthContext';
 
 const CartContext = createContext();
@@ -113,35 +113,18 @@ export const CartProvider = ({ children }) => {
       }
     });
 
-    addToCartApi(product.id, quantity, userId, anonymousId, customer?.session_id)
+    const sessionId = customer?.session_id || getActiveSessionId();
+    addToCartApi(product.id, quantity, userId, anonymousId, sessionId)
       .catch(restorePersistedCart);
-
-    trackCustomerEvent('add_to_cart', {
-      entity: {
-        type: 'product',
-        id: product.id,
-        name: product.name,
-        category: product.category,
-        brand: product.brand,
-        price: product.price,
-      },
-      metadata: { quantity, size, color },
-    });
   };
 
   const removeFromCart = (id, selectedSize, selectedColor) => {
     setCart(prev => prev.filter(
       item => !(item.id === id && item.selectedSize === selectedSize && item.selectedColor === selectedColor)
     ));
-    removeFromCartApi(id, userId, anonymousId, customer?.session_id)
+    const sessionId = customer?.session_id || getActiveSessionId();
+    removeFromCartApi(id, userId, anonymousId, sessionId)
       .catch(restorePersistedCart);
-    trackCustomerEvent('remove_from_cart', {
-      entity: {
-        type: 'product',
-        id,
-      },
-      metadata: { size: selectedSize, color: selectedColor },
-    });
   };
 
   const updateQuantity = (id, selectedSize, selectedColor, delta) => {
@@ -157,14 +140,16 @@ export const CartProvider = ({ children }) => {
       return item;
     }));
     if (nextQuantity > 0) {
-      updateCartApi(id, nextQuantity, userId, anonymousId)
+      const sessionId = customer?.session_id || getActiveSessionId();
+      updateCartApi(id, nextQuantity, userId, anonymousId, sessionId)
         .catch(restorePersistedCart);
     }
   };
 
   const clearCart = () => {
     setCart([]);
-    clearCartApi(userId, anonymousId).catch(restorePersistedCart);
+    const sessionId = customer?.session_id || getActiveSessionId();
+    clearCartApi(userId, anonymousId, sessionId).catch(restorePersistedCart);
   };
 
   const removeOrderedItems = (orderedProductIds) => {

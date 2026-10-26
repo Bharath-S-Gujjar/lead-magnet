@@ -32,7 +32,15 @@ def predict_session(model_input):
     if hasattr(model_input, "columns"):
         scaled_features = pd.DataFrame(scaled_features, columns=model_input.columns)
 
-    probability = artifacts["model"].predict_proba(scaled_features)[0][1]
+    try:
+        probability = artifacts["model"].predict_proba(scaled_features)[0][1]
+    except ValueError:
+        import xgboost as xgb
+        cols = list(model_input.columns) if hasattr(model_input, "columns") else None
+        dm = xgb.DMatrix(scaled_features, feature_names=cols)
+        raw_pred = artifacts["model"].get_booster().predict(dm)
+        probability = float(raw_pred[0])
+
     cluster_id = artifacts["kmeans"].predict(scaled_features)[0]
     segment = artifacts["segment_map"][cluster_id]
 

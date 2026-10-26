@@ -15,7 +15,7 @@ import math
 from collections import Counter
 from datetime import datetime, timezone
 from bson import ObjectId
-from customer_feature_service import _to_object_id
+from customer_feature_service import _to_object_id, is_completed_order
 from score_history_service import get_score_history
 from model_explainability_service import explain_lead_score
 from rfm_service import compute_rfm
@@ -151,8 +151,10 @@ def get_qualified_leads_list(db, qualification_status="qualified", segment="all"
 
     query = {}
     if qualification_status and qualification_status != "all":
-        if qualification_status == "converted":
-            query["lifecycle_status"] = {"$in": ["converted", "repeat_customer"]}
+        if qualification_status == "repeat_customer":
+            query["lifecycle_status"] = "repeat_customer"
+        elif qualification_status == "converted":
+            query["lifecycle_status"] = "converted"
         elif qualification_status == "not_qualified":
             query["qualification_status"] = "not_qualified"
             query["lifecycle_status"] = "prospect"
@@ -325,14 +327,23 @@ def _compute_behavior_summary(customer_id, db, events_list=None, sessions_list=N
     checkout_starts_count = type_counter.get("checkout_start", 0)
     searches_count = type_counter.get("search", 0) + type_counter.get("filter_apply", 0)
 
-    # Real orders from orders collection (ground truth for orders_count)
+    # Real orders from orders collection (ground truth for completed orders_count)
     order_id_conds = []
     if c_oid:
         order_id_conds.append({"user_id": c_oid})
         order_id_conds.append({"user_id": str(c_oid)})
     if isinstance(customer_id, str):
         order_id_conds.append({"user_id": customer_id})
-    orders_count = db["orders"].count_documents({"$or": order_id_conds}) if order_id_conds else 0
+    raw_user_orders = list(db["orders"].find({"$or": order_id_conds})) if order_id_conds else []
+    seen_o_ids = set()
+    completed_user_orders = []
+    for o in raw_user_orders:
+        oid = o.get("_id")
+        if oid not in seen_o_ids:
+            seen_o_ids.add(oid)
+            if is_completed_order(o):
+                completed_user_orders.append(o)
+    orders_count = len(completed_user_orders)
 
     # Wishlist items (current, from wishlist collection)
     wl_id_conds = []
@@ -1020,7 +1031,7 @@ def mark_all_notifications_read(db):
     }
 
 
-def _build_journey_timeline(customer_id, db, limit=30):
+def _build_journey_timeline(customer_id, db, limit=50):
     """Build a chronological customer journey timeline from events, orders, and marketing comms.
 
     Returns:
@@ -1029,22 +1040,68 @@ def _build_journey_timeline(customer_id, db, limit=30):
     timeline = []
 
     c_oid = _to_object_id(customer_id)
-    id_conditions = []
-    if c_oid:
-        id_conditions.append({"user_id": c_oid})
-        id_conditions.append({"user_id": str(c_oid)})
-    if isinstance(customer_id, str):
-        id_conditions.append({"anonymous_id": customer_id})
-
+    id_conditions = _build_customer_id_conditions(customer_id)
     if not id_conditions:
         return []
 
-    base_query = {"$or": id_conditions}
+    # 1. Resolve ALL anonymous_ids and visitor_id from user's profile
+    all_anon_ids = set()
+    customer_email = None
+    if c_oid:
+        try:
+            profile_col = db["user_profiles"] if "user_profiles" in db.list_collection_names() else db.get("profiles")
+            if profile_col is not None:
+                profile_doc = profile_col.find_one({"_id": c_oid}, {"anonymous_ids": 1, "visitor_id": 1, "email": 1})
+                if profile_doc:
+                    raw_anons = profile_doc.get("anonymous_ids") or []
+                    for a in raw_anons:
+                        if a:
+                            all_anon_ids.add(str(a))
+                    vid = profile_doc.get("visitor_id")
+                    if vid:
+                        all_anon_ids.add(str(vid))
+                    customer_email = profile_doc.get("email")
+        except Exception:
+            pass
+    elif isinstance(customer_id, str):
+        all_anon_ids.add(customer_id)
+
+    # 2. Find all sessions associated with customer or anonymous identities
+    session_id_conds = list(id_conditions)
+    for aid in all_anon_ids:
+        session_id_conds.append({"anonymous_id": aid})
+        session_id_conds.append({"visitor_id": aid})
+
+    session_ids = []
+    try:
+        sessions = list(db["sessions"].find({"$or": session_id_conds}, {"_id": 1}))
+        session_ids = [s["_id"] for s in sessions]
+    except Exception:
+        pass
+
+    # 3. Product lookup helper
+    def _lookup_prod(pid):
+        if not pid:
+            return None
+        try:
+            col_names = db.list_collection_names()
+            prod_col = db["myntra_products"] if "myntra_products" in col_names else db.get("products")
+            if prod_col is not None:
+                prod = resolve_product_doc(prod_col, pid)
+                if prod:
+                    return prod
+            if "products" in col_names and db["products"] is not prod_col:
+                prod = resolve_product_doc(db["products"], pid)
+                if prod:
+                    return prod
+        except Exception:
+            pass
+        return None
 
     known_order_ids = set()
     known_order_timestamps = set()
 
-    # 1. Orders from orders collection (canonical order records)
+    # 4. Orders from orders collection (canonical order records)
     try:
         order_query = {"$or": []}
         if c_oid:
@@ -1052,9 +1109,11 @@ def _build_journey_timeline(customer_id, db, limit=30):
             order_query["$or"].append({"user_id": str(c_oid)})
         if isinstance(customer_id, str):
             order_query["$or"].append({"user_id": customer_id})
+        if customer_email:
+            order_query["$or"].append({"customer_email": customer_email})
 
         if order_query["$or"]:
-            orders = list(db["orders"].find(order_query).sort("created_at", -1).limit(10))
+            orders = list(db["orders"].find(order_query).sort("created_at", -1).limit(limit))
             for o in orders:
                 oid_str = str(o.get("_id", ""))
                 known_order_ids.add(oid_str)
@@ -1066,24 +1125,37 @@ def _build_journey_timeline(customer_id, db, limit=30):
                     "type": "order",
                     "order_id": oid_str,
                     "total_amount": o.get("total_amount"),
+                    "status": o.get("order_status") or o.get("status") or "Placed",
+                    "items": o.get("items") or [],
                     "timestamp": ts_str,
                 })
     except Exception:
         pass
 
-    # 2. Behavior events — deduplicate order_placed / order events that represent real orders
+    # 5. Behavior events — include session-linked events + anon events + user events
     try:
-        events = list(db["events"].find(base_query).sort("timestamp", -1).limit(limit))
-        for e in events:
+        event_id_conds = list(id_conditions)
+        for aid in all_anon_ids:
+            event_id_conds.append({"anonymous_id": aid})
+            event_id_conds.append({"visitor_id": aid})
+        if session_ids:
+            event_id_conds.append({"session_id": {"$in": session_ids}})
+
+        raw_events = list(db["events"].find({"$or": event_id_conds}).sort("timestamp", -1).limit(limit * 2))
+        seen_event_ids = set()
+        for e in raw_events:
+            if e.get("_id") in seen_event_ids:
+                continue
+            seen_event_ids.add(e.get("_id"))
+
             evt_type = e.get("event_type")
             _, ts_str = parse_and_normalize_timestamp(e.get("timestamp"))
+            entity = e.get("entity") or {}
+            meta = e.get("metadata") or {}
 
             if evt_type in ("order_placed", "order", "purchase"):
-                entity = e.get("entity") or {}
-                meta = e.get("metadata") or {}
                 e_order_id = str(entity.get("id") or meta.get("order_id") or "")
 
-                # If this order is already recorded via orders collection, skip duplicate
                 is_duplicate = False
                 if e_order_id and e_order_id in known_order_ids:
                     is_duplicate = True
@@ -1093,7 +1165,6 @@ def _build_journey_timeline(customer_id, db, limit=30):
                 if is_duplicate:
                     continue
 
-                # If no orders doc was found, include as canonical order entry
                 canonical_oid = e_order_id or str(e.get("_id", ""))
                 known_order_ids.add(canonical_oid)
                 if ts_str:
@@ -1103,19 +1174,38 @@ def _build_journey_timeline(customer_id, db, limit=30):
                     "type": "order",
                     "order_id": canonical_oid,
                     "total_amount": meta.get("total_amount"),
+                    "status": meta.get("status") or "Placed",
+                    "items": meta.get("items") or [],
                     "timestamp": ts_str,
                 })
             else:
+                # Enrich product events if name is missing
+                prod_id = entity.get("id") or meta.get("product_id") or entity.get("product_id")
+                if not prod_id and e.get("page") and "/product/" in str(e.get("page")):
+                    prod_id = str(e.get("page")).split("/")[-1].split("?")[0]
+
+                if prod_id and not entity.get("name") and not entity.get("title"):
+                    prod = _lookup_prod(prod_id)
+                    if prod:
+                        entity["name"] = prod.get("title") or prod.get("name") or ""
+                        if entity.get("price") is None:
+                            entity["price"] = prod.get("price")
+
+                prod_title = entity.get("name") or entity.get("title") or meta.get("product_name") or meta.get("name") or ""
+
                 timeline.append({
                     "type": "event",
                     "event_type": evt_type,
                     "page": e.get("page"),
                     "timestamp": ts_str,
+                    "product_name": prod_title,
+                    "entity": entity,
+                    "metadata": meta,
                 })
     except Exception:
         pass
 
-    # Marketing comms
+    # 6. Marketing comms
     try:
         comm_query = {"$or": []}
         if c_oid:
@@ -1125,7 +1215,7 @@ def _build_journey_timeline(customer_id, db, limit=30):
             comm_query["$or"].append({"customer_id": customer_id})
 
         if comm_query["$or"]:
-            comms = list(db["marketing_communications"].find(comm_query).sort("created_at", -1).limit(10))
+            comms = list(db["marketing_communications"].find(comm_query).sort("created_at", -1).limit(limit))
             for c in comms:
                 ts = c.get("sent_at") or c.get("created_at")
                 _, ts_str = parse_and_normalize_timestamp(ts)
@@ -1133,6 +1223,7 @@ def _build_journey_timeline(customer_id, db, limit=30):
                     "type": "marketing",
                     "channel": c.get("channel"),
                     "status": c.get("status"),
+                    "template": c.get("template_name") or c.get("campaign_name"),
                     "timestamp": ts_str,
                 })
     except Exception:

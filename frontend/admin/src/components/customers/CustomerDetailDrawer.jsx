@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { io } from 'socket.io-client';
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { getAdminCustomerIntelligence } from '../../services/api';
 import {
@@ -16,27 +17,89 @@ const EVENT_LABEL_MAP = {
   product_view:     'Product View',
   product_click:    'Product Click',
   search:           'Search',
-  filter_apply:     'Filter',
+  filter_apply:     'Filter Applied',
+  sort_apply:       'Sort Applied',
   add_to_cart:      'Added to Cart',
   remove_from_cart: 'Removed from Cart',
+  cart_update:      'Cart Updated',
+  cart_clear:       'Cart Cleared',
   add_to_wishlist:  'Wishlist Add',
   wishlist_add:     'Wishlist Add',
   wishlist_remove:  'Wishlist Remove',
+  wishlist_clear:   'Wishlist Cleared',
   checkout_start:   'Checkout Start',
   order_placed:     'Order Placed',
+  order:            'Order Placed',
+  purchase:         'Purchase Completed',
+  order_status_update: 'Order Status Update',
+  registration:     'Registration',
+  signup:           'Registration',
+  login:            'Login',
 };
 
 function getJourneyLabel(item) {
   if (!item) return 'Activity';
   if (item.type === 'order') {
-    return `Order ₹${(item.total_amount || 0).toLocaleString('en-IN')}`;
+    const amt = item.total_amount != null ? ` ₹${Number(item.total_amount).toLocaleString('en-IN')}` : '';
+    const status = item.status ? ` (${item.status})` : '';
+    const itemsCount = item.items && item.items.length ? ` · ${item.items.length} item(s)` : '';
+    return `Order Placed${amt}${status}${itemsCount}`;
   }
   if (item.type === 'marketing') {
-    return `${item.channel || 'Email'} Campaign${item.status ? ` (${item.status})` : ''}`;
+    return `${(item.channel || 'Email').toUpperCase()} Campaign${item.status ? ` (${item.status})` : ''}${item.template ? ` · ${item.template}` : ''}`;
   }
   // event type
   const evtType = item.event_type || '';
   const label = EVENT_LABEL_MAP[evtType] || evtType.replace(/_/g, ' ');
+  const entity = item.entity || {};
+  const meta = item.metadata || {};
+
+  if (evtType === 'search') {
+    const q = meta.query || entity.query || '';
+    return q ? `Search "${q}"` : 'Search';
+  }
+  if (evtType === 'registration' || evtType === 'signup') {
+    return `User Registered${meta.email ? ` (${meta.email})` : ''}`;
+  }
+  if (evtType === 'login') {
+    return `User Login${meta.email ? ` (${meta.email})` : ''}`;
+  }
+  if (evtType === 'product_view' || evtType === 'product_click') {
+    const name = entity.name || entity.title || meta.name || '';
+    return name ? `Product View: ${name}` : `Product View · ${item.page || ''}`;
+  }
+  if (evtType === 'add_to_cart') {
+    const name = entity.name || entity.title || meta.name || '';
+    const qty = meta.quantity ? ` (Qty: ${meta.quantity})` : '';
+    return name ? `Added to Cart: ${name}${qty}` : `Added to Cart${qty}`;
+  }
+  if (evtType === 'remove_from_cart') {
+    if (meta.cleared_all) return 'Cleared Cart';
+    const name = entity.name || entity.title || meta.name || '';
+    return name ? `Removed from Cart: ${name}` : 'Removed from Cart';
+  }
+  if (evtType === 'cart_update') {
+    const name = entity.name || entity.title || meta.name || '';
+    const qty = meta.quantity != null ? ` (Qty: ${meta.quantity})` : '';
+    return name ? `Cart Updated: ${name}${qty}` : `Cart Updated${qty}`;
+  }
+  if (evtType === 'wishlist_add' || evtType === 'add_to_wishlist') {
+    const name = entity.name || entity.title || meta.name || '';
+    return name ? `Wishlist Add: ${name}` : 'Wishlist Add';
+  }
+  if (evtType === 'wishlist_remove') {
+    if (meta.cleared_all) return 'Cleared Wishlist';
+    const name = entity.name || entity.title || meta.name || '';
+    return name ? `Wishlist Remove: ${name}` : 'Wishlist Remove';
+  }
+  if (evtType === 'checkout_start') {
+    const count = meta.item_count ? ` (${meta.item_count} items)` : '';
+    return `Checkout Started${count}`;
+  }
+  if (evtType === 'order_status_update') {
+    return `Order Status: ${meta.status || 'Updated'}`;
+  }
+
   const page = item.page ? ` · ${item.page}` : '';
   return `${label}${page}`;
 }
@@ -49,13 +112,21 @@ function getEventColor(item) {
     search:           '#3b82f6',
     filter_apply:     '#60a5fa',
     add_to_cart:      '#f59e0b',
-    remove_from_cart: '#94a3b8',
-    wishlist_add:     '#f43f5e',
-    add_to_wishlist:  '#f43f5e',
+    remove_from_cart: '#ef4444',
+    cart_update:      '#f59e0b',
+    cart_clear:       '#ef4444',
+    wishlist_add:     '#ec4899',
+    add_to_wishlist:  '#ec4899',
     wishlist_remove:  '#94a3b8',
+    wishlist_clear:   '#94a3b8',
     checkout_start:   '#f97316',
     order_placed:     '#10b981',
     order:            '#10b981',
+    purchase:         '#10b981',
+    registration:     '#14b8a6',
+    signup:           '#14b8a6',
+    login:            '#06b6d4',
+    order_status_update: '#3b82f6',
     marketing:        '#06b6d4',
   };
   return colorMap[item?.event_type] || colorMap[item?.type] || '#94a3b8';
@@ -135,8 +206,9 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
   useEffect(() => {
     if (!isOpen || !customerId) { return; }
     let isMounted = true;
-    async function load() {
-      setIsLoading(true); setError('');
+    async function load(showSpinner = true) {
+      if (showSpinner) setIsLoading(true);
+      setError('');
       try {
         const data = await getAdminCustomerIntelligence(customerId, admin?.token);
         if (isMounted) {
@@ -144,13 +216,46 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
           setCachedDetail(data);
         }
       } catch (err) {
-        if (isMounted) { setError(err.message || 'Unable to load customer intelligence.'); setDetail(null); }
+        if (isMounted && showSpinner) {
+          setError(err.message || 'Unable to load customer intelligence.');
+          setDetail(null);
+        }
       } finally {
-        if (isMounted) setIsLoading(false);
+        if (isMounted && showSpinner) setIsLoading(false);
       }
     }
-    load();
-    return () => { isMounted = false; };
+    load(true);
+
+    // Dynamic background polling every 5 seconds while drawer is open
+    const pollInterval = setInterval(() => {
+      load(false);
+    }, 5000);
+
+    // Socket.io listener for real-time customer activity
+    let socket = null;
+    try {
+      const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:5000').replace(/\/$/, '');
+      socket = io(API_BASE, { transports: ['websocket', 'polling'] });
+      const handleActivity = (payload) => {
+        const payloadCid = payload?.customer_id || payload?.user_id || payload?.anonymous_id;
+        if (!payloadCid || String(payloadCid) === String(customerId)) {
+          load(false);
+        }
+      };
+      socket.on('customer_activity', handleActivity);
+      socket.on('cart_update', handleActivity);
+      socket.on('wishlist_update', handleActivity);
+      socket.on('order_placed', handleActivity);
+      socket.on('order_status_update', handleActivity);
+    } catch (e) {
+      // Non-blocking socket fallback
+    }
+
+    return () => {
+      isMounted = false;
+      clearInterval(pollInterval);
+      if (socket) socket.disconnect();
+    };
   }, [isOpen, customerId, admin?.token]);
 
   if (!shouldRender && !isOpen) return null;
@@ -347,7 +452,7 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
                       { label: 'Sessions',    value: bs.sessions_count       ?? 0,  color: '#6366f1' },
                       { label: 'Page Views',  value: bs.page_views_count      ?? 0,  color: '#8b5cf6' },
                       { label: 'Cart Adds',   value: bs.cart_adds_count       ?? 0,  color: '#f59e0b' },
-                      { label: 'Wishlist',    value: bs.wishlist_adds_count   ?? 0,  color: '#f43f5e' },
+                      { label: 'Wishlist Adds', value: bs.wishlist_adds_count ?? 0,  color: '#f43f5e' },
                       { label: 'Orders',      value: bs.orders_count          ?? orders.length, color: '#10b981' },
                       { label: 'Searches',    value: bs.searches_count        ?? 0,  color: '#3b82f6' },
                     ].map(stat => (
@@ -412,14 +517,18 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
               </div>
 
               {/* ── SECTION 5: Customer Journey Timeline ── */}
-              {journey.length > 0 && (
-                <div>
-                  <h3 className="heading-md" style={{ color: 'var(--text-primary)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Compass size={18} style={{ color: 'var(--accent-indigo)' }} />
-                    <span>Customer Journey Timeline ({journey.length} events)</span>
-                  </h3>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderLeft: '2px solid var(--panel-border)', paddingLeft: '16px', marginLeft: '8px' }}>
-                    {journey.slice(0, 15).map((item, idx) => {
+              <div>
+                <h3 className="heading-md" style={{ color: 'var(--text-primary)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Compass size={18} style={{ color: 'var(--accent-indigo)' }} />
+                  <span>Customer Journey Timeline ({journey.length} event{journey.length !== 1 ? 's' : ''})</span>
+                </h3>
+                {journey.length === 0 ? (
+                  <div style={{ padding: '16px', background: 'var(--table-header-bg)', borderRadius: 'var(--radius-md)', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                    No journey events recorded yet.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderLeft: '2px solid var(--panel-border)', paddingLeft: '16px', marginLeft: '8px', maxHeight: '340px', overflowY: 'auto' }}>
+                    {journey.slice(0, 30).map((item, idx) => {
                       const color = getEventColor(item);
                       const label = getJourneyLabel(item);
                       return (
@@ -438,8 +547,8 @@ export const CustomerDetailDrawer = ({ customerId, isOpen, onClose }) => {
                       );
                     })}
                   </div>
-                </div>
-              )}
+                )}
+              </div>
 
               {/* ── SECTION 6: Score History ── */}
               {scoreHistory.length > 0 && (

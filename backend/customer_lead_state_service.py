@@ -117,7 +117,40 @@ def sync_customer_lead_state(customer_id, db):
     else:
         lifecycle_status = "prospect"
 
-    qual_status = "qualified" if (segment == "Hot" and not is_converted) else "not_qualified"
+    cart_item_count = int(feature_doc.get("cart_item_count") or 0)
+
+    # Check whether checkout was started within 24 hours:
+    checkout_within_24h = bool(
+        feature_doc.get("checkout_started_within_24h")
+        or (prediction.get("active_checkout_override") and not is_converted)
+    )
+    if not checkout_within_24h:
+        last_checkout_ts = feature_doc.get("last_checkout_start_at") or feature_doc.get("last_checkout_action_at")
+        if last_checkout_ts:
+            try:
+                now_dt = datetime.now(timezone.utc)
+                if isinstance(last_checkout_ts, str):
+                    last_checkout_dt = datetime.fromisoformat(last_checkout_ts.replace("Z", "+00:00"))
+                else:
+                    last_checkout_dt = last_checkout_ts
+                if last_checkout_dt.tzinfo is None:
+                    last_checkout_dt = last_checkout_dt.replace(tzinfo=timezone.utc)
+                if (now_dt - last_checkout_dt).total_seconds() <= 86400:
+                    checkout_within_24h = True
+            except Exception:
+                pass
+        if not checkout_within_24h and int(feature_doc.get("checkout_attempts") or 0) > 0:
+            days_since = float(feature_doc.get("days_since_last_activity") or 0.0)
+            if days_since <= 1.0:
+                checkout_within_24h = True
+
+    is_unconverted = (orders_count == 0 and not is_converted)
+    is_score_hot = (score >= HOT or segment == "Hot")
+    has_cart_items = (cart_item_count > 0)
+
+    # 4 strict conditions: unconverted, score >= 70, active cart items, checkout within 24h
+    is_qualified = bool(is_unconverted and is_score_hot and has_cart_items and checkout_within_24h)
+    qual_status = "qualified" if is_qualified else "not_qualified"
     now_iso = datetime.now(timezone.utc).isoformat()
 
     existing = state_col.find_one({"customer_id": query_id})

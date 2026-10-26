@@ -155,13 +155,21 @@ export async function ensureActiveSession() {
 export async function startCustomerSession(customer = {}) {
   const visitorId = customer.email || getAnonymousId();
   const anonymousId = customer.anonymous_id || getAnonymousId();
+  const userId = customer.user_id || customer._id || customer.id || null;
+  const token = customer.token || null;
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
 
   const response = await fetch(`${API_BASE_URL}/api/session/start`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({
       visitor_id: visitorId,
       anonymous_id: anonymousId,
+      user_id: token ? userId : null,
     }),
   });
   const payload = await parseJsonResponse(response);
@@ -194,13 +202,22 @@ export async function trackCustomerEvent(eventType, details = {}) {
   try {
     const sessionId = await ensureActiveSession();
     if (!sessionId) return;
+    const customer = getCustomerSession();
+
+    const headers = { 'Content-Type': 'application/json' };
+    if (customer?.token) {
+      headers.Authorization = `Bearer ${customer.token}`;
+    }
 
     await fetch(`${API_BASE_URL}/api/session/event`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         session_id: sessionId,
         event_type: eventType,
+        user_id: customer?.user_id || undefined,
+        visitor_id: customer?.email || getAnonymousId(),
+        anonymous_id: customer?.anonymous_id || getAnonymousId(),
         page: details.page || window.location.hash.replace('#', '') || window.location.pathname || '/',
         entity: details.entity || {},
         metadata: details.metadata || {},
@@ -339,11 +356,11 @@ export async function addToCartApi(productId, quantity = 1, userId, anonymousId,
   return payload.data || [];
 }
 
-export async function updateCartApi(productId, quantity, userId, anonymousId) {
+export async function updateCartApi(productId, quantity, userId, anonymousId, sessionId) {
   const response = await fetch(`${API_BASE_URL}/api/cart/${productId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...customerAuthHeaders(userId) },
-    body: JSON.stringify({ product_id: productId, quantity, user_id: userId, anonymous_id: anonymousId }),
+    body: JSON.stringify({ product_id: productId, quantity, user_id: userId, anonymous_id: anonymousId, session_id: sessionId }),
   });
   const payload = await parseJsonResponse(response);
   if (!response.ok || payload.success === false) {
@@ -365,9 +382,9 @@ export async function removeFromCartApi(productId, userId, anonymousId, sessionI
   return payload.data || [];
 }
 
-export async function clearCartApi(userId, anonymousId) {
+export async function clearCartApi(userId, anonymousId, sessionId) {
   const query = userId ? `user_id=${userId}` : `anonymous_id=${anonymousId}`;
-  const response = await fetch(`${API_BASE_URL}/api/cart?${query}`, {
+  const response = await fetch(`${API_BASE_URL}/api/cart?${query}&session_id=${sessionId || ''}`, {
     method: 'DELETE',
     headers: customerAuthHeaders(userId),
   });
@@ -400,6 +417,16 @@ export async function addToWishlistApi(productId, userId, anonymousId, sessionId
 export async function removeFromWishlistApi(productId, userId, anonymousId, sessionId) {
   const query = userId ? `user_id=${userId}` : `anonymous_id=${anonymousId}`;
   const response = await fetch(`${API_BASE_URL}/api/wishlist/${productId}?${query}&session_id=${sessionId || ''}`, {
+    method: 'DELETE',
+    headers: customerAuthHeaders(userId),
+  });
+  const payload = await parseJsonResponse(response);
+  return payload.data || [];
+}
+
+export async function clearWishlistApi(userId, anonymousId, sessionId) {
+  const query = userId ? `user_id=${userId}` : `anonymous_id=${anonymousId}`;
+  const response = await fetch(`${API_BASE_URL}/api/wishlist?${query}&session_id=${sessionId || ''}`, {
     method: 'DELETE',
     headers: customerAuthHeaders(userId),
   });
