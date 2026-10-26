@@ -3585,5 +3585,7 @@ def analytics_top_events():
 
 if __name__ == "__main__":
     initialize_database()
+    port = int(os.environ.get("PORT", 5000))
     debug_enabled = os.getenv("FLASK_DEBUG", "false").lower() == "true"
-    socketio.run(app, debug=debug_enabled, port=5000, allow_unsafe_werkzeug=True)
+    socketio.run(app, host="0.0.0.0", port=port, debug=debug_enabled, allow_unsafe_werkzeug=True)
+
