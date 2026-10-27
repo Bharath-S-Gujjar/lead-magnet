@@ -118,8 +118,8 @@ class DynamicQualificationAndNetflixRecsTests(unittest.TestCase):
         # Checkout was not within 24h -> dynamically disqualified
         self.assertEqual(state_stale_checkout["qualification_status"], "not_qualified")
 
-        # Dynamic transition 3: Customer purchases an item (orders_count == 1)
-        # Converted buyer is an Excluded Lead, NOT a qualified lead!
+        # Dynamic transition 3: Customer has purchased before (orders_count == 1) but is actively shopping
+        # (unconverted restriction removed; converted customer with active cart + fresh checkout qualifies)
         fresh_checkout = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
         self.features.update_one(
             {"customer_id": customer_id},
@@ -133,7 +133,15 @@ class DynamicQualificationAndNetflixRecsTests(unittest.TestCase):
         )
         state_converted = sync_customer_lead_state(customer_id, self.db)
         self.assertEqual(state_converted["lifecycle_status"], "converted")
-        self.assertEqual(state_converted["qualification_status"], "not_qualified")
+        self.assertEqual(state_converted["qualification_status"], "qualified")
+
+        # Dynamic transition 4: Customer empties cart after purchase
+        self.features.update_one(
+            {"customer_id": customer_id},
+            {"$set": {"cart_item_count": 0, "cart_value": 0.0}}
+        )
+        state_empty = sync_customer_lead_state(customer_id, self.db)
+        self.assertEqual(state_empty["qualification_status"], "not_qualified")
 
     # -------------------------------------------------------------------------
     # 2. Qualified Leads Category Best-Rated Item Inactivity Email (4 Hours)

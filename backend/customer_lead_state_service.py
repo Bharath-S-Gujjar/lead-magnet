@@ -14,7 +14,7 @@ from ecommerce_model_adapter import predict_customer_features
 from scoring_constants import HOT, WARM
 
 
-# Qualification: customer is in Hot segment AND has not converted.
+# Qualification: customer is in Hot segment (score >= 70) with active cart and recent checkout.
 # Not a probability test -- see scoring_constants.HOT for the integer threshold.
 QUALIFICATION_PROBABILITY_THRESHOLD = HOT / 100.0  # legacy alias; prefer segment check
 
@@ -131,7 +131,7 @@ def sync_customer_lead_state(customer_id, db):
     # Check whether checkout was started within 24 hours:
     checkout_within_24h = bool(
         feature_doc.get("checkout_started_within_24h")
-        or (prediction.get("active_checkout_override") and not is_converted)
+        or prediction.get("active_checkout_override")
     )
     if not checkout_within_24h:
         last_checkout_ts = feature_doc.get("last_checkout_start_at") or feature_doc.get("last_checkout_action_at")
@@ -153,19 +153,17 @@ def sync_customer_lead_state(customer_id, db):
             if days_since <= 1.0:
                 checkout_within_24h = True
 
-    # Dynamic Qualification strictly following all conditions:
-    # Meaning: The customer has NOT purchased anything yet, but shows strong buying intent.
-    # All three conditions must be true:
+    # Dynamic Qualification criteria:
+    # A customer shows strong active buying intent when:
     # 1. Score is at least 70 (score >= 70).
     # 2. Cart contains at least one item (cart_item_count >= 1).
     # 3. Checkout was started within the last 24 hours (checkout_started_within_24h == True).
-    # Result: Qualified Lead. Converted buyers (orders_count > 0) are Excluded Leads.
-    is_unconverted = bool(orders_count == 0 and not is_converted)
+    # (Unconverted prospect restriction 'orders_count == 0' removed: customers with past orders can qualify if actively shopping)
     is_score_hot = bool(score >= HOT)
     has_cart_items = bool(cart_item_count >= 1)
     has_active_checkout_24h = bool(checkout_within_24h and int(feature_doc.get("checkout_attempts") or 0) > 0)
 
-    is_qualified = bool(is_unconverted and is_score_hot and has_cart_items and has_active_checkout_24h)
+    is_qualified = bool(is_score_hot and has_cart_items and has_active_checkout_24h)
     qual_status = "qualified" if is_qualified else "not_qualified"
     now_iso = datetime.now(timezone.utc).isoformat()
 

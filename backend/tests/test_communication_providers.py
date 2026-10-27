@@ -15,6 +15,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from communication_provider import (
     GmailSMTPProvider,
+    BrevoEmailProvider,
+    ResendEmailProvider,
     WhatsAppBusinessProvider,
     MultiChannelProvider,
     DryRunCommunicationProvider,
@@ -550,6 +552,136 @@ class TestDeliverabilityMIMEConstruction(unittest.TestCase):
         self.assertEqual(msg_mktg.get("List-Unsubscribe-Post"), "List-Unsubscribe=One-Click")
 
 
+
+class TestHttpEmailProviders(unittest.TestCase):
+    """Unit tests for HTTP-based email providers (Brevo, Resend) and port-block diagnostics."""
+
+    def test_gmail_render_port_blocked_error_message(self):
+        """Gmail SMTP provider provides clear guidance when host blocks port 587 (like Render Free Tier)."""
+        with patch("smtplib.SMTP", side_effect=OSError(101, "Network is unreachable")):
+            with patch.dict(os.environ, {"SMTP_USERNAME": "u", "SMTP_PASSWORD": "p", "SMTP_FROM_EMAIL": "f@example.com"}):
+                provider = GmailSMTPProvider()
+                res = provider.send_email("test@example.com", "Subject", "Body")
+                self.assertFalse(res["success"])
+                self.assertIn("Render Free Tier", res["error"])
+                self.assertIn("port 443", res["error"])
+
+    # -------------------------------------------------------------------------
+    # BREVO EMAIL PROVIDER
+    # -------------------------------------------------------------------------
+
+    def test_brevo_missing_api_key(self):
+        """Brevo provider fails gracefully when BREVO_API_KEY is not configured."""
+        with patch.dict(os.environ, {"BREVO_API_KEY": ""}, clear=False):
+            provider = BrevoEmailProvider()
+            res = provider.send_email("test@example.com", "Sub", "Body")
+            self.assertFalse(res["success"])
+            self.assertEqual(res["provider"], "brevo")
+            self.assertIn("BREVO_API_KEY required", res["error"])
+
+    def test_brevo_invalid_recipient(self):
+        """Brevo provider rejects recipient without @."""
+        with patch.dict(os.environ, {"BREVO_API_KEY": "xkeysib-test", "SMTP_FROM_EMAIL": "store@example.com"}, clear=False):
+            provider = BrevoEmailProvider()
+            res = provider.send_email("invalid-email", "Sub", "Body")
+            self.assertFalse(res["success"])
+            self.assertIn("Invalid recipient email", res["error"])
+
+    @patch("communication_provider._requests_lib.post")
+    def test_brevo_successful_send(self, mock_post):
+        """Brevo provider successfully dispatches email over HTTPS and extracts messageId."""
+        mock_resp = MagicMock()
+        mock_resp.status_code = 201
+        mock_resp.content = b'{"messageId": "<brevo-msg-12345>"}'
+        mock_resp.json.return_value = {"messageId": "<brevo-msg-12345>"}
+        mock_post.return_value = mock_resp
+
+        with patch.dict(os.environ, {"BREVO_API_KEY": "xkeysib-123", "SMTP_FROM_EMAIL": "sender@example.com"}, clear=False):
+            provider = BrevoEmailProvider()
+            res = provider.send_email("buyer@example.com", "Welcome", "Hello customer!")
+
+            self.assertTrue(res["success"])
+            self.assertEqual(res["provider"], "brevo")
+            self.assertEqual(res["provider_message_id"], "<brevo-msg-12345>")
+            mock_post.assert_called_once()
+            call_kwargs = mock_post.call_args[1]
+            self.assertEqual(call_kwargs["headers"]["api-key"], "xkeysib-123")
+            self.assertEqual(call_kwargs["json"]["to"], [{"email": "buyer@example.com"}])
+
+    @patch("communication_provider._requests_lib.post")
+    def test_brevo_api_error_response(self, mock_post):
+        """Brevo provider handles API errors cleanly without crashing."""
+        mock_resp = MagicMock()
+        mock_resp.status_code = 400
+        mock_resp.content = b'{"message": "Invalid sender email"}'
+        mock_resp.json.return_value = {"message": "Invalid sender email"}
+        mock_post.return_value = mock_resp
+
+        with patch.dict(os.environ, {"BREVO_API_KEY": "xkeysib-123", "SMTP_FROM_EMAIL": "sender@example.com"}, clear=False):
+            provider = BrevoEmailProvider()
+            res = provider.send_email("buyer@example.com", "Welcome", "Hello customer!")
+
+            self.assertFalse(res["success"])
+            self.assertIn("Invalid sender email", res["error"])
+
+    # -------------------------------------------------------------------------
+    # RESEND EMAIL PROVIDER
+    # -------------------------------------------------------------------------
+
+    def test_resend_missing_api_key(self):
+        """Resend provider fails gracefully when RESEND_API_KEY is not configured."""
+        with patch.dict(os.environ, {"RESEND_API_KEY": ""}, clear=False):
+            provider = ResendEmailProvider()
+            res = provider.send_email("test@example.com", "Sub", "Body")
+            self.assertFalse(res["success"])
+            self.assertEqual(res["provider"], "resend")
+            self.assertIn("RESEND_API_KEY required", res["error"])
+
+    @patch("communication_provider._requests_lib.post")
+    def test_resend_successful_send(self, mock_post):
+        """Resend provider successfully dispatches email over HTTPS and extracts id."""
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.content = b'{"id": "re_abc123"}'
+        mock_resp.json.return_value = {"id": "re_abc123"}
+        mock_post.return_value = mock_resp
+
+        with patch.dict(os.environ, {"RESEND_API_KEY": "re_test_key"}, clear=False):
+            provider = ResendEmailProvider()
+            res = provider.send_email("buyer@example.com", "Welcome", "Hello customer!")
+
+            self.assertTrue(res["success"])
+            self.assertEqual(res["provider"], "resend")
+            self.assertEqual(res["provider_message_id"], "re_abc123")
+            mock_post.assert_called_once()
+            call_kwargs = mock_post.call_args[1]
+            self.assertEqual(call_kwargs["headers"]["Authorization"], "Bearer re_test_key")
+            self.assertEqual(call_kwargs["json"]["to"], ["buyer@example.com"])
+
+    # -------------------------------------------------------------------------
+    # PROVIDER FACTORY INTEGRATION
+    # -------------------------------------------------------------------------
+
+    def test_factory_resolves_brevo(self):
+        """get_communication_provider resolves Brevo when configured."""
+        with patch.dict(os.environ, {"ALLOW_REAL_DISPATCH": "true", "COMMUNICATION_PROVIDER": "brevo"}):
+            p = get_communication_provider()
+            self.assertIsInstance(p, BrevoEmailProvider)
+
+    def test_factory_resolves_resend(self):
+        """get_communication_provider resolves Resend when configured."""
+        with patch.dict(os.environ, {"ALLOW_REAL_DISPATCH": "true", "COMMUNICATION_PROVIDER": "resend"}):
+            p = get_communication_provider()
+            self.assertIsInstance(p, ResendEmailProvider)
+
+    def test_multi_channel_auto_detects_brevo(self):
+        """MultiChannelProvider automatically selects Brevo if BREVO_API_KEY is present."""
+        with patch.dict(os.environ, {"BREVO_API_KEY": "xkeysib-123"}):
+            p = MultiChannelProvider()
+            self.assertIsInstance(p.email_provider, BrevoEmailProvider)
+
+
 if __name__ == "__main__":
     unittest.main()
+
 

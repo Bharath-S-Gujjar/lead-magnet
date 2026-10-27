@@ -162,13 +162,13 @@ class Phase2LifecycleTests(unittest.TestCase):
         self.assertTrue(state["is_converted"])
 
     # -----------------------------------------------------------------------
-    # 04. Converted customer is not_qualified for new-lead pipeline
+    # 04. Converted customer with active shopping intent IS qualified
     # -----------------------------------------------------------------------
-    def test_04_converted_is_not_qualified(self):
+    def test_04_converted_with_active_intent_is_qualified(self):
         cid = self._insert(_converted_high_engagement(ObjectId()))
         state = sync_customer_lead_state(cid, self.db)
-        self.assertEqual(state["qualification_status"], "not_qualified",
-            msg="Converted customers must not enter the new-lead qualification pipeline")
+        self.assertEqual(state["qualification_status"], "qualified",
+            msg="Converted customers with score >= 70, active cart, and recent checkout now qualify as leads")
 
     # -----------------------------------------------------------------------
     # 05. Unconverted Hot customer IS qualified
@@ -227,15 +227,21 @@ class Phase2LifecycleTests(unittest.TestCase):
         state1 = sync_customer_lead_state(cid, self.db)
         self.assertEqual(state1["lifecycle_status"], "prospect")
 
-        # Simulate purchase
+        # Simulate purchase (order completed, cart cleared)
         self.features.update_one(
             {"customer_id": cid},
-            {"$set": {"orders_count": 1, "total_order_value": 500.0, "average_order_value": 500.0}},
+            {"$set": {
+                "orders_count": 1,
+                "total_order_value": 500.0,
+                "average_order_value": 500.0,
+                "cart_item_count": 0,
+                "cart_value": 0.0,
+            }},
         )
         state2 = sync_customer_lead_state(cid, self.db)
         self.assertEqual(state2["lifecycle_status"], "converted")
         self.assertTrue(state2["is_converted"])
-        # After purchase: no longer qualified
+        # After purchase: cart is empty, so not qualified
         self.assertEqual(state2["qualification_status"], "not_qualified")
 
     # -----------------------------------------------------------------------
@@ -251,12 +257,11 @@ class Phase2LifecycleTests(unittest.TestCase):
         self.assertEqual(stored["lifecycle_status"], "repeat_customer")
 
     # -----------------------------------------------------------------------
-    # 09. Converted customer with score-based Hot stays Hot (no floors needed)
+    # 09. Converted customer with score-based Hot stays Hot and qualifies if active
     # -----------------------------------------------------------------------
     def test_09_converted_can_score_hot_organically(self):
         """A repeat buyer with very high activity can still score Hot organically
-        (score >= 70). They remain not_qualified for new-lead pipeline but retain
-        Hot segment for price-drop and other retention pipelines."""
+        (score >= 70). With unconverted restriction removed, active shopping qualifies them."""
         cid = ObjectId()
         if not hasattr(self, "_test_ids"):
             self._test_ids = []
@@ -279,12 +284,12 @@ class Phase2LifecycleTests(unittest.TestCase):
         self._test_ids.append(cid)
         state = sync_customer_lead_state(cid, self.db)
 
-        # Must be Hot by score (not by floor), not_qualified (converted)
+        # Must be Hot by score (not by floor), and qualified (since active cart & recent checkout)
         self.assertEqual(state["lead_segment"], "Hot",
             msg=f"Expected Hot (score-based), got {state['lead_segment']} (score={state['lead_score']})")
         self.assertTrue(state["is_converted"])
-        self.assertEqual(state["qualification_status"], "not_qualified",
-            msg="Even score-based Hot converted customers are not_qualified for new-lead pipeline")
+        self.assertEqual(state["qualification_status"], "qualified",
+            msg="Active repeat buyer with score >= 70, cart, and recent checkout qualifies as lead")
 
 
 class Phase2PipelineGatingTests(unittest.TestCase):

@@ -336,6 +336,11 @@ class GmailSMTPProvider(CommunicationProvider):
             sanitized_err = str(e)
             if self.password and self.password in sanitized_err:
                 sanitized_err = sanitized_err.replace(self.password, "[REDACTED]")
+            if "101" in sanitized_err or "Network is unreachable" in sanitized_err or "10051" in sanitized_err:
+                sanitized_err = (
+                    f"{sanitized_err} (Outbound SMTP port {self.port} is blocked by hosting environment like Render Free Tier. "
+                    "Use HTTP-based email provider like Brevo or Resend on port 443, or run backend locally)."
+                )
             return {
                 "success": False,
                 "provider": "gmail_smtp",
@@ -533,11 +538,260 @@ class WhatsAppBusinessProvider(CommunicationProvider):
             }
 
 
+class BrevoEmailProvider(CommunicationProvider):
+    """Production HTTP-based email provider via Brevo REST API (v3).
+
+    Operates over standard HTTPS (Port 443), completely bypassing cloud SMTP
+    port blocks (such as Render Free Tier blocking ports 25, 465, and 587).
+    Offers 300 free emails per day with zero credit card requirements.
+
+    Credentials:
+        BREVO_API_KEY (required): Brevo API v3 key (e.g. xkeysib-...)
+        BREVO_FROM_EMAIL or SMTP_FROM_EMAIL or GMAIL_USER: Sender email address
+        SENDER_DISPLAY_NAME: Display name for the From header
+    """
+
+    def __init__(self):
+        self.api_key = os.getenv("BREVO_API_KEY", "").strip()
+        self.from_email = (
+            os.getenv("BREVO_FROM_EMAIL")
+            or os.getenv("SMTP_FROM_EMAIL")
+            or os.getenv("GMAIL_USER")
+            or os.getenv("GMAIL_EMAIL", "")
+        ).strip()
+        self.display_name = os.getenv("SENDER_DISPLAY_NAME", "Lead Magnet")
+        self.api_url = os.getenv("BREVO_API_URL", "https://api.brevo.com/v3/smtp/email")
+
+    def send_email(self, recipient, subject, body, metadata=None, html_body=None, unsubscribe_url=None):
+        if not self.api_key:
+            return {
+                "success": False,
+                "provider": "brevo",
+                "provider_message_id": None,
+                "error": "Brevo API key not configured (BREVO_API_KEY required)",
+                "channel": "email",
+            }
+
+        if not recipient or "@" not in str(recipient):
+            return {
+                "success": False,
+                "provider": "brevo",
+                "provider_message_id": None,
+                "error": f"Invalid recipient email: {recipient}",
+                "channel": "email",
+            }
+
+        if not self.from_email:
+            return {
+                "success": False,
+                "provider": "brevo",
+                "provider_message_id": None,
+                "error": "Sender email not configured (BREVO_FROM_EMAIL, SMTP_FROM_EMAIL, or GMAIL_USER required)",
+                "channel": "email",
+            }
+
+        if _requests_lib is None:
+            return {
+                "success": False,
+                "provider": "brevo",
+                "provider_message_id": None,
+                "error": "requests library not available for Brevo API calls",
+                "channel": "email",
+            }
+
+        img_url = None
+        if isinstance(metadata, dict):
+            img_url = metadata.get("primary_image") or metadata.get("image_url") or metadata.get("product_image")
+        rendered_html = html_body if html_body else _build_html_body(body, image_url=img_url)
+
+        headers = {
+            "api-key": self.api_key,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+
+        payload = {
+            "sender": {"name": self.display_name, "email": self.from_email},
+            "to": [{"email": str(recipient).strip()}],
+            "subject": subject or "Lead Magnet",
+            "textContent": body,
+            "htmlContent": rendered_html,
+        }
+
+        if unsubscribe_url and str(unsubscribe_url).startswith("http"):
+            payload["headers"] = {
+                "List-Unsubscribe": f"<{unsubscribe_url}>",
+                "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+            }
+
+        try:
+            response = _requests_lib.post(self.api_url, json=payload, headers=headers, timeout=30)
+            resp_data = response.json() if response.content else {}
+
+            if response.status_code in (200, 201):
+                msg_id = resp_data.get("messageId") or f"brevo-{uuid.uuid4().hex[:12]}"
+                return {
+                    "success": True,
+                    "provider": "brevo",
+                    "provider_message_id": msg_id,
+                    "channel": "email",
+                    "recipient": recipient,
+                    "dispatched_at": datetime.now(timezone.utc).isoformat(),
+                }
+            else:
+                err_msg = resp_data.get("message") or f"HTTP {response.status_code}"
+                return {
+                    "success": False,
+                    "provider": "brevo",
+                    "provider_message_id": None,
+                    "error": f"Brevo API error: {err_msg}",
+                    "channel": "email",
+                }
+        except Exception as e:
+            return {
+                "success": False,
+                "provider": "brevo",
+                "provider_message_id": None,
+                "error": f"Brevo delivery network failure: {str(e)}",
+                "channel": "email",
+            }
+
+    def send_whatsapp(self, recipient, body, metadata=None):
+        return {
+            "success": False,
+            "provider": "brevo",
+            "provider_message_id": None,
+            "error": "WhatsApp not supported by Brevo email provider",
+            "channel": "whatsapp",
+        }
+
+
+class ResendEmailProvider(CommunicationProvider):
+    """Production HTTP-based email provider via Resend REST API.
+
+    Operates over standard HTTPS (Port 443), completely bypassing cloud SMTP
+    port blocks (such as Render Free Tier blocking ports 25, 465, and 587).
+    Offers 3,000 free emails per month with zero credit card requirements.
+
+    Credentials:
+        RESEND_API_KEY (required): Resend API key (e.g. re_...)
+        RESEND_FROM_EMAIL: Sender email (defaults to 'onboarding@resend.dev' or custom domain)
+        SENDER_DISPLAY_NAME: Display name for the From header
+    """
+
+    def __init__(self):
+        self.api_key = os.getenv("RESEND_API_KEY", "").strip()
+        self.from_email = os.getenv("RESEND_FROM_EMAIL", "onboarding@resend.dev").strip()
+        self.display_name = os.getenv("SENDER_DISPLAY_NAME", "Lead Magnet")
+        self.api_url = os.getenv("RESEND_API_URL", "https://api.resend.com/emails")
+
+    def send_email(self, recipient, subject, body, metadata=None, html_body=None, unsubscribe_url=None):
+        if not self.api_key:
+            return {
+                "success": False,
+                "provider": "resend",
+                "provider_message_id": None,
+                "error": "Resend API key not configured (RESEND_API_KEY required)",
+                "channel": "email",
+            }
+
+        if not recipient or "@" not in str(recipient):
+            return {
+                "success": False,
+                "provider": "resend",
+                "provider_message_id": None,
+                "error": f"Invalid recipient email: {recipient}",
+                "channel": "email",
+            }
+
+        if _requests_lib is None:
+            return {
+                "success": False,
+                "provider": "resend",
+                "provider_message_id": None,
+                "error": "requests library not available for Resend API calls",
+                "channel": "email",
+            }
+
+        img_url = None
+        if isinstance(metadata, dict):
+            img_url = metadata.get("primary_image") or metadata.get("image_url") or metadata.get("product_image")
+        rendered_html = html_body if html_body else _build_html_body(body, image_url=img_url)
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
+        from_header = f"{self.display_name} <{self.from_email}>" if self.display_name else self.from_email
+        payload = {
+            "from": from_header,
+            "to": [str(recipient).strip()],
+            "subject": subject or "Lead Magnet",
+            "text": body,
+            "html": rendered_html,
+        }
+
+        if unsubscribe_url and str(unsubscribe_url).startswith("http"):
+            payload["headers"] = {
+                "List-Unsubscribe": f"<{unsubscribe_url}>",
+                "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+            }
+
+        try:
+            response = _requests_lib.post(self.api_url, json=payload, headers=headers, timeout=30)
+            resp_data = response.json() if response.content else {}
+
+            if response.status_code in (200, 201):
+                msg_id = resp_data.get("id") or f"resend-{uuid.uuid4().hex[:12]}"
+                return {
+                    "success": True,
+                    "provider": "resend",
+                    "provider_message_id": msg_id,
+                    "channel": "email",
+                    "recipient": recipient,
+                    "dispatched_at": datetime.now(timezone.utc).isoformat(),
+                }
+            else:
+                err_msg = resp_data.get("message") or f"HTTP {response.status_code}"
+                return {
+                    "success": False,
+                    "provider": "resend",
+                    "provider_message_id": None,
+                    "error": f"Resend API error: {err_msg}",
+                    "channel": "email",
+                }
+        except Exception as e:
+            return {
+                "success": False,
+                "provider": "resend",
+                "provider_message_id": None,
+                "error": f"Resend delivery network failure: {str(e)}",
+                "channel": "email",
+            }
+
+    def send_whatsapp(self, recipient, body, metadata=None):
+        return {
+            "success": False,
+            "provider": "resend",
+            "provider_message_id": None,
+            "error": "WhatsApp not supported by Resend email provider",
+            "channel": "whatsapp",
+        }
+
+
 class MultiChannelProvider(CommunicationProvider):
-    """Production provider that delegates email to GmailSMTPProvider and WhatsApp to WhatsAppBusinessProvider."""
+    """Production provider that delegates email to an email provider and WhatsApp to WhatsAppBusinessProvider."""
 
     def __init__(self, email_provider=None, whatsapp_provider=None):
-        self.email_provider = email_provider or GmailSMTPProvider()
+        if email_provider is None:
+            if os.getenv("BREVO_API_KEY"):
+                email_provider = BrevoEmailProvider()
+            elif os.getenv("RESEND_API_KEY"):
+                email_provider = ResendEmailProvider()
+            else:
+                email_provider = GmailSMTPProvider()
+        self.email_provider = email_provider
         self.whatsapp_provider = whatsapp_provider or WhatsAppBusinessProvider()
 
     def send_email(self, recipient, subject, body, metadata=None, html_body=None, **kwargs):
@@ -553,7 +807,7 @@ def get_communication_provider(provider_name=None):
     Safety Guarantee:
         Defaults strictly to DryRunCommunicationProvider unless:
         1. An explicit live provider name is configured ('multi_channel', 'gmail_smtp',
-           'whatsapp_business', 'production'), AND
+           'brevo', 'resend', 'whatsapp_business', 'production'), AND
         2. ALLOW_REAL_DISPATCH is explicitly set to 'true' (or '1', 'yes').
         Missing, unset, or empty COMMUNICATION_PROVIDER ALWAYS returns DryRunCommunicationProvider,
         regardless of whether SMTP or WhatsApp credentials are present in the environment.
@@ -584,9 +838,14 @@ def get_communication_provider(provider_name=None):
 
     if raw_provider == "gmail_smtp":
         return GmailSMTPProvider()
+    elif raw_provider == "brevo":
+        return BrevoEmailProvider()
+    elif raw_provider == "resend":
+        return ResendEmailProvider()
     elif raw_provider == "whatsapp_business":
         return WhatsAppBusinessProvider()
-    elif raw_provider in ("multi_channel", "production"):
+    elif raw_provider in ("multi_channel", "production", "auto"):
         return MultiChannelProvider()
     else:
         return DryRunCommunicationProvider()
+
